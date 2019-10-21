@@ -1,0 +1,10 @@
+*~
+*.o
+.DS_Store
+*/*.bin
+*.old
+*/*.old
+*/*/*.old
+secure_boot_signing_key.pem
+build/*
+sdkconfig
