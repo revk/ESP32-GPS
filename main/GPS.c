@@ -8,10 +8,15 @@ static const char TAG[] = "GPS";
 #include "oled.h"
 
 #define settings	\
-	s8(oledsda,5)	\
-	s8(oledscl,18)	\
+	s8(oledsda,27)	\
+	s8(oledscl,14)	\
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
+	u8(gpspps,34)	\
+	u8(gpsrx,32)	\
+	u8(gpstx,33)	\
+	u8(gpsfix,25)	\
+	u8(gpsen,26)	\
 	b(oledflip)	\
 	b(f)	\
 
