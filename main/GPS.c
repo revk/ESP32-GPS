@@ -158,7 +158,7 @@ display_task (void *p)
             }
          }
          y -= 10;
-         sprintf (temp, "Fix: %2d sat%s %4s %s", sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No",
+         sprintf (temp, "Fix: %2d sat%s %4s %s", sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None",
                   fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ");
          oled_text (1, 0, y, temp);
          y -= 3;                // Line
