@@ -63,6 +63,7 @@ nmea (char *s)
 {
    if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
       return;
+   //revk_info(TAG,"%s",s);
    char *f[50];
    int n = 0;
    s++;
@@ -165,26 +166,41 @@ display_task (void *p)
          if (fixmode > 1)
             sprintf (temp, "Lat: %11.6lf", lat);
          else
-            sprintf (temp, "%16s", "");
+            sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
          y -= 10;
          if (fixmode > 1)
             sprintf (temp, "Lon: %11.6lf", lon);
          else
-            sprintf (temp, "%16s", "");
+            sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
          y -= 10;
          if (fixmode >= 3)
-            sprintf (temp, "Alt: %6.1lfm", alt);
+            sprintf (temp, "Alt: %6.1lfm +/-%4.1fm", alt, vdop);
          else
-            sprintf (temp, "%12s", "");
+            sprintf (temp, "%21s", "");
+         oled_text (-1, 0, y, temp);
+         y -= 10;
+         if (hdop)
+            sprintf (temp, "DOP: %6.1fm", hdop);
+         else
+            sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
          double s = speed;
          if (mph)
             s /= 1.8;
-         sprintf (temp, "%4.1lf", s);
+         if (speed >= 1)
+            sprintf (temp, "%4.1lf", s);
+         else
+            strcpy (temp, "  . ");
          int x = oled_text (5, 0, 13, temp);
          oled_text (-1, x, 13, mph ? "mph" : "km/h");
+         if (speed >= 1)
+            sprintf (temp, "%3.0f", course);
+         else
+            sprintf (temp, "%3s", "");
+         x = oled_text (-1, x, 13 + 8, temp);
+         oled_text (0, x, 13 + 8 + 2, "o");
          oled_unlock ();
       }
    }
