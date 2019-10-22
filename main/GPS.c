@@ -181,15 +181,16 @@ display_task (void *p)
             sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
          double s = speed;
+         double minspeed = hdop * 2;    // Use as basis for ignoring spurious speeds
          if (mph)
             s /= 1.8;
-         if (hdop && speed > hdop)
-            sprintf (temp, "%4.1lf", s);        // Use HDOP as basis for low speed inaccuracy
+         if (hdop && speed > minspeed)
+            sprintf (temp, "%4.1lf", s);
          else
             strcpy (temp, "--.-");
          int x = oled_text (5, 0, 13, temp);
          oled_text (-1, x, 13, mph ? "mph" : "km/h");
-         if (hdop && speed > hdop)
+         if (hdop && speed > minspeed)
             sprintf (temp, "%3.0f", course);
          else
             strcpy (temp, "---");
