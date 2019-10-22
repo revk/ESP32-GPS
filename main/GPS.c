@@ -50,8 +50,13 @@ double lat = 0;
 double lon = 0;
 double alt = 0;
 double gsep = 0;
+double pdop = 0;
 double hdop = 0;
+double vdop = 0;
+double course = 0;
 int sats = 0;
+int fix = 0;
+int fixmode = 0;
 
 static void
 nmea (char *s)
@@ -80,8 +85,8 @@ nmea (char *s)
          lon =
             ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtod (f[4] + 3, NULL) / 60) * (f[5][0] ==
                                                                                                              'E' ? 1 : -1);
+      fix = atoi (f[6]);
       sats = atoi (f[7]);
-      hdop = strtod (f[8], NULL);
       alt = strtod (f[9], NULL);
       gsep = strtod (f[10], NULL);
       return;
@@ -107,7 +112,16 @@ nmea (char *s)
    }
    if (!strncmp (f[0], "GPVTG", 5) && n >= 10)
    {
+      course = strtod (f[1], NULL);
       speed = strtod (f[7], NULL);
+      return;
+   }
+   if (!strncmp (f[0], "GPGSA", 5) && n >= 18)
+   {
+      fixmode = atoi (f[2]);
+      pdop = strtod (f[15], NULL);
+      hdop = strtod (f[16], NULL);
+      vdop = strtod (f[17], NULL);
       return;
    }
 }
@@ -118,7 +132,15 @@ display_task (void *p)
    p = p;
    while (1)
    {
-      sleep (1);
+      if (gpspps >= 0)
+      {
+         int try = 20;
+         while (gpio_get_level (gpspps) && try-- > 0)
+            usleep (100);
+         while (!gpio_get_level (gpspps) && try-- > 0)
+            usleep (100);
+      } else
+         sleep (1);
       if (sats)
       {
          oled_lock ();
@@ -135,16 +157,26 @@ display_task (void *p)
             }
          }
          y -= 10;
-         sprintf (temp, "Sats: %d   ", sats);
+         sprintf (temp, "Fix: %2d sat%s %4s %s", sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No",
+                  fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ");
          oled_text (-1, 0, y, temp);
          y -= 10;
-         sprintf (temp, "Lat: %lf   ", lat);
+         if (fixmode > 1)
+            sprintf (temp, "Lat: %11.6lf", lat);
+         else
+            sprintf (temp, "%16s", "");
          oled_text (-1, 0, y, temp);
          y -= 10;
-         sprintf (temp, "Lon: %lf   ", lon);
+         if (fixmode > 1)
+            sprintf (temp, "Lon: %11.6lf", lon);
+         else
+            sprintf (temp, "%16s", "");
          oled_text (-1, 0, y, temp);
          y -= 10;
-         sprintf (temp, "Alt: %6.2lfm   ", alt);
+         if (fixmode >= 3)
+            sprintf (temp, "Alt: %6.1lfm", alt);
+         else
+            sprintf (temp, "%12s", "");
          oled_text (-1, 0, y, temp);
          double s = speed;
          if (mph)
@@ -197,6 +229,10 @@ app_main ()
       gpio_set_level (gpsen, 1);
       gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
    }
+   if (gpspps >= 0)
+      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
+   if (gpsfix >= 0)
+      gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
    revk_task ("Display", display_task, NULL);
    // Main task...
    uint8_t buf[1000],
@@ -232,7 +268,7 @@ app_main ()
                l[-3] = 0;
                nmea ((char *) p);
             }
-         } else
+         } else if (l > p)
             revk_error (TAG, "[%.*s]", l - p, p);
          while (l < e && *l < ' ')
             l++;
