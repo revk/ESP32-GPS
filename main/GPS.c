@@ -164,19 +164,19 @@ display_task (void *p)
          y -= 3;                // Line
          y -= 10;
          if (fixmode > 1)
-            sprintf (temp, "Lat: %11.6lf  DOP", lat);
+            sprintf (temp, "Lat: %11.6lf   DOP", lat);
          else
             sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
          y -= 10;
          if (fixmode > 1)
-            sprintf (temp, "Lon: %11.6lf %4.1fm", lon, hdop);
+            sprintf (temp, "Lon: %11.6lf %5.1fm", lon, hdop);
          else
             sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
          y -= 10;
          if (fixmode >= 3)
-            sprintf (temp, "Alt: %6.1lfm     %4.1fm", alt, vdop);
+            sprintf (temp, "Alt: %6.1lfm     %5.1fm", alt, vdop);
          else
             sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
