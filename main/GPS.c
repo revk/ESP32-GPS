@@ -159,7 +159,8 @@ display_task (void *p)
          y -= 10;
          sprintf (temp, "Fix: %2d sat%s %4s %s", sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No",
                   fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ");
-         oled_text (-1, 0, y, temp);
+         oled_text (1, 0, y, temp);
+         y -= 3;                // Line
          y -= 10;
          if (fixmode > 1)
             sprintf (temp, "Lat: %11.6lf", lat);
@@ -182,8 +183,8 @@ display_task (void *p)
          if (mph)
             s /= 1.8;
          sprintf (temp, "%4.1lf", s);
-         int x = oled_text (5, 0, 11, temp);
-         oled_text (-1, x, 11, mph ? "mph" : "km/h");
+         int x = oled_text (5, 0, 13, temp);
+         oled_text (-1, x, 13, mph ? "mph" : "km/h");
          oled_unlock ();
       }
    }
@@ -207,6 +208,11 @@ app_main ()
       if (oledsda >= 0 && oledscl >= 0)
       oled_start (1, oledaddress, oledscl, oledsda, oledflip);
    oled_set_contrast (oledcontrast);
+   for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
+   {
+      oled_pixel (x, CONFIG_OLED_HEIGHT - 12, 4);
+      oled_pixel (x, 8, 4);
+   }
    // Init UART
    uart_config_t uart_config = {
       .baud_rate = 9600,
