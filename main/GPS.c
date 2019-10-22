@@ -111,12 +111,12 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    {
       gpscmd ("$PMTK313,1");    // SBAS (increases accuracy)
       gpscmd ("$PMTK319,1");    // SBAS integrity mode
-      gpscmd("$PMTK513,1");	// Search for SBAS sat
+      gpscmd ("$PMTK513,1");    // Search for SBAS sat
       return "";
    }
    if (!strcmp (tag, "sleep"))
    {
-      gpscmd ("$PMTK291,7,0,10000,1"); // Low power mode
+      gpscmd ("$PMTK291,7,0,10000,1");  // Low power mode
       return "";
    }
    if (!strcmp (tag, "version"))
