@@ -164,25 +164,19 @@ display_task (void *p)
          y -= 3;                // Line
          y -= 10;
          if (fixmode > 1)
-            sprintf (temp, "Lat: %11.6lf", lat);
+            sprintf (temp, "Lat: %11.6lf  DOP", lat);
          else
             sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
          y -= 10;
          if (fixmode > 1)
-            sprintf (temp, "Lon: %11.6lf", lon);
+            sprintf (temp, "Lon: %11.6lf %4.1fm", lon, hdop);
          else
             sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
          y -= 10;
          if (fixmode >= 3)
-            sprintf (temp, "Alt: %6.1lfm +/-%4.1fm", alt, vdop);
-         else
-            sprintf (temp, "%21s", "");
-         oled_text (-1, 0, y, temp);
-         y -= 10;
-         if (hdop)
-            sprintf (temp, "DOP: %6.1fm", hdop);
+            sprintf (temp, "Alt: %6.1lfm     %4.1fm", alt, vdop);
          else
             sprintf (temp, "%21s", "");
          oled_text (-1, 0, y, temp);
@@ -192,15 +186,15 @@ display_task (void *p)
          if (speed >= 1)
             sprintf (temp, "%4.1lf", s);
          else
-            strcpy (temp, "  . ");
+            strcpy (temp, "--.-");
          int x = oled_text (5, 0, 13, temp);
          oled_text (-1, x, 13, mph ? "mph" : "km/h");
          if (speed >= 1)
             sprintf (temp, "%3.0f", course);
          else
-            sprintf (temp, "%3s", "");
+            strcpy (temp, "---");
          x = oled_text (-1, x, 13 + 8, temp);
-         oled_text (0, x, 13 + 8 + 2, "o");
+         oled_text (0, x, 13 + 8 + 5, "o");
          oled_unlock ();
       }
    }
