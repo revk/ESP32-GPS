@@ -137,9 +137,9 @@ display_task (void *p)
       {
          int try = 20;
          while (gpio_get_level (gpspps) && try-- > 0)
-            usleep (100);
+            usleep (1000);
          while (!gpio_get_level (gpspps) && try-- > 0)
-            usleep (100);
+            usleep (1000);
       } else
          sleep (1);
       if (sats)
