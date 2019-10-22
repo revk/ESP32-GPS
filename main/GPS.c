@@ -33,17 +33,6 @@ settings
 #undef u8
 #undef b
 #undef s
-const char *
-app_command (const char *tag, unsigned int len, const unsigned char *value)
-{
-   if (!strcmp (tag, "contrast"))
-   {
-      oled_set_contrast (atoi ((char *) value));
-      return "";                // OK
-   }
-   return NULL;
-}
-
 double speed = 0;
 double bearing = 0;
 double lat = 0;
@@ -57,6 +46,47 @@ double course = 0;
 int sats = 0;
 int fix = 0;
 int fixmode = 0;
+
+void
+gpscmd (char *s)
+{                               // Send command to UART
+   if (!s || *s != '$')
+      return;
+   uint8_t c = 0;
+   for (char *p = s + 1; *p; p++)
+      c ^= *p;
+   char temp[6];
+   sprintf (temp, "*%02X\r\n", c);
+   uart_write_bytes (gpsuart, s, strlen (s));
+   uart_write_bytes (gpsuart, temp, 5);
+   revk_info (TAG, "Tx %s*%02X", s, c);
+}
+
+const char *
+app_command (const char *tag, unsigned int len, const unsigned char *value)
+{
+   if (!strcmp (tag, "contrast"))
+   {
+      oled_set_contrast (atoi ((char *) value));
+      return "";                // OK
+   }
+   if (!strcmp (tag, "connect") || !strcmp (tag, "dump"))
+   {
+      gpscmd ("$PMTK183");      // Log status
+      return "";
+   }
+   if (!strcmp (tag, "coldstart"))
+   {
+      gpscmd ("$PMTK103");      // Cold start
+      return "";
+   }
+   if (!strcmp (tag, "version"))
+   {
+      gpscmd ("$PMTK605");      // Version
+      return "";
+   }
+   return NULL;
+}
 
 static void
 nmea (char *s)
@@ -136,10 +166,10 @@ display_task (void *p)
       if (gpspps >= 0)
       {
          int try = 20;
-         while (gpio_get_level (gpspps) && try-- > 0)
-            usleep (1000);
+         if (gpio_get_level (gpspps))
+            usleep (800000);    // In pulse
          while (!gpio_get_level (gpspps) && try-- > 0)
-            usleep (1000);
+            usleep (10000);
       } else
          sleep (1);
       if (sats)
@@ -254,6 +284,7 @@ app_main ()
    // Main task...
    uint8_t buf[1000],
     *p = buf;
+   int started = 0;
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
@@ -262,6 +293,12 @@ app_main ()
          sleep (1);
       if (l <= 0)
          continue;
+      if (!started)
+      {
+         gpscmd ("$PMTK185,0"); // Start log
+         //gpscmd ("$PMTK301,2"); // WAAS
+         started = 1;
+      }
       uint8_t *e = p + l;
       p = buf;
       while (p < e)
@@ -283,7 +320,10 @@ app_main ()
             else
             {                   // Process line
                l[-3] = 0;
-               nmea ((char *) p);
+               if (p[1] == 'G')
+                  nmea ((char *) p);
+               else
+                  revk_info (TAG, "Rx %s", p);
             }
          } else if (l > p)
             revk_error (TAG, "[%.*s]", l - p, p);
