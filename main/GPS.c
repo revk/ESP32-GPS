@@ -125,14 +125,13 @@ display_task (void *p)
          char temp[100];
          int y = CONFIG_OLED_HEIGHT;
          {
-            time_t now = time (0);
+            time_t now = time (0) + 1;
             struct tm nowt;
             localtime_r (&now, &nowt);
             if (nowt.tm_year > 100)
             {
-               y -= 10;
                strftime (temp, sizeof (temp), "%F\004%T %Z", &nowt);
-               oled_text (1, 0, y, temp);
+               oled_text (1, 0, 0, temp);
             }
          }
          y -= 10;
@@ -151,8 +150,8 @@ display_task (void *p)
          if (mph)
             s /= 1.8;
          sprintf (temp, "%4.1lf", s);
-         int x = oled_text (5, 0, 2, temp);
-         oled_text (-1, x, 2, mph ? "mph" : "km/h");
+         int x = oled_text (5, 0, 11, temp);
+         oled_text (-1, x, 11, mph ? "mph" : "km/h");
          oled_unlock ();
       }
    }
