@@ -97,9 +97,31 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       gpscmd ("$PMTK184,1");    // Erase
       return "";
    }
-   if (!strcmp (tag, "coldstart"))
+   if (!strcmp (tag, "fast"))
+   {
+      gpscmd ("$PMTK251,115200");       // Baud rate
+      revk_setting ("gpsbaud", 6, "115200");    // Set to 115200
+      return "";
+   }
+   if (!strcmp (tag, "hot"))
+   {
+      gpscmd ("$PMTK101");      // Hot start
+      return "";
+   }
+   if (!strcmp (tag, "warm"))
+   {
+      gpscmd ("$PMTK102");      // Warm start
+      return "";
+   }
+   if (!strcmp (tag, "cold"))
+   {
+      gpscmd ("$PMTK103");      // Cold start
+      return "";
+   }
+   if (!strcmp (tag, "reset"))
    {
       gpscmd ("$PMTK104");      // Full cold start (resets to default settings including Baud rate)
+      revk_setting ("gpsbaud", 4, "9600");      // Set to 9600
       return "";
    }
    if (!strcmp (tag, "waas"))
