@@ -14,6 +14,8 @@ static const char TAG[] = "GPS";
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
 	b(oledflip,Y)	\
+	u32(gpsbaud,9600) \
+	b(gpsdebug,N)	\
 	s8(gpspps,34)	\
 	s8(gpsuart,1)	\
 	s8(gpsrx,33)	\
@@ -47,19 +49,23 @@ int sats = 0;
 int fix = 0;
 int fixmode = 0;
 
+static SemaphoreHandle_t cmd_mutex = NULL;
+
 void
-gpscmd (char *s)
+gpscmd (const void *s)
 {                               // Send command to UART
-   if (!s || *s != '$')
+   if (!s || *(char *) s != '$')
       return;
    uint8_t c = 0;
-   for (char *p = s + 1; *p; p++)
+   for (const char *p = s + 1; *p; p++)
       c ^= *p;
    char temp[6];
    sprintf (temp, "*%02X\r\n", c);
+   xSemaphoreTake (cmd_mutex, portMAX_DELAY);
    uart_write_bytes (gpsuart, s, strlen (s));
    uart_write_bytes (gpsuart, temp, 5);
-   revk_info (TAG, "Tx %s*%02X", s, c);
+   xSemaphoreGive (cmd_mutex);
+   //revk_info (TAG, "Tx %s*%02X", s, c);
 }
 
 const char *
@@ -70,14 +76,47 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       oled_set_contrast (atoi ((char *) value));
       return "";                // OK
    }
-   if (!strcmp (tag, "connect") || !strcmp (tag, "dump"))
+   if (!strcmp (tag, "connect"))
    {
       gpscmd ("$PMTK183");      // Log status
+      // $PMTKLOG,Serial#, Type, Mode, Content, Interval, Distance, Speed, Status, Number, Percent*Checksum
+      return "";
+   }
+   if (!strcmp (tag, "send") && len)
+   {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
+      gpscmd (value);
+      return "";
+   }
+   if (!strcmp (tag, "dump"))
+   {
+      gpscmd ("$PMTK622,1");    // Dump log
+      return "";
+   }
+   if (!strcmp (tag, "erase"))
+   {
+      gpscmd ("$PMTK184,1");    // Erase
       return "";
    }
    if (!strcmp (tag, "coldstart"))
    {
-      gpscmd ("$PMTK103");      // Cold start
+      gpscmd ("$PMTK104");      // Full cold start (resets to default settings including Baud rate)
+      return "";
+   }
+   if (!strcmp (tag, "waas"))
+   {
+      gpscmd ("$PMTK301,2");    // WAAS DGPS
+      return "";
+   }
+   if (!strcmp (tag, "sbas"))
+   {
+      gpscmd ("$PMTK313,1");    // SBAS (increases accuracy)
+      gpscmd ("$PMTK319,1");    // SBAS integrity mode
+      gpscmd("$PMTK513,1");	// Search for SBAS sat
+      return "";
+   }
+   if (!strcmp (tag, "sleep"))
+   {
+      gpscmd ("$PMTK291,7,0,10000,1"); // Low power mode
       return "";
    }
    if (!strcmp (tag, "version"))
@@ -93,7 +132,8 @@ nmea (char *s)
 {
    if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
       return;
-   //revk_info(TAG,"%s",s);
+   if (gpsdebug)
+      revk_info ("Rx", "%s", s);
    char *f[50];
    int n = 0;
    s++;
@@ -172,68 +212,66 @@ display_task (void *p)
             usleep (10000);
       } else
          sleep (1);
-      if (sats)
+      oled_lock ();
+      char temp[100];
+      int y = CONFIG_OLED_HEIGHT;
       {
-         oled_lock ();
-         char temp[100];
-         int y = CONFIG_OLED_HEIGHT;
+         time_t now = time (0) + 1;
+         struct tm nowt;
+         localtime_r (&now, &nowt);
+         if (nowt.tm_year > 100)
          {
-            time_t now = time (0) + 1;
-            struct tm nowt;
-            localtime_r (&now, &nowt);
-            if (nowt.tm_year > 100)
-            {
-               strftime (temp, sizeof (temp), "%F\004%T %Z", &nowt);
-               oled_text (1, 0, 0, temp);
-            }
+            strftime (temp, sizeof (temp), "%F\004%T %Z", &nowt);
+            oled_text (1, 0, 0, temp);
          }
-         y -= 10;
-         sprintf (temp, "Fix: %2d sat%s %4s %s", sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None",
-                  fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ");
-         oled_text (1, 0, y, temp);
-         y -= 3;                // Line
-         y -= 10;
-         if (fixmode > 1)
-            sprintf (temp, "Lat: %11.6lf   DOP", lat);
-         else
-            sprintf (temp, "%21s", "");
-         oled_text (-1, 0, y, temp);
-         y -= 10;
-         if (fixmode > 1)
-            sprintf (temp, "Lon: %11.6lf %5.1fm", lon, hdop);
-         else
-            sprintf (temp, "%21s", "");
-         oled_text (-1, 0, y, temp);
-         y -= 10;
-         if (fixmode >= 3)
-            sprintf (temp, "Alt: %6.1lfm     %5.1fm", alt, vdop);
-         else
-            sprintf (temp, "%21s", "");
-         oled_text (-1, 0, y, temp);
-         double s = speed;
-         double minspeed = hdop * 2;    // Use as basis for ignoring spurious speeds
-         if (mph)
-            s /= 1.8;
-         if (hdop && speed > minspeed)
-            sprintf (temp, "%4.1lf", s);
-         else
-            strcpy (temp, "--.-");
-         int x = oled_text (5, 0, 13, temp);
-         oled_text (-1, x, 13, mph ? "mph" : "km/h");
-         if (hdop && speed > minspeed)
-            sprintf (temp, "%3.0f", course);
-         else
-            strcpy (temp, "---");
-         x = oled_text (-1, x, 13 + 8, temp);
-         oled_text (0, x, 13 + 8 + 5, "o");
-         oled_unlock ();
       }
+      y -= 10;
+      sprintf (temp, "Fix: %2d sat%s %4s %s", sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None",
+               fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ");
+      oled_text (1, 0, y, temp);
+      y -= 3;                   // Line
+      y -= 10;
+      if (fixmode > 1)
+         sprintf (temp, "Lat: %11.6lf   DOP", lat);
+      else
+         sprintf (temp, "%21s", "");
+      oled_text (-1, 0, y, temp);
+      y -= 10;
+      if (fixmode > 1)
+         sprintf (temp, "Lon: %11.6lf %5.1fm", lon, hdop);
+      else
+         sprintf (temp, "%21s", "");
+      oled_text (-1, 0, y, temp);
+      y -= 10;
+      if (fixmode >= 3)
+         sprintf (temp, "Alt: %6.1lfm     %5.1fm", alt, vdop);
+      else
+         sprintf (temp, "%21s", "");
+      oled_text (-1, 0, y, temp);
+      double s = speed;
+      double minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
+      if (mph)
+         s /= 1.8;
+      if (hdop && speed > minspeed)
+         sprintf (temp, "%4.1lf", s);
+      else
+         strcpy (temp, "--.-");
+      int x = oled_text (5, 0, 13, temp);
+      oled_text (-1, x, 13, mph ? "mph" : "km/h");
+      if (hdop && speed > minspeed)
+         sprintf (temp, "%3.0f", course);
+      else
+         strcpy (temp, "---");
+      x = oled_text (-1, x, 13 + 8, temp);
+      oled_text (0, x, 13 + 8 + 5, "o");
+      oled_unlock ();
    }
 }
 
 void
 app_main ()
 {
+   cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
    revk_init (&app_command);
 #define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
@@ -256,7 +294,7 @@ app_main ()
    }
    // Init UART
    uart_config_t uart_config = {
-      .baud_rate = 9600,
+      .baud_rate = gpsbaud,     // $PMT251,baud to change rate used
       .data_bits = UART_DATA_8_BITS,
       .parity = UART_PARITY_DISABLE,
       .stop_bits = UART_STOP_BITS_1,
@@ -323,7 +361,7 @@ app_main ()
                if (p[1] == 'G')
                   nmea ((char *) p);
                else
-                  revk_info (TAG, "Rx %s", p);
+                  revk_info ("Rx", "%s", p);    // Other packet
             }
          } else if (l > p)
             revk_error (TAG, "[%.*s]", l - p, p);
