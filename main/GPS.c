@@ -14,17 +14,17 @@ static const char TAG[] = "GPS";
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
 	b(oledflip,Y)	\
-	u8(gpspps,34)	\
-	u8(gpsuart,1)	\
-	u8(gpsrx,33)	\
-	u8(gpstx,32)	\
-	u8(gpsfix,25)	\
-	u8(gpsen,26)	\
+	s8(gpspps,34)	\
+	s8(gpsuart,1)	\
+	s8(gpsrx,33)	\
+	s8(gpstx,32)	\
+	s8(gpsfix,25)	\
+	s8(gpsen,26)	\
 	b(mph,Y)	\
 
 #define u32(n,d)	uint32_t n;
 #define s8(n,d)	int8_t n;
-#define u8(n,d)	int8_t n;
+#define u8(n,d)	uint8_t n;
 #define b(n,d) uint8_t n;
 #define s(n,d) char * n;
 settings
@@ -151,7 +151,7 @@ display_task (void *p)
          if (mph)
             s /= 1.8;
          sprintf (temp, "%4.1lf", s);
-         int x = oled_text (5, 2, 0, temp);
+         int x = oled_text (5, 0, 2, temp);
          oled_text (-1, x, 2, mph ? "mph" : "km/h");
          oled_unlock ();
       }
