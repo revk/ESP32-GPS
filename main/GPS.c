@@ -13,17 +13,18 @@ static const char TAG[] = "GPS";
 	s8(oledscl,14)	\
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
-	u8(gpspps,34)	\
-	u8(gpsuart,1)	\
-	u8(gpsrx,33)	\
-	u8(gpstx,32)	\
-	u8(gpsfix,25)	\
-	u8(gpsen,26)	\
 	b(oledflip,Y)	\
+	s8(gpspps,34)	\
+	s8(gpsuart,1)	\
+	s8(gpsrx,33)	\
+	s8(gpstx,32)	\
+	s8(gpsfix,25)	\
+	s8(gpsen,26)	\
+	b(mph,Y)	\
 
 #define u32(n,d)	uint32_t n;
 #define s8(n,d)	int8_t n;
-#define u8(n,d)	int8_t n;
+#define u8(n,d)	uint8_t n;
 #define b(n,d) uint8_t n;
 #define s(n,d) char * n;
 settings
@@ -76,7 +77,9 @@ nmea (char *s)
       if (strlen (f[2]) > 2)
          lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtod (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
       if (strlen (f[4]) > 3)
-         lon = ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtod (f[4] + 3, NULL) / 60) * (f[5][0] == 'E' ? 1 : -1);
+         lon =
+            ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtod (f[4] + 3, NULL) / 60) * (f[5][0] ==
+                                                                                                             'E' ? 1 : -1);
       sats = atoi (f[7]);
       hdop = strtod (f[8], NULL);
       alt = strtod (f[9], NULL);
@@ -99,11 +102,10 @@ nmea (char *s)
             v.tv_usec = atoi (f[1] + 7) * 1000;
          v.tv_sec = mktime (&t);
          settimeofday (&v, NULL);
-	 revk_info(TAG,"%d %d %d %d %d %d",t.tm_year,t.tm_mon,t.tm_mday,t.tm_hour,t.tm_min,t.tm_sec);
       }
       return;
    }
-   if (!strncmp (f[0], "GPRMC", 5) && n >= 10)
+   if (!strncmp (f[0], "GPVTG", 5) && n >= 10)
    {
       speed = strtod (f[7], NULL);
       return;
@@ -123,14 +125,13 @@ display_task (void *p)
          char temp[100];
          int y = CONFIG_OLED_HEIGHT;
          {
-            time_t now = time (0);
+            time_t now = time (0) + 1;
             struct tm nowt;
             localtime_r (&now, &nowt);
             if (nowt.tm_year > 100)
             {
-               y -= 10;
                strftime (temp, sizeof (temp), "%F\004%T %Z", &nowt);
-               oled_text (1, 0, y, temp);
+               oled_text (1, 0, 0, temp);
             }
          }
          y -= 10;
@@ -145,9 +146,12 @@ display_task (void *p)
          y -= 10;
          sprintf (temp, "Alt: %6.2lfm   ", alt);
          oled_text (-1, 0, y, temp);
-         y -= 10;
-         sprintf (temp, "Speed: %6.2lfkm/h   ", speed);
-         oled_text (-1, 0, y, temp);
+         double s = speed;
+         if (mph)
+            s /= 1.8;
+         sprintf (temp, "%4.1lf", s);
+         int x = oled_text (5, 0, 11, temp);
+         oled_text (-1, x, 11, mph ? "mph" : "km/h");
          oled_unlock ();
       }
    }
@@ -170,6 +174,7 @@ app_main ()
 #undef s
       if (oledsda >= 0 && oledscl >= 0)
       oled_start (1, oledaddress, oledscl, oledsda, oledflip);
+   oled_set_contrast (oledcontrast);
    // Init UART
    uart_config_t uart_config = {
       .baud_rate = 9600,
