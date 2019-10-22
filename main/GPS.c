@@ -189,7 +189,7 @@ display_task (void *p)
             strcpy (temp, "--.-");
          int x = oled_text (5, 0, 13, temp);
          oled_text (-1, x, 13, mph ? "mph" : "km/h");
-         if (speed >= 1)
+         if (hdop && speed > hdop)
             sprintf (temp, "%3.0f", course);
          else
             strcpy (temp, "---");
