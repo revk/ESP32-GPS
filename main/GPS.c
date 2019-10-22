@@ -183,8 +183,8 @@ display_task (void *p)
          double s = speed;
          if (mph)
             s /= 1.8;
-         if (speed >= 1)
-            sprintf (temp, "%4.1lf", s);
+         if (hdop && speed > hdop)
+            sprintf (temp, "%4.1lf", s);        // Use HDOP as basis for low speed inaccuracy
          else
             strcpy (temp, "--.-");
          int x = oled_text (5, 0, 13, temp);
