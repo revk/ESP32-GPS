@@ -469,7 +469,6 @@ display_task (void *p)
       } else
          sleep (1);
       oled_lock ();
-      char temp[100];
       int y = CONFIG_OLED_HEIGHT,
          x = 0;
       time_t now = time (0) + 1;
@@ -477,33 +476,38 @@ display_task (void *p)
       localtime_r (&now, &t);
       if (t.tm_year > 100)
       {
+         char temp[30];
          strftime (temp, sizeof (temp), "%F\004%T %Z", &t);
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      sprintf (temp, "Fix:%s %2d sat%s %4s", fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ",
-               sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None");
-      oled_text (1, 0, y, temp);
+      oled_text (1, 0, y, "Fix:%s %2d sat%s %4s", fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ",
+                 sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None");
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
-         sprintf (temp, "Lat: %11.6lf", lat);
+         oled_text (1, 0, y, "Lat: %11.6lf", lat);
       else
-         sprintf (temp, "%21s", "");
-      oled_text (1, 0, y, temp);
-      oled_text(1,CONFIG_OLED_WIDTH-3*6,y,"DOP");
+         oled_text (1, 0, y, "%16s", "");
+      oled_text (1, CONFIG_OLED_WIDTH - 3 * 6, y, fixmode > 1 ? "DOP" : "   ");
       y -= 8;
       if (fixmode > 1)
-         sprintf (temp, "Lon: %11.6lf %5.1fm", lon, hdop);
+         oled_text (1, 0, y, "Lon: %11.6lf", lon);
       else
-         sprintf (temp, "%21s", "");
-      oled_text (1, 0, y, temp);
+         oled_text (1, 0, y, "%16s", "");
+      if (fixmode > 1)
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", hdop);
+      else
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
       y -= 8;
       if (fixmode >= 3)
-         sprintf (temp, "Alt: %6.1lfm     %5.1fm", alt, vdop);
+         oled_text (1, 0, y, "Alt: %6.1lfm", alt);
       else
-         sprintf (temp, "%21s", "");
-      oled_text (1, 0, y, temp);
+         oled_text (1, 0, y, "%16s", "");
+      if (fixmode > 1)
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", vdop);
+      else
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
       y -= 3;                   // Line
       // Sun
       y -= 22;
@@ -537,28 +541,21 @@ display_task (void *p)
          x = oled_text (1, x, y, "   ");
       } else if (o / 3600 < 1000)
       {                         // H:MM:SS
-         sprintf (temp, "%3d", o / 3600);
-         x = oled_text (3, x, y, temp);
-         sprintf (temp, ":%02d", o / 60 % 60);
-         x = oled_text (2, x, y, temp);
-         sprintf (temp, ":%02d", o % 60);
-         x = oled_text (1, x, y, temp);
+         x = oled_text (3, x, y, "%3d", o / 3600);
+         x = oled_text (2, x, y, ":%02d", o / 60 % 60);
+         x = oled_text (1, x, y, ":%02d", o % 60);
       } else
       {                         // D HH:MM
-         sprintf (temp, "%3d", o / 86400);
-         x = oled_text (3, x, y, temp);
-         sprintf (temp, "\002%02d", o / 3600 % 24);
-         x = oled_text (2, x, y, temp);
-         sprintf (temp, ":%02d", o / 60 % 60);
-         x = oled_text (1, x, y, temp);
+         x = oled_text (3, x, y, "%3d", o / 86400);
+         x = oled_text (2, x, y, "\002%02d", o / 3600 % 24);
+         x = oled_text (1, x, y, ":%02d", o / 60 % 60);
       }
       // Sun angle
       x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
       if (fixmode > 1)
-         sprintf (temp, "%+3.0lf", sunalt);
+         x = oled_text (1, x, y + 14, "%+3.0lf", sunalt);
       else
-         strcat (temp, "   ");
-      x = oled_text (1, x, y + 14, temp);
+         x = oled_text (1, x, y + 14, "   ");
       x = oled_text (0, x, y + 17, "o");
       y -= 3;                   // Line
 #if 0                           // Show time
@@ -568,26 +565,25 @@ display_task (void *p)
       oled_text (1, 0, y, temp);
 #endif
       // Speed
+      y = 20;
       double s = speed;
       double minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
       if (mph)
          s /= 1.609344;         // miles
       if (speed >= 999)
-         strcpy (temp, "\002---");
+         x = oled_text (5, 0, y, "\002---");
       else if (speed >= 99.9)
-         sprintf (temp, "\002%3.0lf", s);
+         x = oled_text (5, 0, y, "\002%3.0lf", s);
       else if (hdop && speed > minspeed)
-         sprintf (temp, "%4.1lf", s);
+         x = oled_text (5, 0, y, "%4.1lf", s);
       else
-         strcpy (temp, " 0.0");
-      x = oled_text (5, 0, 13, temp);
-      oled_text (-1, x, 13, mph ? "mph" : "km/h");
+         x = oled_text (5, 0, y, " 0.0");
+      oled_text (-1, x, y + 2, mph ? "mph" : "km/h");
       if (hdop && speed > minspeed && speed <= 99.9)
-         sprintf (temp, "%3.0f", course);
+         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "%3.0f", course);
       else
-         strcpy (temp, "---");
-      x = oled_text (-1, x, 13 + 8, temp);
-      oled_text (0, x, 13 + 8 + 5, "o");
+         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "---");
+      oled_text (0, x, y + 24 + 3, "o");
       oled_unlock ();
    }
 }
