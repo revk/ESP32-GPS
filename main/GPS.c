@@ -539,6 +539,13 @@ display_task (void *p)
          o = set - now;
       }
       x = 22;
+      if(fixmode<=1)
+      {
+         x = oled_text (3, x, y, "   ");
+         x = oled_text (2, x, y, "   ");
+         x = oled_text (1, x, y, "   ");
+      }
+      else
       if (o / 3600 < 1000)
       {                         // H:MM:SS
          sprintf (temp, "%3d", o / 3600);
