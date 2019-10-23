@@ -545,7 +545,7 @@ display_task (void *p)
       {                         // D HH:MM
          sprintf (temp, "%3d", o / 86400);
          x = oled_text (3, x, y, temp);
-         sprintf (temp, "\003%02d", o / 3600 % 24);
+         sprintf (temp, "\002%02d", o / 3600 % 24);
          x = oled_text (2, x, y, temp);
          sprintf (temp, ":%02d", o / 60 % 60);
          x = oled_text (1, x, y, temp);
@@ -562,8 +562,10 @@ display_task (void *p)
       double minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
       if (mph)
          s /= 1.609344;         // miles
-      if (speed >= 99.9)
-         strcpy (temp, "--.-");
+      if (speed >= 999)
+         strcpy (temp, "\002---");
+      else if (speed >= 99.9)
+         sprintf (temp, "\002%3.0lf", s);
       else if (hdop && speed > minspeed)
          sprintf (temp, "%4.1lf", s);
       else
