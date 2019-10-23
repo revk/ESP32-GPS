@@ -22,7 +22,8 @@ static const char TAG[] = "GPS";
 	s8(gpstx,32)	\
 	s8(gpsfix,25)	\
 	s8(gpsen,26)	\
-	b(mph,Y)	\
+	u8(sun,0)	\
+	b (mph, Y)	\
 
 #define u32(n,d)	uint32_t n;
 #define s8(n,d)	int8_t n;
@@ -55,6 +56,9 @@ int timeforce = 0;
 
 static SemaphoreHandle_t cmd_mutex = NULL;
 
+#include "rise.h"
+#include "set.h"
+
 time_t sun_find_crossing (time_t start_time, double latitude, double longitude, double wanted_altitude);
 void sun_position (double t, double latitude, double longitude, double *altitudep, double *azimuthp);
 
@@ -71,6 +75,11 @@ void sun_position (double t, double latitude, double longitude, double *altitude
 #define MEAN_OBLIQUITY_K         -6.28318530718e-09
 
 #define MAX_ERROR                0.0000001
+
+#define SUN_SET                         (-50.0/60.0)
+#define SUN_CIVIL_TWILIGHT              (-6.0)
+#define SUN_NAUTICAL_TWILIGHT           (-12.0)
+#define SUN_ASTRONOMICAL_TWILIGHT       (-18.0)
 
 time_t
 sun_rise (int y, int m, int d, double latitude, double longitude, double sun_altitude)
@@ -96,12 +105,15 @@ sun_find_crossing (time_t start_time, double latitude, double longitude, double 
      last_altitude,
      error;
    time_t result;
+   int try = 10;
 
    last_t = (double) start_time;
    sun_position (last_t, latitude, longitude, &last_altitude, NULL);
    t = last_t + 1;
    do
    {
+      if (!try--)
+         return 0;              // Not found
       sun_position (t, latitude, longitude, &altitude, NULL);
       error = altitude - wanted_altitude;
       result = (time_t) (0.5 + t);
@@ -111,7 +123,6 @@ sun_find_crossing (time_t start_time, double latitude, double longitude, double 
       last_altitude = altitude;
       t = new_t;
    } while (fabs (error) > MAX_ERROR);
-
    return result;
 }
 
@@ -271,6 +282,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
          t.tm_hour = H;
          t.tm_min = M;
          t.tm_sec = S;
+         t.tm_isdst = -1;
          struct timeval v = { };
          v.tv_sec = mktime (&t);
          settimeofday (&v, NULL);
@@ -465,49 +477,98 @@ display_task (void *p)
          sleep (1);
       oled_lock ();
       char temp[100];
-      int y = CONFIG_OLED_HEIGHT;
+      int y = CONFIG_OLED_HEIGHT,
+         x = 0;
+      time_t now = time (0) + 1;
+      struct tm t;
+      localtime_r (&now, &t);
+      if (t.tm_year > 100)
       {
-         time_t now = time (0) + 1;
-         struct tm nowt;
-         localtime_r (&now, &nowt);
-         if (nowt.tm_year > 100)
-         {
-            strftime (temp, sizeof (temp), "%F\004%T %Z", &nowt);
-            oled_text (1, 0, 0, temp);
-         }
+         strftime (temp, sizeof (temp), "%F\004%T %Z", &t);
+         oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      sprintf (temp, "Fix: %2d sat%s %4s %s", sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None",
-               fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ");
+      sprintf (temp, "Fix:%s %2d sat%s %4s", fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ",
+               sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None");
       oled_text (1, 0, y, temp);
       y -= 3;                   // Line
-      y -= 10;
+      y -= 8;
       if (fixmode > 1)
          sprintf (temp, "Lat: %11.6lf   DOP", lat);
       else
          sprintf (temp, "%21s", "");
-      oled_text (-1, 0, y, temp);
-      y -= 10;
+      oled_text (1, 0, y, temp);
+      y -= 8;
       if (fixmode > 1)
          sprintf (temp, "Lon: %11.6lf %5.1fm", lon, hdop);
       else
          sprintf (temp, "%21s", "");
-      oled_text (-1, 0, y, temp);
-      y -= 10;
+      oled_text (1, 0, y, temp);
+      y -= 8;
       if (fixmode >= 3)
          sprintf (temp, "Alt: %6.1lfm     %5.1fm", alt, vdop);
       else
          sprintf (temp, "%21s", "");
-      oled_text (-1, 0, y, temp);
+      oled_text (1, 0, y, temp);
+      y -= 3;                   // Line
+      // Sun
+      y -= 22;
+      int o = 0;
+      time_t rise,
+        set;
+      do
+         rise = sun_rise (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
+      while (rise <= now && o < 200);
+      o = 0;
+      do
+         set = sun_set (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
+      while (set <= now && o < 200);
+      if (rise < set)
+      {
+         oled_icon (0, y, riseicon, 22, 21);
+         o = rise - now;
+      } else
+      {
+         oled_icon (0, y, seticon, 22, 21);
+         o = set - now;
+      }
+      x = 22;
+      if (o / 3600 < 1000)
+      {                         // H:MM:SS
+         sprintf (temp, "%3d", o / 3600);
+         x = oled_text (3, x, y, temp);
+         sprintf (temp, ":%02d", o / 60 % 60);
+         x = oled_text (2, x, y, temp);
+         sprintf (temp, ":%02d", o % 60);
+         x = oled_text (1, x, y, temp);
+      } else
+      {                         // D HH:MM
+         sprintf (temp, "%3d", o / 86400);
+         x = oled_text (3, x, y, temp);
+         sprintf (temp, "\003%02d", o / 3600 % 24);
+         x = oled_text (2, x, y, temp);
+         sprintf (temp, ":%02d", o / 60 % 60);
+         x = oled_text (1, x, y, temp);
+      }
+      y -= 3;                   // Line
+#if 0 // Show time
+      y -= 8;
+      localtime_r (&set, &t);
+      strftime (temp, sizeof (temp), "%F\004%T %Z", &t);
+      oled_text (1, 0, y, temp);
+#endif
+      // Speed
       double s = speed;
       double minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
       if (mph)
          s /= 1.609344;         // miles
-      if (hdop && speed > minspeed && speed <= 99.9)
+      if (speed >= 99.9)
+         strcpy (temp, "--.-");
+      else if (hdop && speed > minspeed)
          sprintf (temp, "%4.1lf", s);
       else
-         strcpy (temp, "--.-");
-      int x = oled_text (5, 0, 13, temp);
+         strcpy (temp, " 0.0");
+      x = oled_text (5, 0, 13, temp);
       oled_text (-1, x, 13, mph ? "mph" : "km/h");
       if (hdop && speed > minspeed && speed <= 99.9)
          sprintf (temp, "%3.0f", course);
@@ -541,6 +602,8 @@ app_main ()
    for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
    {
       oled_pixel (x, CONFIG_OLED_HEIGHT - 12, 4);
+      oled_pixel (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
+      oled_pixel (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
       oled_pixel (x, 8, 4);
    }
    // Init UART
