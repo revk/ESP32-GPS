@@ -256,6 +256,11 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       oled_set_contrast (atoi ((char *) value));
       return "";                // OK
    }
+   if (!strcmp (tag, "wifi"))
+   { // WiFi connected, but not need for SNTP as we have GPS
+	   sntp_stop();
+	   return "";
+   }
    if (!strcmp (tag, "connect") || !strcmp (tag, "status"))
    {
       gpscmd ("$PMTK183");      // Log status
@@ -652,7 +657,6 @@ app_main ()
       {
          gpscmd ("$PMTK185,0"); // Start log
          started = 1;
-	 sntp_stop ();
       }
       uint8_t *e = p + l;
       p = buf;
