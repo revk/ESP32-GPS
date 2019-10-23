@@ -48,8 +48,176 @@ double course = 0;
 int sats = 0;
 int fix = 0;
 int fixmode = 0;
+int lonforce = 0;
+int latforce = 0;
+int altforce = 0;
+int timeforce = 0;
 
 static SemaphoreHandle_t cmd_mutex = NULL;
+
+time_t sun_find_crossing (time_t start_time, double latitude, double longitude, double wanted_altitude);
+void sun_position (double t, double latitude, double longitude, double *altitudep, double *azimuthp);
+
+#define DEGS_PER_RAD             (180 / M_PI)
+#define SECS_PER_DAY             86400
+
+#define MEAN_ANOMOLY_C           6.24005822136
+#define MEAN_ANOMOLY_K           0.01720196999
+#define MEAN_LONGITUDE_C         4.89493296685
+#define MEAN_LONGITUDE_K         0.01720279169
+#define LAMBDA_K1                0.03342305517
+#define LAMBDA_K2                0.00034906585
+#define MEAN_OBLIQUITY_C         0.40908772337
+#define MEAN_OBLIQUITY_K         -6.28318530718e-09
+
+#define MAX_ERROR                0.0000001
+
+time_t
+sun_rise (int y, int m, int d, double latitude, double longitude, double sun_altitude)
+{
+ struct tm tm = { tm_mon: m - 1, tm_year: y - 1900, tm_mday: d, tm_hour:6 - longitude / 15 };
+   return sun_find_crossing (mktime (&tm), latitude, longitude, sun_altitude);
+}
+
+time_t
+sun_set (int y, int m, int d, double latitude, double longitude, double sun_altitude)
+{
+ struct tm tm = { tm_mon: m - 1, tm_year: y - 1900, tm_mday: d, tm_hour:18 - longitude / 15 };
+   return sun_find_crossing (mktime (&tm), latitude, longitude, sun_altitude);
+}
+
+time_t
+sun_find_crossing (time_t start_time, double latitude, double longitude, double wanted_altitude)
+{
+   double t,
+     last_t,
+     new_t,
+     altitude,
+     last_altitude,
+     error;
+   time_t result;
+
+   last_t = (double) start_time;
+   sun_position (last_t, latitude, longitude, &last_altitude, NULL);
+   t = last_t + 1;
+   do
+   {
+      sun_position (t, latitude, longitude, &altitude, NULL);
+      error = altitude - wanted_altitude;
+      result = (time_t) (0.5 + t);
+
+      new_t = t - error * (t - last_t) / (altitude - last_altitude);
+      last_t = t;
+      last_altitude = altitude;
+      t = new_t;
+   } while (fabs (error) > MAX_ERROR);
+
+   return result;
+}
+
+void
+sun_position (double t, double latitude, double longitude, double *altitudep, double *azimuthp)
+{
+   struct tm tm;
+   time_t j2000_epoch;
+
+   double latitude_offset;      // Site latitude offset angle (NORTH = +ve)
+   double longitude_offset;     // Site longitude offset angle (EAST = +ve)
+   double j2000_days;           // Time/date from J2000.0 epoch (Noon on 1/1/2000)
+   double clock_angle;          // Clock time as an angle
+   double mean_anomoly;         // Mean anomoly angle
+   double mean_longitude;       // Mean longitude angle
+   double lambda;               // Apparent longitude angle (lambda)
+   double mean_obliquity;       // Mean obliquity angle
+   double right_ascension;      // Right ascension angle
+   double declination;          // Declination angle
+   double eqt;                  // Equation of time angle
+   double hour_angle;           // Hour angle (noon = 0, +ve = afternoon)
+   double altitude;
+   double azimuth;
+
+   latitude_offset = latitude / DEGS_PER_RAD;
+   longitude_offset = longitude / DEGS_PER_RAD;
+
+//   printf("lat %lf, long %lf\n", latitude_offset * DEGS_PER_RAD, longitude_offset * DEGS_PER_RAD);
+
+   // Calculate clock angle based on UTC unixtime of user supplied time
+   clock_angle = 2 * M_PI * fmod (t, SECS_PER_DAY) / SECS_PER_DAY;
+
+   // Convert localtime 'J2000.0 epoch' (noon on 1/1/2000) to unixtime
+   tm.tm_sec = 0;
+   tm.tm_min = 0;
+   tm.tm_hour = 12;
+   tm.tm_mday = 1;
+   tm.tm_mon = 0;
+   tm.tm_year = 100;
+   tm.tm_wday = tm.tm_yday = tm.tm_isdst = 0;
+   j2000_epoch = mktime (&tm);
+
+   j2000_days = (double) (t - j2000_epoch) / SECS_PER_DAY;
+
+   // Calculate mean anomoly angle (g)
+   // [1] g = g_c + g_k * j2000_days
+   mean_anomoly = MEAN_ANOMOLY_C + MEAN_ANOMOLY_K * j2000_days;
+
+   // Calculate mean longitude angle (q)
+   // [1] q = q_c + q_k * j2000_days
+   mean_longitude = MEAN_LONGITUDE_C + MEAN_LONGITUDE_K * j2000_days;
+
+   // Calculate apparent longitude angle (lambda)
+   // [1] lambda = q + l_k1 * sin(g) + l_k2 * sin(2 * g)
+   lambda = mean_longitude + LAMBDA_K1 * sin (mean_anomoly) + LAMBDA_K2 * sin (2 * mean_anomoly);
+
+   // Calculate mean obliquity angle (e)     No trim - always ~23.5deg
+   // [1] e = e_c + e_k * j2000_days
+   mean_obliquity = MEAN_OBLIQUITY_C + MEAN_OBLIQUITY_K * j2000_days;
+
+   // Calculate right ascension angle (RA)   No trim - atan2 does trimming
+   // [1] RA = atan2(cos(e) * sin(lambda), cos(lambda))
+   right_ascension = atan2 (cos (mean_obliquity) * sin (lambda), cos (lambda));
+
+   // Calculate declination angle (d)        No trim - asin does trimming
+   // [1] d = asin(sin(e) * sin(lambda))
+   declination = asin (sin (mean_obliquity) * sin (lambda));
+
+   // Calculate equation of time angle (eqt)
+   // [1] eqt = q - RA
+   eqt = mean_longitude - right_ascension;
+
+   // Calculate sun hour angle (h)
+   // h = clock_angle + long_o + eqt - PI
+   hour_angle = clock_angle + longitude_offset + eqt - M_PI;
+
+   // Calculate sun altitude angle
+   // [2] alt = asin(cos(lat_o) * cos(d) * cos(h) + sin(lat_o) * sin(d))
+   altitude =
+      DEGS_PER_RAD * asin (cos (latitude_offset) * cos (declination) * cos (hour_angle) +
+                           sin (latitude_offset) * sin (declination));
+
+   // Calculate sun azimuth angle
+   // [2] az = atan2(sin(h), cos(h) * sin(lat_o) - tan(d) * cos(lat_o))
+   azimuth =
+      DEGS_PER_RAD * atan2 (sin (hour_angle), cos (hour_angle) * sin (latitude_offset) - tan (declination) * cos (latitude_offset));
+
+   if (altitudep)
+      *altitudep = altitude;
+   if (azimuthp)
+      *azimuthp = azimuth;
+}
+
+/***************************************************************************/
+/* References for equations:-
+
+[1] U.S. Naval Observatory Astronomical Applications Department
+    http://aa.usno.navy.mil/AA/faq/docs/SunApprox.html
+
+[2] Astronomical Formulae for Calculators, Jean Meeus, Page 44
+
+[3] Ben Mack, 'Tate - louvre angle calcs take 3', 10/12/1999
+
+*/
+/***************************************************************************/
+
 
 void
 gpscmd (const void *s)
@@ -80,6 +248,66 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    {
       gpscmd ("$PMTK183");      // Log status
       // $PMTKLOG,Serial#, Type, Mode, Content, Interval, Distance, Speed, Status, Number, Percent*Checksum
+      return "";
+   }
+   if (!strcmp (tag, "time"))
+   {
+      if (!len)
+         timeforce = 0;
+      else
+      {
+         timeforce = 1;
+         struct tm t = { };
+         int y = 0,
+            m = 0,
+            d = 0,
+            H = 0,
+            M = 0,
+            S = 0;
+         sscanf ((char *) value, "%d-%d-%d %d:%d:%d", &y, &m, &d, &H, &M, &S);
+         t.tm_year = y - 1900;
+         t.tm_mon = m - 1;
+         t.tm_mday = d;
+         t.tm_hour = H;
+         t.tm_min = M;
+         t.tm_sec = S;
+         struct timeval v = { };
+         v.tv_sec = mktime (&t);
+         settimeofday (&v, NULL);
+      }
+      return "";
+   }
+   if (!strcmp (tag, "lat"))
+   {
+      if (!len)
+         latforce = 0;
+      else
+      {
+         latforce = 1;
+         lat = strtod ((char *) value, NULL);
+      }
+      return "";
+   }
+   if (!strcmp (tag, "lon"))
+   {
+      if (!len)
+         lonforce = 0;
+      else
+      {
+         lonforce = 1;
+         lon = strtod ((char *) value, NULL);
+      }
+      return "";
+   }
+   if (!strcmp (tag, "alt"))
+   {
+      if (!len)
+         altforce = 0;
+      else
+      {
+         altforce = 1;
+         alt = strtod ((char *) value, NULL);
+      }
       return "";
    }
    if (!strcmp (tag, "send") && len)
@@ -172,21 +400,22 @@ nmea (char *s)
       return;
    if (!strncmp (f[0], "GPGGA", 5) && n >= 14)
    {                            // Fix
-      if (strlen (f[2]) > 2)
+      if (strlen (f[2]) > 2 && !latforce)
          lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtod (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
-      if (strlen (f[4]) > 3)
+      if (strlen (f[4]) > 3 && !lonforce)
          lon =
             ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtod (f[4] + 3, NULL) / 60) * (f[5][0] ==
                                                                                                              'E' ? 1 : -1);
       fix = atoi (f[6]);
       sats = atoi (f[7]);
-      alt = strtod (f[9], NULL);
+      if (!altforce)
+         alt = strtod (f[9], NULL);
       gsep = strtod (f[10], NULL);
       return;
    }
    if (!strncmp (f[0], "GPRMC", 5) && n >= 12)
    {
-      if (strlen (f[1]) >= 6 && strlen (f[9]) >= 6)
+      if (strlen (f[1]) >= 6 && strlen (f[9]) >= 6 && !timeforce)
       {
          struct tm t = { };
          t.tm_hour = (f[1][0] - '0') * 10 + f[1][1] - '0';
