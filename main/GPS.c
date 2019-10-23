@@ -7,6 +7,7 @@ static const char TAG[] = "GPS";
 #include <driver/uart.h>
 #include <math.h>
 #include "oled.h"
+#include "esp_sntp.h"
 
 #define settings	\
 	s8(oledsda,27)	\
@@ -650,8 +651,8 @@ app_main ()
       if (!started)
       {
          gpscmd ("$PMTK185,0"); // Start log
-         //gpscmd ("$PMTK301,2"); // WAAS
          started = 1;
+	 sntp_stop ();
       }
       uint8_t *e = p + l;
       p = buf;
