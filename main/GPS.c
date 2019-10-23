@@ -50,15 +50,20 @@ double course = 0;
 int sats = 0;
 int fix = 0;
 int fixmode = 0;
-int lonforce = 0;
-int latforce = 0;
-int altforce = 0;
-int timeforce = 0;
+char lonforce = 0;
+char latforce = 0;
+char altforce = 0;
+char timeforce = 0;
+char speedforce = 0;
+char courseforce = 0;
+char hdopforce = 0;
+char pdopforce = 0;
+char vdopforce = 0;
 
 static SemaphoreHandle_t cmd_mutex = NULL;
 
-#include "rise.h"
-#include "set.h"
+#include "day.h"
+#include "night.h"
 
 time_t sun_find_crossing (time_t start_time, double latitude, double longitude, double wanted_altitude);
 void sun_position (double t, double latitude, double longitude, double *altitudep, double *azimuthp);
@@ -257,9 +262,9 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       return "";                // OK
    }
    if (!strcmp (tag, "wifi"))
-   { // WiFi connected, but not need for SNTP as we have GPS
-	   sntp_stop();
-	   return "";
+   {                            // WiFi connected, but not need for SNTP as we have GPS
+      sntp_stop ();
+      return "";
    }
    if (!strcmp (tag, "connect") || !strcmp (tag, "status"))
    {
@@ -295,39 +300,16 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       }
       return "";
    }
-   if (!strcmp (tag, "lat"))
-   {
-      if (!len)
-         latforce = 0;
-      else
-      {
-         latforce = 1;
-         lat = strtod ((char *) value, NULL);
-      }
-      return "";
-   }
-   if (!strcmp (tag, "lon"))
-   {
-      if (!len)
-         lonforce = 0;
-      else
-      {
-         lonforce = 1;
-         lon = strtod ((char *) value, NULL);
-      }
-      return "";
-   }
-   if (!strcmp (tag, "alt"))
-   {
-      if (!len)
-         altforce = 0;
-      else
-      {
-         altforce = 1;
-         alt = strtod ((char *) value, NULL);
-      }
-      return "";
-   }
+#define force(x) if (!strcmp (tag, #x)) { if (!len) x##force = 0; else { x##force = 1; x = strtod ((char *) value, NULL); } return ""; }
+   force (lat);
+   force (lon);
+   force (alt);
+   force (course);
+   force (speed);
+   force (hdop);
+   force (pdop);
+   force (vdop);
+#undef force
    if (!strcmp (tag, "send") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
       gpscmd (value);
@@ -452,16 +434,21 @@ nmea (char *s)
    }
    if (!strncmp (f[0], "GPVTG", 5) && n >= 10)
    {
-      course = strtod (f[1], NULL);
-      speed = strtod (f[7], NULL);
+      if (!courseforce)
+         course = strtod (f[1], NULL);
+      if (!speedforce)
+         speed = strtod (f[7], NULL);
       return;
    }
    if (!strncmp (f[0], "GPGSA", 5) && n >= 18)
    {
       fixmode = atoi (f[2]);
-      pdop = strtod (f[15], NULL);
-      hdop = strtod (f[16], NULL);
-      vdop = strtod (f[17], NULL);
+      if (!pdopforce)
+         pdop = strtod (f[15], NULL);
+      if (!hdopforce)
+         hdop = strtod (f[16], NULL);
+      if (!vdopforce)
+         vdop = strtod (f[17], NULL);
       return;
    }
 }
@@ -519,6 +506,9 @@ display_task (void *p)
       y -= 3;                   // Line
       // Sun
       y -= 22;
+      double sunalt,
+        sunazi;
+      sun_position (now, lat, lon, &sunalt, &sunazi);
       int o = 0;
       time_t rise,
         set;
@@ -531,22 +521,20 @@ display_task (void *p)
       while (set <= now && o < 200);
       if (rise < set)
       {
-         oled_icon (0, y, riseicon, 22, 21);
+         oled_icon (0, y, night, 22, 21);
          o = rise - now;
       } else
       {
-         oled_icon (0, y, seticon, 22, 21);
+         oled_icon (0, y, day, 22, 21);
          o = set - now;
       }
       x = 22;
-      if(fixmode<=1)
+      if (fixmode <= 1)
       {
          x = oled_text (3, x, y, "   ");
          x = oled_text (2, x, y, "   ");
          x = oled_text (1, x, y, "   ");
-      }
-      else
-      if (o / 3600 < 1000)
+      } else if (o / 3600 < 1000)
       {                         // H:MM:SS
          sprintf (temp, "%3d", o / 3600);
          x = oled_text (3, x, y, temp);
@@ -563,8 +551,16 @@ display_task (void *p)
          sprintf (temp, ":%02d", o / 60 % 60);
          x = oled_text (1, x, y, temp);
       }
+      // Sun angle
+      x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
+      if (fixmode > 1)
+         sprintf (temp, "%+3.0lf", sunalt);
+      else
+         strcat (temp, "   ");
+      x = oled_text (1, x, y + 14, temp);
+      x = oled_text (0, x, y + 17, "o");
       y -= 3;                   // Line
-#if 0 // Show time
+#if 0                           // Show time
       y -= 8;
       localtime_r (&set, &t);
       strftime (temp, sizeof (temp), "%F\004%T %Z", &t);
