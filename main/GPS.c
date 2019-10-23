@@ -76,7 +76,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       oled_set_contrast (atoi ((char *) value));
       return "";                // OK
    }
-   if (!strcmp (tag, "connect"))
+   if (!strcmp (tag, "connect")||!strcmp(tag,"status"))
    {
       gpscmd ("$PMTK183");      // Log status
       // $PMTKLOG,Serial#, Type, Mode, Content, Interval, Distance, Speed, Status, Number, Percent*Checksum
@@ -138,7 +138,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "sleep"))
    {
-      gpscmd ("$PMTK291,7,0,10000,1");  // Low power mode
+      gpscmd ("$PMTK291,7,0,10000,1");  // Low power (maybe we need to drive EN pin?)
       return "";
    }
    if (!strcmp (tag, "version"))
