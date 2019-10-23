@@ -481,8 +481,8 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix:%s %2d sat%s %4s", fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ",
-                 sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None");
+      oled_text (1, 0, y, "Fix:%s %2d sat%s %6s", fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ",
+                 sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
@@ -578,7 +578,7 @@ display_task (void *p)
          x = oled_text (5, 0, y, "%4.1lf", s);
       else
          x = oled_text (5, 0, y, " 0.0");
-      oled_text (-1, x, y + 2, mph ? "mph" : "km/h");
+      oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, mph ? "mph" : "km/h");
       if (hdop && speed > minspeed && speed <= 99.9)
          x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "%3.0f", course);
       else
