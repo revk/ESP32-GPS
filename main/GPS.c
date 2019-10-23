@@ -76,7 +76,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       oled_set_contrast (atoi ((char *) value));
       return "";                // OK
    }
-   if (!strcmp (tag, "connect")||!strcmp(tag,"status"))
+   if (!strcmp (tag, "connect") || !strcmp (tag, "status"))
    {
       gpscmd ("$PMTK183");      // Log status
       // $PMTKLOG,Serial#, Type, Mode, Content, Interval, Distance, Speed, Status, Number, Percent*Checksum
@@ -273,14 +273,14 @@ display_task (void *p)
       double s = speed;
       double minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
       if (mph)
-         s /= 1.8;
-      if (hdop && speed > minspeed)
+         s /= 1.609344;         // miles
+      if (hdop && speed > minspeed && speed <= 99.9)
          sprintf (temp, "%4.1lf", s);
       else
          strcpy (temp, "--.-");
       int x = oled_text (5, 0, 13, temp);
       oled_text (-1, x, 13, mph ? "mph" : "km/h");
-      if (hdop && speed > minspeed)
+      if (hdop && speed > minspeed && speed <= 99.9)
          sprintf (temp, "%3.0f", course);
       else
          strcpy (temp, "---");
