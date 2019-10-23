@@ -487,10 +487,11 @@ display_task (void *p)
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
-         sprintf (temp, "Lat: %11.6lf   DOP", lat);
+         sprintf (temp, "Lat: %11.6lf", lat);
       else
          sprintf (temp, "%21s", "");
       oled_text (1, 0, y, temp);
+      oled_text(1,CONFIG_OLED_WIDTH-3*6,y,"DOP");
       y -= 8;
       if (fixmode > 1)
          sprintf (temp, "Lon: %11.6lf %5.1fm", lon, hdop);
