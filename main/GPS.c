@@ -311,7 +311,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    force (pdop);
    force (vdop);
 #undef force
-   if (!strcmp (tag, "send") && len)
+   if (!strcmp (tag, "tx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
       gpscmd (value);
       return "";
@@ -384,7 +384,7 @@ nmea (char *s)
    if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
       return;
    if (gpsdebug)
-      revk_info ("Rx", "%s", s);
+      revk_info ("rx", "%s", s);
    char *f[50];
    int n = 0;
    s++;
@@ -633,8 +633,6 @@ app_main ()
       revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
    else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
       revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
-   else
-      revk_info (TAG, "PN532 UART %d Tx %d Rx %d", gpsuart, gpstx, gpsrx);
    if (gpsen >= 0)
    {                            // Enable
       gpio_set_level (gpsen, 1);
@@ -688,7 +686,7 @@ app_main ()
                if (p[1] == 'G')
                   nmea ((char *) p);
                else
-                  revk_info ("Rx", "%s", p);    // Other packet
+                  revk_info ("rx", "%s", p);    // Other packet
             }
          } else if (l > p)
             revk_error (TAG, "[%.*s]", l - p, p);
