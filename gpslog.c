@@ -241,6 +241,7 @@ main (int argc, const char *argv[])
                   // 9-12 = Longitude
                   // 13-14 = Height
                   // 15 = Checksum
+                  sql_transaction (&sql);
                   unsigned char *p = l->data,
                      *e = l->data + l->ptr;
                   while (p + 16 <= e)
@@ -288,6 +289,11 @@ main (int argc, const char *argv[])
                                                  sqltable, l->tag, ts, fix, lat, lon, height));
                      }
                      p += 16;
+                  }
+                  if (!sql_commit ())
+                  {
+                     warnx ("%s commit failed", l->tag);
+                     l->lines = 0;
                   }
                   if (save)
                   {
