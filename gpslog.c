@@ -290,7 +290,7 @@ main (int argc, const char *argv[])
                      }
                      p += 16;
                   }
-                  if (!sql_commit (&sql))
+                  if (sql_commit (&sql))
                   {
                      warnx ("%s commit failed", l->tag);
                      l->lines = 0;
