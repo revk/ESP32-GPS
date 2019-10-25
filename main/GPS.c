@@ -532,16 +532,15 @@ display_task (void *p)
          do
             set = sun_set (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
          while (set <= now && o < 200);
-         if (rise < set)
+         if (rise > set)
          {
-            //oled_icon (0, y, night, 22, 21);
-            o = rise - now;
+            oled_icon (0, y, day, 22, 21);
+            o = set - now;
          } else
          {
-            //oled_icon (0, y, day, 22, 21);
-            o = set - now;
-         }
-         {                      // Moon
+            oled_icon (0, y, night, 22, 21);
+            o = rise - now;
+                               // Moon
 #define LUNY 2551442.8768992    // Seconds per lunar cycle
             int s = now - 1571001050;   // Seconds since reference full moon
             int m = ((double) s / LUNY);        // full moon count
@@ -550,17 +549,15 @@ display_task (void *p)
             if (phase < M_PI)
             {                   // dim on right (northern hemisphere)
                double q = 10.0 * cos (phase);
-               revk_info ("Left", "%lf", q);
                for (int d = -10; d <= 10; d++)
-                  for (int x = 11 + q * sqrt(1-(double)d/10.0*(double)d/10.0);x<21;x++)
-                     oled_set (x, y + 11 + d, oled_get(x,y+11+d)>>2);
+                  for (int x = 11 + q * sqrt (1 - (double)d / 10.0 * (double)d / 10.0); x < 21; x++)
+                     oled_set (x, y + 10 + d, oled_get (x, y + 10 + d) >> 3);
             } else
             {                   // dim on left (northern hemisphere)
                double q = -10.0 * cos (phase);
-               revk_info ("right", "%lf", q);
                for (int d = -10; d <= 10; d++)
-                  for (int x = 0; x<11 + q * sqrt(1-(double)d/10.0*(double)d/10.0);x++)
-                     oled_set (x, y + 11 + d, oled_get(x,y+11+d)>>2);
+                  for (int x = 0; x < 11 + q * sqrt (1 - (double) d / 10.0 * (double) d / 10.0); x++)
+                     oled_set (x, y + 10 + d, oled_get (x, y + 10 + d) >> 3);
             }
          }
          x = 22;
