@@ -534,12 +534,34 @@ display_task (void *p)
          while (set <= now && o < 200);
          if (rise < set)
          {
-            oled_icon (0, y, night, 22, 21);
+            //oled_icon (0, y, night, 22, 21);
             o = rise - now;
          } else
          {
-            oled_icon (0, y, day, 22, 21);
+            //oled_icon (0, y, day, 22, 21);
             o = set - now;
+         }
+         {                      // Moon
+#define LUNY 2551442.8768992    // Seconds per lunar cycle
+            int s = now - 1571001050;   // Seconds since reference full moon
+            int m = ((double) s / LUNY);        // full moon count
+            s -= (double) m *LUNY;      // seconds since full moon
+            double phase = (double) s * M_PI * 2 / LUNY;
+            if (phase < M_PI)
+            {                   // dim on right (northern hemisphere)
+               double q = 10.0 * cos (phase);
+               revk_info ("Left", "%lf", q);
+               for (int d = -10; d <= 10; d++)
+                  for (int x = 11 + q * sin ((double)d * M_PI / 20.0); x < 21; x++)
+                     oled_pixel (x, y + 11 + d, 0xF);
+            } else
+            {                   // dim on left (northern hemisphere)
+               double q = -10.0 * cos (phase);
+               revk_info ("right", "%lf", q);
+               for (int d = -10; d <= 10; d++)
+                  for (int x = 0; x < 11 + q * sin ((double) d * M_PI / 20.0); x++)
+                     oled_pixel (x, y + 11 + d, 0xF);
+            }
          }
          x = 22;
          if (o / 3600 < 1000)
