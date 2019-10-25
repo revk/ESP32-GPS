@@ -552,14 +552,14 @@ display_task (void *p)
                double q = 10.0 * cos (phase);
                revk_info ("Left", "%lf", q);
                for (int d = -10; d <= 10; d++)
-                  for (int x = 11 + q * sin ((double)d * M_PI / 20.0); x < 21; x++)
+                  for (int x = 11 + q * sqrt(1-(double)d/10.0*(double)d/10.0);x<21;x++)
                      oled_pixel (x, y + 11 + d, 0xF);
             } else
             {                   // dim on left (northern hemisphere)
                double q = -10.0 * cos (phase);
                revk_info ("right", "%lf", q);
                for (int d = -10; d <= 10; d++)
-                  for (int x = 0; x < 11 + q * sin ((double) d * M_PI / 20.0); x++)
+                  for (int x = 0; x<11 + q * sqrt(1-(double)d/10.0*(double)d/10.0);x++)
                      oled_pixel (x, y + 11 + d, 0xF);
             }
          }
