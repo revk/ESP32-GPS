@@ -510,7 +510,7 @@ display_task (void *p)
          oled_text (1, 0, y, "Alt: %6.1lfm", alt);
       else
          oled_text (1, 0, y, "%16s", "");
-      if (fixmode > 1)
+      if (fixmode >= 3)
          oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", vdop);
       else
          oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
