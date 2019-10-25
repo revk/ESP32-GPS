@@ -50,6 +50,7 @@ double course = 0;
 int sats = 0;
 int fix = 0;
 int fixmode = 0;
+char gotfix = 0;
 char lonforce = 0;
 char latforce = 0;
 char altforce = 0;
@@ -310,7 +311,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    force (pdop);
    force (vdop);
 #undef force
-   if (!strcmp (tag, "send") && len)
+   if (!strcmp (tag, "tx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
       gpscmd (value);
       return "";
@@ -383,7 +384,7 @@ nmea (char *s)
    if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
       return;
    if (gpsdebug)
-      revk_info ("Rx", "%s", s);
+      revk_info ("rx", "%s", s);
    char *f[50];
    int n = 0;
    s++;
@@ -400,12 +401,16 @@ nmea (char *s)
       return;
    if (!strncmp (f[0], "GPGGA", 5) && n >= 14)
    {                            // Fix
-      if (strlen (f[2]) > 2 && !latforce)
-         lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtod (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
-      if (strlen (f[4]) > 3 && !lonforce)
-         lon =
-            ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtod (f[4] + 3, NULL) / 60) * (f[5][0] ==
-                                                                                                             'E' ? 1 : -1);
+      if (strlen (f[2]) > 2 && strlen (f[4]) > 3)
+      {
+         if (!latforce)
+            lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtod (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
+         if (!lonforce)
+            lon =
+               ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtod (f[4] + 3, NULL) / 60) * (f[5][0] ==
+                                                                                                                'E' ? 1 : -1);
+         gotfix = 1;
+      }
       fix = atoi (f[6]);
       sats = atoi (f[7]);
       if (!altforce)
@@ -469,7 +474,6 @@ display_task (void *p)
       } else
          sleep (1);
       oled_lock ();
-      char temp[100];
       int y = CONFIG_OLED_HEIGHT,
          x = 0;
       time_t now = time (0) + 1;
@@ -477,89 +481,106 @@ display_task (void *p)
       localtime_r (&now, &t);
       if (t.tm_year > 100)
       {
+         char temp[30];
          strftime (temp, sizeof (temp), "%F\004%T %Z", &t);
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      sprintf (temp, "Fix:%s %2d sat%s %4s", fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ",
-               sats, sats == 1 ? " " : "s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "None");
-      oled_text (1, 0, y, temp);
+      oled_text (1, 0, y, "Fix:\002%s\004%2d\002sat%s", fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ", sats,
+                 sats == 1 ? " " : "s");
+      oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
-         sprintf (temp, "Lat: %11.6lf   DOP", lat);
+         oled_text (1, 0, y, "Lat: %11.6lf", lat);
       else
-         sprintf (temp, "%21s", "");
-      oled_text (1, 0, y, temp);
+         oled_text (1, 0, y, "%16s", "");
+      oled_text (1, CONFIG_OLED_WIDTH - 3 * 6, y, fixmode > 1 ? "DOP" : "   ");
       y -= 8;
       if (fixmode > 1)
-         sprintf (temp, "Lon: %11.6lf %5.1fm", lon, hdop);
+         oled_text (1, 0, y, "Lon: %11.6lf", lon);
       else
-         sprintf (temp, "%21s", "");
-      oled_text (1, 0, y, temp);
+         oled_text (1, 0, y, "%16s", "");
+      if (fixmode > 1)
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", hdop);
+      else
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
       y -= 8;
       if (fixmode >= 3)
-         sprintf (temp, "Alt: %6.1lfm     %5.1fm", alt, vdop);
+         oled_text (1, 0, y, "Alt: %6.1lfm", alt);
       else
-         sprintf (temp, "%21s", "");
-      oled_text (1, 0, y, temp);
-      y -= 3;                   // Line
-      // Sun
-      y -= 22;
-      double sunalt,
-        sunazi;
-      sun_position (now, lat, lon, &sunalt, &sunazi);
-      int o = 0;
-      time_t rise,
-        set;
-      do
-         rise = sun_rise (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
-      while (rise <= now && o < 200);
-      o = 0;
-      do
-         set = sun_set (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
-      while (set <= now && o < 200);
-      if (rise < set)
-      {
-         oled_icon (0, y, night, 22, 21);
-         o = rise - now;
-      } else
-      {
-         oled_icon (0, y, day, 22, 21);
-         o = set - now;
-      }
-      x = 22;
-      if (fixmode <= 1)
-      {
-         x = oled_text (3, x, y, "   ");
-         x = oled_text (2, x, y, "   ");
-         x = oled_text (1, x, y, "   ");
-      } else if (o / 3600 < 1000)
-      {                         // H:MM:SS
-         sprintf (temp, "%3d", o / 3600);
-         x = oled_text (3, x, y, temp);
-         sprintf (temp, ":%02d", o / 60 % 60);
-         x = oled_text (2, x, y, temp);
-         sprintf (temp, ":%02d", o % 60);
-         x = oled_text (1, x, y, temp);
-      } else
-      {                         // D HH:MM
-         sprintf (temp, "%3d", o / 86400);
-         x = oled_text (3, x, y, temp);
-         sprintf (temp, "\002%02d", o / 3600 % 24);
-         x = oled_text (2, x, y, temp);
-         sprintf (temp, ":%02d", o / 60 % 60);
-         x = oled_text (1, x, y, temp);
-      }
-      // Sun angle
-      x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
-      if (fixmode > 1)
-         sprintf (temp, "%+3.0lf", sunalt);
+         oled_text (1, 0, y, "%16s", "");
+      if (fixmode >= 3)
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", vdop);
       else
-         strcat (temp, "   ");
-      x = oled_text (1, x, y + 14, temp);
-      x = oled_text (0, x, y + 17, "o");
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
       y -= 3;                   // Line
+      if (gotfix)
+      {
+         // Sun
+         y -= 22;
+         double sunalt,
+           sunazi;
+         sun_position (now, lat, lon, &sunalt, &sunazi);
+         int o = 0;
+         time_t rise,
+           set;
+         do
+            rise = sun_rise (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
+         while (rise <= now && o < 200);
+         o = 0;
+         do
+            set = sun_set (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
+         while (set <= now && o < 200);
+         if (rise > set)
+         {
+            oled_icon (0, y, day, 22, 21);
+            o = set - now;
+         } else
+         {
+            oled_icon (0, y, night, 22, 21);
+            o = rise - now;
+                               // Moon
+#define LUNY 2551442.8768992    // Seconds per lunar cycle
+            int s = now - 1571001050;   // Seconds since reference full moon
+            int m = ((double) s / LUNY);        // full moon count
+            s -= (double) m *LUNY;      // seconds since full moon
+            double phase = (double) s * M_PI * 2 / LUNY;
+            if (phase < M_PI)
+            {                   // dim on right (northern hemisphere)
+               double q = 10.0 * cos (phase);
+               for (int d = -10; d <= 10; d++)
+                  for (int x = 11 + q * sqrt (1 - (double)d / 10.0 * (double)d / 10.0); x < 21; x++)
+                     oled_set (x, y + 10 + d, oled_get (x, y + 10 + d) >> 3);
+            } else
+            {                   // dim on left (northern hemisphere)
+               double q = -10.0 * cos (phase);
+               for (int d = -10; d <= 10; d++)
+                  for (int x = 0; x < 11 + q * sqrt (1 - (double) d / 10.0 * (double) d / 10.0); x++)
+                     oled_set (x, y + 10 + d, oled_get (x, y + 10 + d) >> 3);
+            }
+         }
+         x = 22;
+         if (o / 3600 < 1000)
+         {                      // H:MM:SS
+            x = oled_text (3, x, y, "%3d", o / 3600);
+            x = oled_text (2, x, y, ":%02d", o / 60 % 60);
+            x = oled_text (1, x, y, ":%02d", o % 60);
+         } else
+         {                      // D HH:MM
+            x = oled_text (3, x, y, "%3d", o / 86400);
+            x = oled_text (2, x, y, "\002%02d", o / 3600 % 24);
+            x = oled_text (1, x, y, ":%02d", o / 60 % 60);
+         }
+         // Sun angle
+         x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
+         if (fixmode > 1)
+            x = oled_text (1, x, y + 14, "%+3.0lf", sunalt);
+         else
+            x = oled_text (1, x, y + 14, "   ");
+         x = oled_text (0, x, y + 17, "o");
+         y -= 3;                // Line
+      }
 #if 0                           // Show time
       y -= 8;
       localtime_r (&set, &t);
@@ -567,26 +588,25 @@ display_task (void *p)
       oled_text (1, 0, y, temp);
 #endif
       // Speed
+      y = 20;
       double s = speed;
       double minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
       if (mph)
          s /= 1.609344;         // miles
       if (speed >= 999)
-         strcpy (temp, "\002---");
+         x = oled_text (5, 0, y, "\002---");
       else if (speed >= 99.9)
-         sprintf (temp, "\002%3.0lf", s);
+         x = oled_text (5, 0, y, "\002%3.0lf", s);
       else if (hdop && speed > minspeed)
-         sprintf (temp, "%4.1lf", s);
+         x = oled_text (5, 0, y, "%4.1lf", s);
       else
-         strcpy (temp, " 0.0");
-      x = oled_text (5, 0, 13, temp);
-      oled_text (-1, x, 13, mph ? "mph" : "km/h");
+         x = oled_text (5, 0, y, " 0.0");
+      oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", mph ? "mph" : "km/h");
       if (hdop && speed > minspeed && speed <= 99.9)
-         sprintf (temp, "%3.0f", course);
+         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "%3.0f", course);
       else
-         strcpy (temp, "---");
-      x = oled_text (-1, x, 13 + 8, temp);
-      oled_text (0, x, 13 + 8 + 5, "o");
+         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "---");
+      oled_text (0, x, y + 24 + 3, "o");
       oled_unlock ();
    }
 }
@@ -612,10 +632,10 @@ app_main ()
    oled_set_contrast (oledcontrast);
    for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
    {
-      oled_pixel (x, CONFIG_OLED_HEIGHT - 12, 4);
-      oled_pixel (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
-      oled_pixel (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
-      oled_pixel (x, 8, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
+      oled_set (x, 8, 4);
    }
    // Init UART
    uart_config_t uart_config = {
@@ -632,8 +652,6 @@ app_main ()
       revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
    else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
       revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
-   else
-      revk_info (TAG, "PN532 UART %d Tx %d Rx %d", gpsuart, gpstx, gpsrx);
    if (gpsen >= 0)
    {                            // Enable
       gpio_set_level (gpsen, 1);
@@ -651,7 +669,9 @@ app_main ()
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
-      int l = uart_read_bytes (gpsuart, p, buf + sizeof (buf) - p, 10);
+      int l = uart_read_bytes (gpsuart, p,
+                               buf + sizeof (buf) - p,
+                               10);
       if (l < 0)
          sleep (1);
       if (l <= 0)
@@ -685,7 +705,7 @@ app_main ()
                if (p[1] == 'G')
                   nmea ((char *) p);
                else
-                  revk_info ("Rx", "%s", p);    // Other packet
+                  revk_info ("rx", "%s", p);    // Other packet
             }
          } else if (l > p)
             revk_error (TAG, "[%.*s]", l - p, p);
