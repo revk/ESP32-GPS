@@ -553,14 +553,14 @@ display_task (void *p)
                revk_info ("Left", "%lf", q);
                for (int d = -10; d <= 10; d++)
                   for (int x = 11 + q * sqrt(1-(double)d/10.0*(double)d/10.0);x<21;x++)
-                     oled_pixel (x, y + 11 + d, 0xF);
+                     oled_set (x, y + 11 + d, oled_get(x,y+11+d)>>2);
             } else
             {                   // dim on left (northern hemisphere)
                double q = -10.0 * cos (phase);
                revk_info ("right", "%lf", q);
                for (int d = -10; d <= 10; d++)
                   for (int x = 0; x<11 + q * sqrt(1-(double)d/10.0*(double)d/10.0);x++)
-                     oled_pixel (x, y + 11 + d, 0xF);
+                     oled_set (x, y + 11 + d, oled_get(x,y+11+d)>>2);
             }
          }
          x = 22;
@@ -635,10 +635,10 @@ app_main ()
    oled_set_contrast (oledcontrast);
    for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
    {
-      oled_pixel (x, CONFIG_OLED_HEIGHT - 12, 4);
-      oled_pixel (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
-      oled_pixel (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
-      oled_pixel (x, 8, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
+      oled_set (x, 8, 4);
    }
    // Init UART
    uart_config_t uart_config = {
