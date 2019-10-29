@@ -24,8 +24,8 @@ static const char TAG[] = "GPS";
 	s8(gpsfix,25)	\
 	s8(gpsen,26)	\
 	u8(sun,0)	\
-	u32(loghome,300)\
-	u32(logaway,1)	\
+	u32(logslow,300)\
+	u32(logfast,1)	\
 	b(waas,Y)	\
 	b(sbas,Y)	\
 	b(aic,Y)	\
@@ -266,6 +266,23 @@ gpscmd (const char *fmt, ...)
       revk_info ("tx", "%s", s);
 }
 
+void
+lograte (int rate)
+{
+   static int lastrate = -1;
+   if (lastrate == rate)
+      return;
+   if (!rate)
+      gpscmd ("$PMTK185,1");    // Stop log
+   else
+   {
+      if (lastrate <= 0)
+         gpscmd ("$PMTK185,0"); // Start log
+      gpscmd ("$PMTK187,1,%d", rate);
+   }
+   lastrate = rate;
+}
+
 const char *
 app_command (const char *tag, unsigned int len, const unsigned char *value)
 {
@@ -281,13 +298,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "connect"))
    {
-      gpscmd ("$PMTK187,1,%d", loghome);        // Slow log
       gpscmd ("$PMTK183");      // Log status
-      return "";
-   }
-   if (!strcmp (tag, "disconnect"))
-   {
-      gpscmd ("$PMTK187,1,%d", logaway);        // Fast log
       return "";
    }
    if (!strcmp (tag, "status"))
@@ -342,7 +353,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "status"))
    {
-      gpscmd ("$PMTK18,1");    // Status log
+      gpscmd ("$PMTK18,1");     // Status log
       return "";
    }
    if (!strcmp (tag, "dump"))
@@ -402,10 +413,8 @@ nmea (char *s)
       return;
    static char started = 0;
    if (!started && (esp_timer_get_time () > 5000000 || !revk_offline ()))
-   { // The delay is to allow debug logging, etc.
+   {                            // The delay is to allow debug logging, etc.
       revk_info (TAG, "GPS running");
-      gpscmd ("$PMTK185,0");    // Start log
-      gpscmd ("$PMTK187,1,%d", revk_offline ()? logaway : loghome);     // Log interval
       gpscmd ("$PMTK301,%d", waas ? 2 : 0);
       gpscmd ("$PMTK313,%d", sbas ? 1 : 0);
       gpscmd ("$PMTK513,%d", sbas ? 1 : 0);
@@ -474,6 +483,10 @@ nmea (char *s)
          course = strtod (f[1], NULL);
       if (!speedforce)
          speed = strtod (f[7], NULL);
+      if (speed > 5)
+         lograte (logfast);
+      else if (!speed)
+         lograte (logslow);
       return;
    }
    if (!strncmp (f[0], "GPGSA", 5) && n >= 18)
@@ -517,8 +530,7 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix:\002%s\004%2d\002sat%s", fixmode == 3 ? "3D" : fixmode == 2 ? "2D" : "  ", sats,
-                 sats == 1 ? " " : "s");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
