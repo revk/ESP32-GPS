@@ -26,6 +26,8 @@ static const char TAG[] = "GPS";
 	u8(sun,0)	\
 	u32(logslow,300)\
 	u32(logfast,1)	\
+	u32(speedlow,1)	\
+	u32(speedhigh,4)\
 	b(waas,Y)	\
 	b(sbas,Y)	\
 	b(aic,Y)	\
@@ -483,9 +485,9 @@ nmea (char *s)
          course = strtod (f[1], NULL);
       if (!speedforce)
          speed = strtod (f[7], NULL);
-      if (speed > 5)
+      if (speed > speedhigh)
          lograte (logfast);
-      else if (!speed)
+      else if (speed < speedlow)
          lograte (logslow);
       return;
    }
@@ -530,7 +532,7 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",speed<speedlow?"-":speed>speedhigh?"+":" ");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
