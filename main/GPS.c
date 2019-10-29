@@ -24,7 +24,15 @@ static const char TAG[] = "GPS";
 	s8(gpsfix,25)	\
 	s8(gpsen,26)	\
 	u8(sun,0)	\
-	b (mph, Y)	\
+	u32(loghome,300)\
+	u32(logaway,1)	\
+	b(waas,Y)	\
+	b(sbas,Y)	\
+	b(aic,Y)	\
+	b(easy,Y)	\
+	b(always,N)	\
+	b(backup,N)	\
+	b(mph, Y)	\
 
 #define u32(n,d)	uint32_t n;
 #define s8(n,d)	int8_t n;
@@ -238,20 +246,24 @@ sun_position (double t, double latitude, double longitude, double *altitudep, do
 
 
 void
-gpscmd (const void *s)
+gpscmd (const char *fmt, ...)
 {                               // Send command to UART
-   if (!s || *(char *) s != '$')
-      return;
+   char s[100];
+   va_list ap;
+   va_start (ap, fmt);
+   vsnprintf (s, sizeof (s) - 5, fmt, ap);
+   va_end (ap);
    uint8_t c = 0;
-   for (const char *p = s + 1; *p; p++)
+   char *p;
+   for (p = s + 1; *p; p++)
       c ^= *p;
-   char temp[6];
-   sprintf (temp, "*%02X\r\n", c);
+   if (*s == '$')
+      p += sprintf (p, "*%02X\r\n", c); // We allowed space
    xSemaphoreTake (cmd_mutex, portMAX_DELAY);
-   uart_write_bytes (gpsuart, s, strlen (s));
-   uart_write_bytes (gpsuart, temp, 5);
+   uart_write_bytes (gpsuart, s, p - s);
    xSemaphoreGive (cmd_mutex);
-   //revk_info (TAG, "Tx %s*%02X", s, c);
+   if (gpsdebug)
+      revk_info ("tx", "%s", s);
 }
 
 const char *
@@ -267,10 +279,20 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       sntp_stop ();
       return "";
    }
-   if (!strcmp (tag, "connect") || !strcmp (tag, "status"))
+   if (!strcmp (tag, "connect"))
    {
       gpscmd ("$PMTK183");      // Log status
-      // $PMTKLOG,Serial#, Type, Mode, Content, Interval, Distance, Speed, Status, Number, Percent*Checksum
+      gpscmd ("$PMTK187,1,%d", loghome);        // Slow log
+      return "";
+   }
+   if (!strcmp (tag, "disconnect"))
+   {
+      gpscmd ("$PMTK187,1,%d", logaway);        // Fast log
+      return "";
+   }
+   if (!strcmp (tag, "connect"))
+   {
+      gpscmd ("$PMTK183");      // Log status
       return "";
    }
    if (!strcmp (tag, "time"))
@@ -315,7 +337,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
 #undef force
    if (!strcmp (tag, "tx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
-      gpscmd (value);
+      gpscmd ("%s", value);
       return "";
    }
    if (!strcmp (tag, "dump"))
@@ -355,18 +377,6 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       revk_setting ("gpsbaud", 4, "9600");      // Set to 9600
       return "";
    }
-   if (!strcmp (tag, "waas"))
-   {
-      gpscmd ("$PMTK301,2");    // WAAS DGPS
-      return "";
-   }
-   if (!strcmp (tag, "sbas"))
-   {
-      gpscmd ("$PMTK313,1");    // SBAS (increases accuracy)
-      gpscmd ("$PMTK319,1");    // SBAS integrity mode
-      gpscmd ("$PMTK513,1");    // Search for SBAS sat
-      return "";
-   }
    if (!strcmp (tag, "sleep"))
    {
       gpscmd ("$PMTK291,7,0,10000,1");  // Low power (maybe we need to drive EN pin?)
@@ -385,6 +395,20 @@ nmea (char *s)
 {
    if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
       return;
+   static char started = 0;
+   if (!started)
+   {
+      revk_info (TAG, "GPS running");
+      gpscmd ("$PMTK185,0");    // Start log
+      gpscmd ("$PMTK187,1,%d", revk_offline ()? logaway : loghome);     // Log interval
+      gpscmd ("$PMTK301,%d", waas ? 2 : 0);
+      gpscmd ("$PMTK313,%d", sbas ? 1 : 0);
+      gpscmd ("$PMTK513,%d", sbas ? 1 : 0);
+      gpscmd ("$PMTK286,%d", aic ? 1 : 0);
+      gpscmd ("$PMTK869,1,%d", aic ? 1 : 0);
+      gpscmd ("$PMTK225,%d", (always ? 8 : 0) + (backup ? 1 : 0));
+      started = 1;
+   }
    if (gpsdebug)
       revk_info ("rx", "%s", s);
    char *f[50];
@@ -667,7 +691,6 @@ app_main ()
    // Main task...
    uint8_t buf[1000],
     *p = buf;
-   int started = 0;
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
@@ -678,11 +701,6 @@ app_main ()
          sleep (1);
       if (l <= 0)
          continue;
-      if (!started)
-      {
-         gpscmd ("$PMTK185,0"); // Start log
-         started = 1;
-      }
       uint8_t *e = p + l;
       p = buf;
       while (p < e)
