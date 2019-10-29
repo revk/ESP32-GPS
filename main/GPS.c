@@ -281,8 +281,8 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "connect"))
    {
-      gpscmd ("$PMTK183");      // Log status
       gpscmd ("$PMTK187,1,%d", loghome);        // Slow log
+      gpscmd ("$PMTK183");      // Log status
       return "";
    }
    if (!strcmp (tag, "disconnect"))
@@ -290,7 +290,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       gpscmd ("$PMTK187,1,%d", logaway);        // Fast log
       return "";
    }
-   if (!strcmp (tag, "connect"))
+   if (!strcmp (tag, "status"))
    {
       gpscmd ("$PMTK183");      // Log status
       return "";
@@ -338,6 +338,11 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    if (!strcmp (tag, "tx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
       gpscmd ("%s", value);
+      return "";
+   }
+   if (!strcmp (tag, "status"))
+   {
+      gpscmd ("$PMTK18,1");    // Status log
       return "";
    }
    if (!strcmp (tag, "dump"))
@@ -396,8 +401,8 @@ nmea (char *s)
    if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
       return;
    static char started = 0;
-   if (!started)
-   {
+   if (!started && (esp_timer_get_time () > 5000000 || !revk_offline ()))
+   { // The delay is to allow debug logging, etc.
       revk_info (TAG, "GPS running");
       gpscmd ("$PMTK185,0");    // Start log
       gpscmd ("$PMTK187,1,%d", revk_offline ()? logaway : loghome);     // Log interval
