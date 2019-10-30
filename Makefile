@@ -22,3 +22,6 @@ OPTS=-L/usr/local/ssl/lib ${SQLLIB} ${CCOPTS}
 
 gpslog: gpslog.c SQLlib/sqllib.o
 	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o
+gpsout: gpsout.c SQLlib/sqllib.o
+	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o
+
