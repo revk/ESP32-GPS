@@ -159,7 +159,13 @@ main (int argc, const char *argv[])
       prune (bestn, h);
    }
    if (margin)
+   {
+      if (delete)
+         sql_transaction (&sql);
       prune (0, num - 1);
+      if (delete)
+         sql_safe_commit (&sql);
+   }
    // Output
    if (json)
       printf ("[\n");
