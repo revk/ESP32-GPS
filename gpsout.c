@@ -104,7 +104,7 @@ main (int argc, const char *argv[])
    }
    sql_free_result (res);
    void prune (int l, int h)
-   {
+   { // https://en.wikipedia.org/wiki/Ramer–Douglas–Peucker_algorithm
       if (l + 1 >= h)
          return;                // Not intermediate points
       point_t *a = &points[l];
