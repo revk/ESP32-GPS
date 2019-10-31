@@ -42,7 +42,7 @@ main (int argc, const char *argv[])
    const char *device = NULL;
    int debug = 0;
    double margin = 0.1;
-   double ms=0.01;
+   double ms = 0.01;
    int json = 0;
    int quiet = 0;
    int delete = 0;
@@ -155,11 +155,11 @@ main (int argc, const char *argv[])
       {
          point_t *p = &points[n];
          double d = 0;
-         if (L < MINL)         // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
+         if (L < MINL)          // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
             d = dist (x (p), y (p), z (p), t (p));      // (centre is 0,0,0,0)
          else
          {
-            double T = ((x (p) - x (a)) / DX + (y (p) - y (a)) / DY + (z (p) - z (a)) / DZ + (t (p) - t (a)) / DT) / L; // Point in line
+            double T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / L / L;
             d = dist (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
          }
          if (bestn >= 0 && d < best)
@@ -167,8 +167,6 @@ main (int argc, const char *argv[])
          bestn = n;             // New furthest
          best = d;
       }
-      if (debug)
-         fprintf (stderr, "Prune %d/%d/%d %lfm\n", l, bestn, h, best);
       if (best < margin)
       {                         // All points are within margin - so all to be pruned
          for (n = l + 1; n < h; n++)
