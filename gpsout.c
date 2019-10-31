@@ -22,8 +22,12 @@ struct point_s
    int id;
    time_t utc;
    double lat,
-     lon;
+     lon,
+     alt;
 };
+
+#define	MINL	0.1             // Min distance to use a line as distance reference
+#define	MS 0.01                 // Time as distance
 
 int
 main (int argc, const char *argv[])
@@ -87,9 +91,10 @@ main (int argc, const char *argv[])
    sql_real_connect (&sql, sqlhostname, sqlusername, sqlpassword, sqldatabase, 0, NULL, 0, 1, sqlconffile);
    // Get points
    SQL_RES *res = sql_safe_query_store_free (&sql,
-                                             sql_printf ("SELECT * FROM `%#S` WHERE `utc`>=%#T AND `utc`<=%#T AND `device`=%#s ORDER BY `utc`",
-                                                         sqltable,
-                                                         tfrom, tto, device));
+                                             sql_printf
+                                             ("SELECT * FROM `%#S` WHERE `utc`>=%#T AND `utc`<=%#T AND `device`=%#s ORDER BY `utc`",
+                                              sqltable,
+                                              tfrom, tto, device));
    int num = sql_num_rows (res);
    point_t *points = malloc (num * sizeof (*points));
    memset (points, 0, num * sizeof (*points));
@@ -100,11 +105,12 @@ main (int argc, const char *argv[])
       points[n].utc = sql_time_utc (sql_colz (res, "utc"));
       points[n].lat = strtod (sql_colz (res, "lat"), NULL);
       points[n].lon = strtod (sql_colz (res, "lon"), NULL);
+      points[n].alt = strtod (sql_colz (res, "alt"), NULL);
       n++;
    }
    sql_free_result (res);
    void prune (int l, int h)
-   { // https://en.wikipedia.org/wiki/Ramer–Douglas–Peucker_algorithm
+   {                            // https://en.wikipedia.org/wiki/Ramer–Douglas–Peucker_algorithm
       if (l + 1 >= h)
          return;                // Not intermediate points
       point_t *a = &points[l];
@@ -112,6 +118,8 @@ main (int argc, const char *argv[])
       // Centre for working out metres
       double clat = (a->lat + b->lat) / 2;
       double clon = (a->lon + b->lon) / 2;
+      double calt = (a->alt + b->alt) / 2;
+      int cutc = (a->utc + b->utc) / 2;
       double slat = 111111.0 * cos (M_PI * clat / 180.0);
       inline double x (point_t * p)
       {
@@ -121,7 +129,25 @@ main (int argc, const char *argv[])
       {
          return (p->lat - clat) * 111111.0;
       }
-      double B = sqrt ((y (b) - y (a)) * (y (b) - y (a)) + (x (b) - x (a)) * (x (b) - x (a)));
+      inline double z (point_t * p)
+      {
+         return (p->alt - calt);
+      }
+      inline double t (point_t * p)
+      {
+         return MS * (p->utc - cutc);
+      }
+      inline double dist (double dx, double dy, double dz, double dt)
+      {                         // Distance in 4D space
+         return sqrt (dx * dx + dy * dy + dz * dz + dt * dt);
+      }
+
+      // We work out distances in 4D space
+      double DX = x (b) - x (a);
+      double DY = y (b) - y (a);
+      double DZ = z (b) - z (a);
+      double DT = t (b) - t (a);
+      double L = dist (DX, DY, DZ, DT);
       int bestn = -1;
       double best = 0;
       int n;
@@ -129,14 +155,12 @@ main (int argc, const char *argv[])
       {
          point_t *p = &points[n];
          double d = 0;
-         if (!B)
-            d = sqrt ((x (p) - x (a)) * (x (p) - x (a)) + (y (p) - y (a)) * (y (p) - y (a)));
+         if (L < MINL)         // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
+            d = dist (x (p), y (p), z (p), t (p));      // (centre is 0,0,0,0)
          else
          {
-            double A = ((y (b) - y (a)) * x (p) - (x (b) - x (a)) * y (p) + x (b) * y (a) - y (b) * x (a));
-            if (A < 0)
-               A = 0.0 - A;
-            d = A / B;
+            double T = ((x (p) - x (a)) / DX + (y (p) - y (a)) / DY + (z (p) - z (a)) / DZ + (t (p) - t (a)) / DT) / L; // Point in line
+            d = dist (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
          }
          if (bestn >= 0 && d < best)
             continue;
