@@ -27,7 +27,6 @@ struct point_s
 };
 
 #define	MINL	0.1             // Min distance to use a line as distance reference
-#define	MS 0.01                 // Time as distance
 
 int
 main (int argc, const char *argv[])
@@ -43,6 +42,7 @@ main (int argc, const char *argv[])
    const char *device = NULL;
    int debug = 0;
    double margin = 0.1;
+   double ms=0.01;
    int json = 0;
    int quiet = 0;
    int delete = 0;
@@ -57,6 +57,7 @@ main (int argc, const char *argv[])
          {"sql-table", 't', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqltable, 0, "SQL table", "table"},
          {"sql-debug", 'v', POPT_ARG_NONE, &sqldebug, 0, "SQL Debug"},
          {"margin", 0, POPT_ARG_DOUBLE | POPT_ARGFLAG_SHOW_DEFAULT, &margin, 0, "Max allow error", "m"},
+         {"ms", 0, POPT_ARG_DOUBLE | POPT_ARGFLAG_SHOW_DEFAULT, &ms, 0, "Time to distance for margin", "m/s"},
          {"device", 'D', POPT_ARG_STRING, &device, 0, "Device", "ID"},
          {"from", 'F', POPT_ARG_STRING, &from, 0, "From", "YYYY-MM-DD HH:MM:SS (UTC)"},
          {"to", 'T', POPT_ARG_STRING, &to, 0, "To", "YYYY-MM-DD HH:MM:SS (UTC)"},
@@ -135,13 +136,12 @@ main (int argc, const char *argv[])
       }
       inline double t (point_t * p)
       {
-         return MS * (p->utc - cutc);
+         return ms * (p->utc - cutc);
       }
       inline double dist (double dx, double dy, double dz, double dt)
       {                         // Distance in 4D space
          return sqrt (dx * dx + dy * dy + dz * dz + dt * dt);
       }
-
       // We work out distances in 4D space
       double DX = x (b) - x (a);
       double DY = y (b) - y (a);
