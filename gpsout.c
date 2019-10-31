@@ -87,7 +87,7 @@ main (int argc, const char *argv[])
    sql_real_connect (&sql, sqlhostname, sqlusername, sqlpassword, sqldatabase, 0, NULL, 0, 1, sqlconffile);
    // Get points
    SQL_RES *res = sql_safe_query_store_free (&sql,
-                                             sql_printf ("SELECT * FROM `%#S` WHERE `utc`>=%#T AND `utc`<=%#T AND `device`=%#s",
+                                             sql_printf ("SELECT * FROM `%#S` WHERE `utc`>=%#T AND `utc`<=%#T AND `device`=%#s ORDER BY `utc`",
                                                          sqltable,
                                                          tfrom, tto, device));
    int num = sql_num_rows (res);
