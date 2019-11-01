@@ -276,7 +276,8 @@ gpscmd (const char *fmt, ...)
       revk_info ("tx", "%s", s);
 }
 
-uint8_t atbuf[1000];
+#define ATBUFSIZE 2000
+uint8_t *atbuf = NULL;
 void *
 atcmd (const void *cmd, int t)
 {                               // TODO process response cleanly...
@@ -287,7 +288,7 @@ atcmd (const void *cmd, int t)
       uart_write_bytes (atuart, "\r", 1);
       revk_info ("Tx", "%s", cmd);
    }
-   int l = uart_read_bytes (atuart, atbuf, sizeof (atbuf) - 1, t);
+   int l = uart_read_bytes (atuart, atbuf, ATBUFSIZE - 1, t);
    uint8_t *p = atbuf,
       *e = atbuf + l;
    if (l >= 0)
@@ -701,6 +702,7 @@ display_task (void *p)
 void
 at_task (void *X)
 {
+   atbuf = malloc (ATBUFSIZE);
    gpio_set_level (atpwr, 0);
    sleep (1);
    gpio_set_level (atrst, 0);
