@@ -1,4 +1,4 @@
-// Simple GPS
+// GPS module (tracker and/or display module)
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 static const char TAG[] = "GPS";
 
@@ -23,6 +23,14 @@ static const char TAG[] = "GPS";
 	s8(gpstx,32)	\
 	s8(gpsfix,25)	\
 	s8(gpsen,26)	\
+      	b(atdebug,N)    \
+        s8(atuart,2)	\
+        u32(atbaud,115200)	\
+        s8(attx,27)	\
+        s8(atrx,26)	\
+        s8(atkey,4)	\
+        s8(atrst,5)	\
+        s8(atpwr,-1)	\
 	u8(sun,0)	\
 	u32(logslow,300)\
 	u32(logfast,1)	\
@@ -72,12 +80,13 @@ char pdopforce = 0;
 char vdopforce = 0;
 
 static SemaphoreHandle_t cmd_mutex = NULL;
+static SemaphoreHandle_t at_mutex = NULL;
 
 #include "day.h"
 #include "night.h"
 
-time_t sun_find_crossing (time_t start_time, float latitude, float longitude, float wanted_altitude);
-void sun_position (float t, float latitude, float longitude, float *altitudep, float *azimuthp);
+time_t sun_find_crossing (time_t start_time, double latitude, double longitude, double wanted_altitude);
+void sun_position (double t, double latitude, double longitude, double *altitudep, double *azimuthp);
 
 #define DEGS_PER_RAD             (180 / M_PI)
 #define SECS_PER_DAY             86400
@@ -99,32 +108,32 @@ void sun_position (float t, float latitude, float longitude, float *altitudep, f
 #define SUN_ASTRONOMICAL_TWILIGHT       (-18.0)
 
 time_t
-sun_rise (int y, int m, int d, float latitude, float longitude, float sun_altitude)
+sun_rise (int y, int m, int d, double latitude, double longitude, double sun_altitude)
 {
  struct tm tm = { tm_mon: m - 1, tm_year: y - 1900, tm_mday: d, tm_hour:6 - longitude / 15 };
    return sun_find_crossing (mktime (&tm), latitude, longitude, sun_altitude);
 }
 
 time_t
-sun_set (int y, int m, int d, float latitude, float longitude, float sun_altitude)
+sun_set (int y, int m, int d, double latitude, double longitude, double sun_altitude)
 {
  struct tm tm = { tm_mon: m - 1, tm_year: y - 1900, tm_mday: d, tm_hour:18 - longitude / 15 };
    return sun_find_crossing (mktime (&tm), latitude, longitude, sun_altitude);
 }
 
 time_t
-sun_find_crossing (time_t start_time, float latitude, float longitude, float wanted_altitude)
+sun_find_crossing (time_t start_time, double latitude, double longitude, double wanted_altitude)
 {
-   float t,
+   double t,
      last_t,
      new_t,
      altitude,
-     last_altitude,
-     error;
+     error,
+     last_altitude;
    time_t result;
    int try = 10;
 
-   last_t = (float) start_time;
+   last_t = (double) start_time;
    sun_position (last_t, latitude, longitude, &last_altitude, NULL);
    t = last_t + 1;
    do
@@ -144,25 +153,25 @@ sun_find_crossing (time_t start_time, float latitude, float longitude, float wan
 }
 
 void
-sun_position (float t, float latitude, float longitude, float *altitudep, float *azimuthp)
+sun_position (double t, double latitude, double longitude, double *altitudep, double *azimuthp)
 {
    struct tm tm;
    time_t j2000_epoch;
 
-   float latitude_offset;      // Site latitude offset angle (NORTH = +ve)
-   float longitude_offset;     // Site longitude offset angle (EAST = +ve)
-   float j2000_days;           // Time/date from J2000.0 epoch (Noon on 1/1/2000)
-   float clock_angle;          // Clock time as an angle
-   float mean_anomoly;         // Mean anomoly angle
-   float mean_longitude;       // Mean longitude angle
-   float lambda;               // Apparent longitude angle (lambda)
-   float mean_obliquity;       // Mean obliquity angle
-   float right_ascension;      // Right ascension angle
-   float declination;          // Declination angle
-   float eqt;                  // Equation of time angle
-   float hour_angle;           // Hour angle (noon = 0, +ve = afternoon)
-   float altitude;
-   float azimuth;
+   double latitude_offset;      // Site latitude offset angle (NORTH = +ve)
+   double longitude_offset;     // Site longitude offset angle (EAST = +ve)
+   double j2000_days;           // Time/date from J2000.0 epoch (Noon on 1/1/2000)
+   double clock_angle;          // Clock time as an angle
+   double mean_anomoly;         // Mean anomoly angle
+   double mean_longitude;       // Mean longitude angle
+   double lambda;               // Apparent longitude angle (lambda)
+   double mean_obliquity;       // Mean obliquity angle
+   double right_ascension;      // Right ascension angle
+   double declination;          // Declination angle
+   double eqt;                  // Equation of time angle
+   double hour_angle;           // Hour angle (noon = 0, +ve = afternoon)
+   double altitude;
+   double azimuth;
 
    latitude_offset = latitude / DEGS_PER_RAD;
    longitude_offset = longitude / DEGS_PER_RAD;
@@ -182,7 +191,7 @@ sun_position (float t, float latitude, float longitude, float *altitudep, float 
    tm.tm_wday = tm.tm_yday = tm.tm_isdst = 0;
    j2000_epoch = mktime (&tm);
 
-   j2000_days = (float) (t - j2000_epoch) / SECS_PER_DAY;
+   j2000_days = (double) (t - j2000_epoch) / SECS_PER_DAY;
 
    // Calculate mean anomoly angle (g)
    // [1] g = g_c + g_k * j2000_days
@@ -246,7 +255,6 @@ sun_position (float t, float latitude, float longitude, float *altitudep, float 
 */
 /***************************************************************************/
 
-
 void
 gpscmd (const char *fmt, ...)
 {                               // Send command to UART
@@ -266,6 +274,34 @@ gpscmd (const char *fmt, ...)
    xSemaphoreGive (cmd_mutex);
    if (gpsdebug)
       revk_info ("tx", "%s", s);
+}
+
+uint8_t atbuf[1000];
+void *
+atcmd (const void *cmd, int t)
+{                               // TODO process response cleanly...
+   xSemaphoreTake (at_mutex, portMAX_DELAY);
+   if (cmd)
+   {
+      uart_write_bytes (atuart, cmd, strlen ((char *) cmd));
+      uart_write_bytes (atuart, "\r", 1);
+      revk_info ("Tx", "%s", cmd);
+   }
+   int l = uart_read_bytes (atuart, atbuf, sizeof (atbuf) - 1, t);
+   uint8_t *p = atbuf,
+      *e = atbuf + l;
+   if (l >= 0)
+   {
+      while (p < e && *p < ' ')
+         p++;
+      while (p < e && e[-1] < ' ')
+         e--;
+      *e = 0;
+      if (e > p)
+         revk_info ("Rx", "%s", p);
+   }
+   xSemaphoreGive (at_mutex);
+   return p;
 }
 
 void
@@ -351,6 +387,11 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    if (!strcmp (tag, "tx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
       gpscmd ("%s", value);
+      return "";
+   }
+   if (!strcmp (tag, "Tx") && len)
+   {                            // Send arbitrary AT command (do not include *XX or CR/LF)
+      atcmd (value, 100);
       return "";
    }
    if (!strcmp (tag, "status"))
@@ -532,7 +573,8 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",speed<speedlow?"-":speed>speedhigh?"+":" ");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",
+                 speed < speedlow ? "-" : speed > speedhigh ? "+" : " ");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
@@ -564,7 +606,7 @@ display_task (void *p)
       {
          // Sun
          y -= 22;
-         float sunalt,
+         double sunalt,
            sunazi;
          sun_position (now, lat, lon, &sunalt, &sunazi);
          int o = 0;
@@ -588,8 +630,8 @@ display_task (void *p)
             // Moon
 #define LUNY 2551442.8768992    // Seconds per lunar cycle
             int s = now - 1571001050;   // Seconds since reference full moon
-            int m = ((float) s / LUNY);        // full moon count
-            s -= (float) m *LUNY;      // seconds since full moon
+            int m = ((float) s / LUNY); // full moon count
+            s -= (float) m *LUNY;       // seconds since full moon
             float phase = (float) s * M_PI * 2 / LUNY;
             if (phase < M_PI)
             {                   // dim on right (northern hemisphere)
@@ -635,7 +677,7 @@ display_task (void *p)
       // Speed
       y = 20;
       float s = speed;
-      float minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
+      float minspeed = hdop * 2;        // Use as basis for ignoring spurious speeds
       if (mph)
          s /= 1.609344;         // miles
       if (speed >= 999)
@@ -657,9 +699,31 @@ display_task (void *p)
 }
 
 void
+at_task (void *X)
+{
+   gpio_set_level (atpwr, 0);
+   sleep (1);
+   gpio_set_level (atrst, 0);
+   gpio_set_level (atpwr, 1);
+   sleep (1);
+   gpio_set_level (atrst, 1);
+   char *r;
+   while (!(r = atcmd ("AT", 1000)) || (strncmp (r, "AT", 2) && strncmp (r, "OK", 2))); // TODO give up and power cycle?
+   atcmd ("ATE0", 10);
+   atcmd ("AT+CCID", 10);
+   atcmd ("AT+GSN", 10);
+   while (1)
+   {
+      atcmd (NULL, 1000);
+   }
+}
+
+void
 app_main ()
 {
+   esp_err_t err;
    cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
+   at_mutex = xSemaphoreCreateMutex (); // Shared command access
    revk_init (&app_command);
 #define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
@@ -682,21 +746,22 @@ app_main ()
       oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
       oled_set (x, 8, 4);
    }
-   // Init UART
-   uart_config_t uart_config = {
-      .baud_rate = gpsbaud,     // $PMT251,baud to change rate used
-      .data_bits = UART_DATA_8_BITS,
-      .parity = UART_PARITY_DISABLE,
-      .stop_bits = UART_STOP_BITS_1,
-      .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-   };
-   esp_err_t err;
-   if ((err = uart_param_config (gpsuart, &uart_config)))
-      revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-   else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
-      revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-   else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
-      revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+   {
+      // Init UART for GPS
+      uart_config_t uart_config = {
+         .baud_rate = gpsbaud,  // $PMT251,baud to change rate used
+         .data_bits = UART_DATA_8_BITS,
+         .parity = UART_PARITY_DISABLE,
+         .stop_bits = UART_STOP_BITS_1,
+         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+      };
+      if ((err = uart_param_config (gpsuart, &uart_config)))
+         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
+      else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
+         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
+      else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
+         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+   }
    if (gpsen >= 0)
    {                            // Enable
       gpio_set_level (gpsen, 1);
@@ -706,7 +771,33 @@ app_main ()
       gpio_set_direction (gpspps, GPIO_MODE_INPUT);
    if (gpsfix >= 0)
       gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
-   revk_task ("Display", display_task, NULL);
+   if (gpspps >= 0)
+      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
+   if (oledsda >= 0 && oledscl >= 0)
+      revk_task ("Display", display_task, NULL);
+   if (attx >= 0 && atrx >= 0 && atpwr >= 0)
+   {
+      // Init UART for Mobile
+      uart_config_t uart_config = {
+         .baud_rate = atbaud,
+         .data_bits = UART_DATA_8_BITS,
+         .parity = UART_PARITY_DISABLE,
+         .stop_bits = UART_STOP_BITS_1,
+         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+      };
+      if ((err = uart_param_config (atuart, &uart_config)))
+         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
+      else if ((err = uart_set_pin (atuart, attx, atrx, -1, -1)))
+         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
+      else if ((err = uart_driver_install (atuart, 256, 0, 0, NULL, 0)))
+         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+      if (atkey >= 0)
+         gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
+      if (atrst >= 0)
+         gpio_set_direction (atrst, GPIO_MODE_OUTPUT);
+      gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
+      revk_task ("Mobile", at_task, NULL);
+   }
    // Main task...
    uint8_t buf[1000],
     *p = buf;
