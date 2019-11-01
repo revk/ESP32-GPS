@@ -47,16 +47,16 @@ settings
 #undef u8
 #undef b
 #undef s
-double speed = 0;
-double bearing = 0;
-double lat = 0;
-double lon = 0;
-double alt = 0;
-double gsep = 0;
-double pdop = 0;
-double hdop = 0;
-double vdop = 0;
-double course = 0;
+float speed = 0;
+float bearing = 0;
+float lat = 0;
+float lon = 0;
+float alt = 0;
+float gsep = 0;
+float pdop = 0;
+float hdop = 0;
+float vdop = 0;
+float course = 0;
 int sats = 0;
 int fix = 0;
 int fixmode = 0;
@@ -76,8 +76,8 @@ static SemaphoreHandle_t cmd_mutex = NULL;
 #include "day.h"
 #include "night.h"
 
-time_t sun_find_crossing (time_t start_time, double latitude, double longitude, double wanted_altitude);
-void sun_position (double t, double latitude, double longitude, double *altitudep, double *azimuthp);
+time_t sun_find_crossing (time_t start_time, float latitude, float longitude, float wanted_altitude);
+void sun_position (float t, float latitude, float longitude, float *altitudep, float *azimuthp);
 
 #define DEGS_PER_RAD             (180 / M_PI)
 #define SECS_PER_DAY             86400
@@ -99,23 +99,23 @@ void sun_position (double t, double latitude, double longitude, double *altitude
 #define SUN_ASTRONOMICAL_TWILIGHT       (-18.0)
 
 time_t
-sun_rise (int y, int m, int d, double latitude, double longitude, double sun_altitude)
+sun_rise (int y, int m, int d, float latitude, float longitude, float sun_altitude)
 {
  struct tm tm = { tm_mon: m - 1, tm_year: y - 1900, tm_mday: d, tm_hour:6 - longitude / 15 };
    return sun_find_crossing (mktime (&tm), latitude, longitude, sun_altitude);
 }
 
 time_t
-sun_set (int y, int m, int d, double latitude, double longitude, double sun_altitude)
+sun_set (int y, int m, int d, float latitude, float longitude, float sun_altitude)
 {
  struct tm tm = { tm_mon: m - 1, tm_year: y - 1900, tm_mday: d, tm_hour:18 - longitude / 15 };
    return sun_find_crossing (mktime (&tm), latitude, longitude, sun_altitude);
 }
 
 time_t
-sun_find_crossing (time_t start_time, double latitude, double longitude, double wanted_altitude)
+sun_find_crossing (time_t start_time, float latitude, float longitude, float wanted_altitude)
 {
-   double t,
+   float t,
      last_t,
      new_t,
      altitude,
@@ -124,7 +124,7 @@ sun_find_crossing (time_t start_time, double latitude, double longitude, double 
    time_t result;
    int try = 10;
 
-   last_t = (double) start_time;
+   last_t = (float) start_time;
    sun_position (last_t, latitude, longitude, &last_altitude, NULL);
    t = last_t + 1;
    do
@@ -144,30 +144,30 @@ sun_find_crossing (time_t start_time, double latitude, double longitude, double 
 }
 
 void
-sun_position (double t, double latitude, double longitude, double *altitudep, double *azimuthp)
+sun_position (float t, float latitude, float longitude, float *altitudep, float *azimuthp)
 {
    struct tm tm;
    time_t j2000_epoch;
 
-   double latitude_offset;      // Site latitude offset angle (NORTH = +ve)
-   double longitude_offset;     // Site longitude offset angle (EAST = +ve)
-   double j2000_days;           // Time/date from J2000.0 epoch (Noon on 1/1/2000)
-   double clock_angle;          // Clock time as an angle
-   double mean_anomoly;         // Mean anomoly angle
-   double mean_longitude;       // Mean longitude angle
-   double lambda;               // Apparent longitude angle (lambda)
-   double mean_obliquity;       // Mean obliquity angle
-   double right_ascension;      // Right ascension angle
-   double declination;          // Declination angle
-   double eqt;                  // Equation of time angle
-   double hour_angle;           // Hour angle (noon = 0, +ve = afternoon)
-   double altitude;
-   double azimuth;
+   float latitude_offset;      // Site latitude offset angle (NORTH = +ve)
+   float longitude_offset;     // Site longitude offset angle (EAST = +ve)
+   float j2000_days;           // Time/date from J2000.0 epoch (Noon on 1/1/2000)
+   float clock_angle;          // Clock time as an angle
+   float mean_anomoly;         // Mean anomoly angle
+   float mean_longitude;       // Mean longitude angle
+   float lambda;               // Apparent longitude angle (lambda)
+   float mean_obliquity;       // Mean obliquity angle
+   float right_ascension;      // Right ascension angle
+   float declination;          // Declination angle
+   float eqt;                  // Equation of time angle
+   float hour_angle;           // Hour angle (noon = 0, +ve = afternoon)
+   float altitude;
+   float azimuth;
 
    latitude_offset = latitude / DEGS_PER_RAD;
    longitude_offset = longitude / DEGS_PER_RAD;
 
-//   printf("lat %lf, long %lf\n", latitude_offset * DEGS_PER_RAD, longitude_offset * DEGS_PER_RAD);
+//   printf("lat %f, long %f\n", latitude_offset * DEGS_PER_RAD, longitude_offset * DEGS_PER_RAD);
 
    // Calculate clock angle based on UTC unixtime of user supplied time
    clock_angle = 2 * M_PI * fmod (t, SECS_PER_DAY) / SECS_PER_DAY;
@@ -182,7 +182,7 @@ sun_position (double t, double latitude, double longitude, double *altitudep, do
    tm.tm_wday = tm.tm_yday = tm.tm_isdst = 0;
    j2000_epoch = mktime (&tm);
 
-   j2000_days = (double) (t - j2000_epoch) / SECS_PER_DAY;
+   j2000_days = (float) (t - j2000_epoch) / SECS_PER_DAY;
 
    // Calculate mean anomoly angle (g)
    // [1] g = g_c + g_k * j2000_days
@@ -338,7 +338,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       }
       return "";
    }
-#define force(x) if (!strcmp (tag, #x)) { if (!len) x##force = 0; else { x##force = 1; x = strtod ((char *) value, NULL); } return ""; }
+#define force(x) if (!strcmp (tag, #x)) { if (!len) x##force = 0; else { x##force = 1; x = strtof ((char *) value, NULL); } return ""; }
    force (lat);
    force (lon);
    force (alt);
@@ -446,18 +446,18 @@ nmea (char *s)
       if (strlen (f[2]) > 2 && strlen (f[4]) > 3)
       {
          if (!latforce)
-            lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtod (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
+            lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtof (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
          if (!lonforce)
             lon =
-               ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtod (f[4] + 3, NULL) / 60) * (f[5][0] ==
+               ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtof (f[4] + 3, NULL) / 60) * (f[5][0] ==
                                                                                                                 'E' ? 1 : -1);
          gotfix = 1;
       }
       fix = atoi (f[6]);
       sats = atoi (f[7]);
       if (!altforce)
-         alt = strtod (f[9], NULL);
-      gsep = strtod (f[10], NULL);
+         alt = strtof (f[9], NULL);
+      gsep = strtof (f[10], NULL);
       return;
    }
    if (!strncmp (f[0], "GPRMC", 5) && n >= 12)
@@ -482,9 +482,9 @@ nmea (char *s)
    if (!strncmp (f[0], "GPVTG", 5) && n >= 10)
    {
       if (!courseforce)
-         course = strtod (f[1], NULL);
+         course = strtof (f[1], NULL);
       if (!speedforce)
-         speed = strtod (f[7], NULL);
+         speed = strtof (f[7], NULL);
       if (speed > speedhigh)
          lograte (logfast);
       else if (speed < speedlow)
@@ -495,11 +495,11 @@ nmea (char *s)
    {
       fixmode = atoi (f[2]);
       if (!pdopforce)
-         pdop = strtod (f[15], NULL);
+         pdop = strtof (f[15], NULL);
       if (!hdopforce)
-         hdop = strtod (f[16], NULL);
+         hdop = strtof (f[16], NULL);
       if (!vdopforce)
-         vdop = strtod (f[17], NULL);
+         vdop = strtof (f[17], NULL);
       return;
    }
 }
@@ -537,13 +537,13 @@ display_task (void *p)
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
-         oled_text (1, 0, y, "Lat: %11.6lf", lat);
+         oled_text (1, 0, y, "Lat: %11.6f", lat);
       else
          oled_text (1, 0, y, "%16s", "");
       oled_text (1, CONFIG_OLED_WIDTH - 3 * 6, y, fixmode > 1 ? "DOP" : "   ");
       y -= 8;
       if (fixmode > 1)
-         oled_text (1, 0, y, "Lon: %11.6lf", lon);
+         oled_text (1, 0, y, "Lon: %11.6f", lon);
       else
          oled_text (1, 0, y, "%16s", "");
       if (fixmode > 1)
@@ -552,7 +552,7 @@ display_task (void *p)
          oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
       y -= 8;
       if (fixmode >= 3)
-         oled_text (1, 0, y, "Alt: %6.1lfm", alt);
+         oled_text (1, 0, y, "Alt: %6.1fm", alt);
       else
          oled_text (1, 0, y, "%16s", "");
       if (fixmode >= 3)
@@ -564,7 +564,7 @@ display_task (void *p)
       {
          // Sun
          y -= 22;
-         double sunalt,
+         float sunalt,
            sunazi;
          sun_position (now, lat, lon, &sunalt, &sunazi);
          int o = 0;
@@ -588,20 +588,20 @@ display_task (void *p)
             // Moon
 #define LUNY 2551442.8768992    // Seconds per lunar cycle
             int s = now - 1571001050;   // Seconds since reference full moon
-            int m = ((double) s / LUNY);        // full moon count
-            s -= (double) m *LUNY;      // seconds since full moon
-            double phase = (double) s * M_PI * 2 / LUNY;
+            int m = ((float) s / LUNY);        // full moon count
+            s -= (float) m *LUNY;      // seconds since full moon
+            float phase = (float) s * M_PI * 2 / LUNY;
             if (phase < M_PI)
             {                   // dim on right (northern hemisphere)
-               double q = 10.0 * cos (phase);
+               float q = 10.0 * cos (phase);
                for (int d = -10; d <= 10; d++)
-                  for (int x = 11 + q * sqrt (1 - (double)d / 10.0 * (double)d / 10.0); x < 21; x++)
+                  for (int x = 11 + q * sqrt (1 - (float)d / 10.0 * (float)d / 10.0); x < 21; x++)
                      oled_set (x, y + 10 + d, oled_get (x, y + 10 + d) >> 3);
             } else
             {                   // dim on left (northern hemisphere)
-               double q = -10.0 * cos (phase);
+               float q = -10.0 * cos (phase);
                for (int d = -10; d <= 10; d++)
-                  for (int x = 0; x < 11 + q * sqrt (1 - (double) d / 10.0 * (double) d / 10.0); x++)
+                  for (int x = 0; x < 11 + q * sqrt (1 - (float) d / 10.0 * (float) d / 10.0); x++)
                      oled_set (x, y + 10 + d, oled_get (x, y + 10 + d) >> 3);
             }
          }
@@ -620,7 +620,7 @@ display_task (void *p)
          // Sun angle
          x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
          if (fixmode > 1)
-            x = oled_text (1, x, y + 14, "%+3.0lf", sunalt);
+            x = oled_text (1, x, y + 14, "%+3.0f", sunalt);
          else
             x = oled_text (1, x, y + 14, "   ");
          x = oled_text (0, x, y + 17, "o");
@@ -634,16 +634,16 @@ display_task (void *p)
 #endif
       // Speed
       y = 20;
-      double s = speed;
-      double minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
+      float s = speed;
+      float minspeed = hdop * 2;       // Use as basis for ignoring spurious speeds
       if (mph)
          s /= 1.609344;         // miles
       if (speed >= 999)
          x = oled_text (5, 0, y, "\002---");
       else if (speed >= 99.9)
-         x = oled_text (5, 0, y, "\002%3.0lf", s);
+         x = oled_text (5, 0, y, "\002%3.0f", s);
       else if (hdop && speed > minspeed)
-         x = oled_text (5, 0, y, "%4.1lf", s);
+         x = oled_text (5, 0, y, "%4.1f", s);
       else
          x = oled_text (5, 0, y, " 0.0");
       oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", mph ? "mph" : "km/h");
