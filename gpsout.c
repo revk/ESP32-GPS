@@ -110,6 +110,7 @@ main (int argc, const char *argv[])
       n++;
    }
    sql_free_result (res);
+   double marginsq = margin * margin;
    void prune (int l, int h)
    {                            // https://en.wikipedia.org/wiki/Ramer–Douglas–Peucker_algorithm
       if (l + 1 >= h)
@@ -138,16 +139,16 @@ main (int argc, const char *argv[])
       {
          return ms * (p->utc - cutc);
       }
-      inline double dist (double dx, double dy, double dz, double dt)
+      inline double distsq (double dx, double dy, double dz, double dt)
       {                         // Distance in 4D space
-         return sqrt (dx * dx + dy * dy + dz * dz + dt * dt);
+         return dx * dx + dy * dy + dz * dz + dt * dt;
       }
       // We work out distances in 4D space
       double DX = x (b) - x (a);
       double DY = y (b) - y (a);
       double DZ = z (b) - z (a);
       double DT = t (b) - t (a);
-      double L = dist (DX, DY, DZ, DT);
+      double LSQ = distqs (DX, DY, DZ, DT);
       int bestn = -1;
       double best = 0;
       int n;
@@ -155,19 +156,19 @@ main (int argc, const char *argv[])
       {
          point_t *p = &points[n];
          double d = 0;
-         if (L < MINL)          // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
-            d = dist (x (p), y (p), z (p), t (p));      // (centre is 0,0,0,0)
+         if (LSQ < (MINL * MINL)) // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
+            d = distsq (x (p), y (p), z (p), t (p));    // (centre is 0,0,0,0)
          else
          {
-            double T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / L / L;
-            d = dist (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
+            double T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
+            d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
          }
          if (bestn >= 0 && d < best)
             continue;
          bestn = n;             // New furthest
          best = d;
       }
-      if (best < margin)
+      if (best < marginsq)
       {                         // All points are within margin - so all to be pruned
          for (n = l + 1; n < h; n++)
          {
