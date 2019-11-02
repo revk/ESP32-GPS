@@ -595,7 +595,7 @@ nmea (char *s)
                fix[fixnext].tim = fixtim;
                fix[fixnext].alt = fixalt;
                fix[fixnext].lat = fixlat;
-               fix[fixnext].lon = fixtim;
+               fix[fixnext].lon = fixlon;
                if (fixdump)
                   revk_info ("fix", "fix:%u tim=%u lat=%d lon=%d alt=%d", fixnext, fixtim, fixlat, fixlon, fixalt);
                fixnext++;
@@ -1019,7 +1019,7 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
       }
       inline float t (fix_t * p)
       {
-         return (float) (p->tim - ctim) * secondcm / 1000.0;
+         return (float) (p->tim - ctim) * secondcm / 100.0 / 10.0;
       }
       inline float distsq (float dx, float dy, float dz, float dt)
       {                         // Distance in 4D space
@@ -1057,6 +1057,7 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
       {                         // All points are within margin - so all to be pruned
          for (n = l + 1; n < h; n++)
             fix[n].tim = 0;
+	 L=h;
          continue;;
       }
       fix[bestn].keep = 1;
