@@ -8,6 +8,7 @@ static const char TAG[] = "GPS";
 #include <math.h>
 #include "oled.h"
 #include "esp_sntp.h"
+#include "esp_crc.h"
 
 #define settings	\
 	s8(oledsda,27)	\
@@ -104,15 +105,22 @@ struct fix_s
    int lon;
 };
 #define	MAXFIX 6100
-#define	MAXSEND	120
+#define MAXTRACK 6
+#define MAXDATA 1400            // Size of packet
+#define	MAXSEND	((MAXDATA-8-4-28)/16*16/sizeof(fix_t))
+uint8_t track[MAXTRACK][MAXDATA];
+int tracklen[MAXTRACK];
+volatile unsigned int tracki = 0,
+   tracko = 0;
+SemaphoreHandle_t track_mutex = NULL;
 fix_t fix[MAXFIX];
 unsigned int fixnext = 0;       // Next fix to store
 volatile int fixsave = 0;       // Time to save fixes
 volatile int fixmove = 0;       // move base
 volatile char fixnow = 0;       // Force fix
 
-static SemaphoreHandle_t cmd_mutex = NULL;
-static SemaphoreHandle_t at_mutex = NULL;
+SemaphoreHandle_t cmd_mutex = NULL;
+SemaphoreHandle_t at_mutex = NULL;
 
 #include "day.h"
 #include "night.h"
@@ -309,8 +317,8 @@ gpscmd (const char *fmt, ...)
 }
 
 #define ATBUFSIZE 2000
-uint8_t *atbuf = NULL;
-void *
+char *atbuf = NULL;
+int
 atcmd (const void *cmd, int t)
 {                               // TODO process response cleanly...
    xSemaphoreTake (at_mutex, portMAX_DELAY);
@@ -320,21 +328,18 @@ atcmd (const void *cmd, int t)
       uart_write_bytes (atuart, "\r", 1);
       revk_info ("attx", "%s", cmd);
    }
-   int l = uart_read_bytes (atuart, atbuf, ATBUFSIZE - 1, t);
-   uint8_t *p = atbuf,
-      *e = atbuf + l;
+   int l = uart_read_bytes (atuart, (void *) atbuf, 1, t);
+   if (l == 1)
+      l = 1 + uart_read_bytes (atuart, (void *) atbuf + 1, ATBUFSIZE - 2, 100);
    if (l >= 0)
    {
-      while (p < e && *p < ' ')
-         p++;
-      while (p < e && e[-1] < ' ')
-         e--;
-      *e = 0;
-      if (e > p)
-         revk_info ("atrx", "%s", p);
-   }
+      atbuf[l] = 0;
+      if (l)
+         revk_info ("atrx", "%s", atbuf);
+   } else
+      atbuf[0] = 0;
    xSemaphoreGive (at_mutex);
-   return p;
+   return l;
 }
 
 void
@@ -800,14 +805,46 @@ at_task (void *X)
    gpio_set_level (atpwr, 1);
    sleep (1);
    gpio_set_level (atrst, 1);
-   char *r;
-   while (!(r = atcmd ("AT", 1000)) || (strncmp (r, "AT", 2) && strncmp (r, "OK", 2))); // TODO give up and power cycle?
+   while (atcmd ("AT", 1000) < 0 || (strncmp (atbuf, "AT", 2) && strncmp (atbuf, "OK", 2)));    // TODO give up and power cycle?
    atcmd ("ATE0", 10);
    atcmd ("AT+CCID", 10);
    atcmd ("AT+GSN", 10);
    while (1)
    {
-      atcmd (NULL, 1000);
+      if (atcmd ("AT+CIPMUX=0", 10000) < 0)
+         continue;
+      if (!strstr ((char *) atbuf, "OK"))
+         continue;
+      if (atcmd ("AT+CIPSTART=\"UDP\",\"91.240.176.1\",6666", 10000) < 0)       // TODO
+         continue;
+      if (!strstr ((char *) atbuf, "CONNECT"))
+         continue;
+      while (1)
+      {
+         sleep (1);
+         if (tracki != tracko)
+         {                      // Send data
+            xSemaphoreTake (track_mutex, portMAX_DELAY);
+            if (tracki != tracko)
+            {
+               char temp[30];
+               snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", tracklen[tracko]);
+               if (atcmd (temp, 1000) < 0)
+                  break;
+               if (!strstr (atbuf, ">"))
+                  break;
+               uart_write_bytes (atuart, (void *) track[tracko], tracklen[tracko]);
+               if (atcmd (NULL, 1000) < 0)
+                  break;
+               if (!strstr (atbuf, "SENT"))
+                  break;
+               tracko = (tracko + 1) % MAXTRACK;
+            }
+            xSemaphoreGive (track_mutex);
+         }
+         // TODO keep alive
+      }
+      atcmd ("AT+CIPCLOSE", 10000);
    }
 }
 
@@ -853,7 +890,8 @@ nmea_task (void *z)
                {
                   if (!strcmp ((char *) p, "$PMTK010,1"))
                      gpsstarted = 0;    // Resend config
-                  revk_info ("rx", "%s", p);    // Other packet
+                  if (strncmp ((char *) p, "$PMTK001", 8))
+                     revk_info ("rx", "%s", p); // Other packet
                }
             }
          } else if (l > p)
@@ -939,8 +977,15 @@ rdp (unsigned int l, unsigned int h, unsigned int margincm)
          fix[n].tim = 0;
       return;
    }
-   rdp (l, bestn, margincm);
-   rdp (bestn, h, margincm);
+   if (bestn - l > h - bestn)
+   {
+      rdp (bestn, h, margincm);
+      rdp (l, bestn, margincm);
+   } else
+   {
+      rdp (l, bestn, margincm);
+      rdp (bestn, h, margincm);
+   }
 }
 
 unsigned int
@@ -962,6 +1007,7 @@ app_main ()
    esp_err_t err;
    cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
    at_mutex = xSemaphoreCreateMutex (); // Shared command access
+   track_mutex = xSemaphoreCreateMutex ();
    revk_init (&app_command);
 #define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bn(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_BOOLEAN);
@@ -1043,7 +1089,6 @@ app_main ()
    while (1)
    {                            // main task
       sleep (1);
-      // TODO keepalive
       if (fixsave)
       {                         // Time to save a fix
          fixnow = 0;
@@ -1063,7 +1108,57 @@ app_main ()
          }
          // Make tracking packet
          // TODO
-
+         uint8_t *t = track[tracki],
+            *p = t;
+         *p++ = 0x2A;           // Version
+         *p++ = revk_binid >> 16;
+         *p++ = revk_binid >> 8;
+         *p++ = revk_binid;
+         *p++ = basetim >> 24;
+         *p++ = basetim >> 16;
+         *p++ = basetim >> 8;
+         *p++ = basetim;
+         p += 2;                //Length
+         int n;
+         for (n = 0; n < last - 1; n++)
+         {
+            fix_t *f = &fix[n];
+            unsigned int v = f->tim;
+            *p++ = v >> 8;
+            *p++ = v;
+            v = f->alt;
+            *p++ = v >> 8;
+            *p++ = v;
+            v = f->lat;
+            *p++ = v >> 24;
+            *p++ = v >> 16;
+            *p++ = v >> 8;
+            *p++ = v;
+            v = f->lon;
+            *p++ = v >> 24;
+            *p++ = v >> 16;
+            *p++ = v >> 8;
+            *p++ = v;
+         }
+         t[8] = (p - t) >> 8;   // Poke length
+         t[9] = (p - t);
+         // CRC
+         unsigned int crc = esp_crc32_be (0, t, p - t);
+         *p++ = crc >> 24;
+         *p++ = crc >> 16;
+         *p++ = crc >> 8;
+         *p++ = crc;
+         // Pad
+         while (((p - t) - 8) & 0xF)
+            *p++ = 0;
+         // Encrypt
+         // TODO
+         tracklen[tracki] = p - t;
+         xSemaphoreTake (track_mutex, portMAX_DELAY);
+         tracki = (tracki + 1) % MAXTRACK;
+         if (tracki == tracko)
+            tracko = (tracko + 1) % MAXTRACK;
+         xSemaphoreGive (track_mutex);
          fixmove = fixsave;     // move back for next block
          fixsave = 0;
       }
