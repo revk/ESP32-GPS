@@ -37,7 +37,9 @@ static const char TAG[] = "GPS";
 	b(fixdebug,N)	\
 	u32(interval,600)\
 	u32(keepalive,60)\
-	u32(margincm,10)\
+	u32(secondcm,10)\
+	u32(margincm,50)\
+	u32(retrycm,10)\
 	u32(altscale,10)\
 	s(apn,"mobiledata")\
 	s(loghost,"mqtt.revk.uk")\
@@ -1017,6 +1019,7 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
       int clat = a->lat / 2 + b->lat / 2;
       int clon = a->lon / 2 + b->lon / 2;
       int calt = ((int) a->alt + (int) b->alt) / 2;
+      int ctim = ((int) a->tim + (int) b->tim) / 2;
       float slat = 111111.0 * cos (M_PI * clat / 600000.0 / 180.0);
       inline float x (fix_t * p)
       {
@@ -1030,14 +1033,19 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
       {
          return (float) (p->alt - calt) / (float) altscale;
       }
-      inline float distsq (float dx, float dy, float dz)
+      inline float t (fix_t * p)
+      {
+         return (float) (p->tim - ctim) * secondcm / 100.0 / 10.0;
+      }
+      inline float distsq (float dx, float dy, float dz, float dt)
       {                         // Distance in 4D space
-         return dx * dx + dy * dy + dz * dz;
+         return dx * dx + dy * dy + dz * dz + dt * dt;
       }
       float DX = x (b) - x (a);
       float DY = y (b) - y (a);
       float DZ = z (b) - z (a);
-      float LSQ = distsq (DX, DY, DZ);
+      float DT = t (b) - t (a);
+      float LSQ = distsq (DX, DY, DZ, DT);
       int bestn = -1;
       float best = 0;
       int n;
@@ -1048,11 +1056,11 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
          {
             float d = 0;
             if (!LSQ)
-               d = distsq (x (p) - x (a), y (p) - y (a), z (p) - z (a));        // Simple distance from point
+               d = distsq (x (p) - x (a), y (p) - y (a), z (p) - z (a), t (p) - t (a)); // Simple distance from point
             else
             {
-               float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ) / LSQ;
-               d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p));
+               float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
+               d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
             }
             if (bestn >= 0 && d <= best)
                continue;
@@ -1191,7 +1199,7 @@ app_main ()
                revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, m);
             if (last <= MAXSEND)
                break;
-            m += margincm;
+            m += retrycm;
          }
          if (last <= MAXSEND)
          {
