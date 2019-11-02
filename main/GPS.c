@@ -37,9 +37,10 @@ static const char TAG[] = "GPS";
 	b(fixdebug,N)	\
 	u32(interval,600)\
 	u32(keepalive,60)\
-	u32(margincm,100)\
+	u32(margincm,50)\
 	u32(secondcm,10)\
 	u32(altscale,10)\
+	s(apn,"mobiledata")\
 	s(loghost,"mqtt.revk.uk")\
 	u32(logport,6666)\
 	bn(aes,16)	\
@@ -99,7 +100,8 @@ time_t basetim = 0;             // Base time for fixtim
 typedef struct fix_s fix_t;
 struct fix_s
 {                               // 12 byte fix data
-   unsigned short tim;
+   unsigned char keep:1;
+   unsigned short tim:15;
    short alt;
    int lat;
    int lon;
@@ -109,9 +111,12 @@ struct fix_s
 #define MAXDATA 1400            // Size of packet
 #define	MAXSEND	((MAXDATA-8-4-28)/16*16/sizeof(fix_t))
 uint8_t track[MAXTRACK][MAXDATA];
-int tracklen[MAXTRACK];
+int tracklen[MAXTRACK] = { };
+
 volatile unsigned int tracki = 0,
    tracko = 0;
+// TODO MQTT reporting
+// TODO resending
 SemaphoreHandle_t track_mutex = NULL;
 fix_t fix[MAXFIX];
 unsigned int fixnext = 0;       // Next fix to store
@@ -319,7 +324,7 @@ gpscmd (const char *fmt, ...)
 #define ATBUFSIZE 2000
 char *atbuf = NULL;
 int
-atcmd (const void *cmd, int t)
+atcmd (const void *cmd, int t1, int t2)
 {                               // TODO process response cleanly...
    xSemaphoreTake (at_mutex, portMAX_DELAY);
    if (cmd)
@@ -328,9 +333,25 @@ atcmd (const void *cmd, int t)
       uart_write_bytes (atuart, "\r", 1);
       revk_info ("attx", "%s", cmd);
    }
-   int l = uart_read_bytes (atuart, (void *) atbuf, 1, t);
-   if (l == 1)
-      l = 1 + uart_read_bytes (atuart, (void *) atbuf + 1, ATBUFSIZE - 2, 100);
+   int l = uart_read_bytes (atuart, (void *) atbuf, 1, (t1 ? : 100) / portTICK_PERIOD_MS);
+   if (l > 0)
+   {                            // initial response started
+      int l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
+      if (l2 > 0 && t2)
+      {                         // End of initial response
+         l += l2;
+         l2 = uart_read_bytes (atuart, (void *) atbuf + l, 1, t2 / portTICK_PERIOD_MS);
+         if (l2 > 0)
+         {                      // Secondary response started
+            l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
+            if (l2 > 0)
+               l += l2;         // End of secondary response
+            else
+               l = l2;
+         }
+      } else
+         l = l2;
+   }
    if (l >= 0)
    {
       atbuf[l] = 0;
@@ -434,7 +455,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "attx") && len)
    {                            // Send arbitrary AT command (do not include *XX or CR/LF)
-      atcmd (value, 100);
+      atcmd (value, 0, 0);
       return "";
    }
    if (!strcmp (tag, "status"))
@@ -570,6 +591,7 @@ nmea (char *s)
             int fixalt = round (alt);
             if (fixnext < MAXFIX)
             {
+               fix[fixnext].keep = 0;
                fix[fixnext].tim = fixtim;
                fix[fixnext].alt = fixalt;
                fix[fixnext].lat = fixlat;
@@ -805,22 +827,67 @@ at_task (void *X)
    gpio_set_level (atpwr, 1);
    sleep (1);
    gpio_set_level (atrst, 1);
-   while (atcmd ("AT", 1000) < 0 || (strncmp (atbuf, "AT", 2) && strncmp (atbuf, "OK", 2)));    // TODO give up and power cycle?
-   atcmd ("ATE0", 10);
-   atcmd ("AT+CCID", 10);
-   atcmd ("AT+GSN", 10);
+   while (atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && strncmp (atbuf, "OK", 2)));    // TODO give up and power cycle?
+   atcmd ("ATE0", 0, 0);
+   atcmd ("AT+CCID", 0, 0);
+   atcmd ("AT+GSN", 0, 0);
+   int delay = 1;
    while (1)
    {
-      if (atcmd ("AT+CIPMUX=0", 10000) < 0)
+      while (delay--)
+         atcmd (NULL, 1000, 0);
+      delay = 1;
+      if (atcmd ("AT+CIPSHUT", 2000, 0) < 0)
          continue;
-      if (!strstr ((char *) atbuf, "OK"))
-         continue;
-      if (atcmd ("AT+CIPSTART=\"UDP\",\"91.240.176.1\",6666", 10000) < 0)       // TODO
-         continue;
-      if (!strstr ((char *) atbuf, "CONNECT"))
+      if (!strstr ((char *) atbuf, "SHUT OK"))
          continue;
       while (1)
       {
+         sleep (1);
+         if (atcmd ("AT+CREG?", 1000, 1000) < 0)
+            continue;
+         if (!strstr ((char *) atbuf, "OK"))
+            continue;
+         if (strstr ((char *) atbuf, "+CREG: 0,1") || strstr ((char *) atbuf, "+CREG: 0,5"))
+            break;
+      }
+      {
+         char temp[200];
+         snprintf (temp, sizeof (temp), "AT+CSTT=\"%s\"", apn);
+         if (atcmd (temp, 1000, 0) < 0)
+            continue;
+         if (!strstr ((char *) atbuf, "OK"))
+            continue;
+      }
+      if (atcmd ("AT+CIICR", 10000, 0) < 0)
+         continue;
+      if (!strstr ((char *) atbuf, "OK"))
+         continue;
+      delay = 600;              // We established a connection so don't immediately close and re-establish as that is rude
+      if (atcmd ("AT+CIFSR", 20000, 0) < 0)
+         continue;
+      if (!strstr ((char *) atbuf, "."))
+         continue;              // Yeh, not an OK after the IP!!! How fucking stupid
+#if 0
+      if (atcmd ("AT+CIPMUX=0", 1000) < 0)
+         continue;
+      if (!strstr ((char *) atbuf, "OK"))
+         continue;
+#endif
+      {
+         char temp[200];
+         snprintf (temp, sizeof (temp), "AT+CIPSTART=\"UDP\",\"%s\",%d", loghost, logport);
+         if (atcmd (temp, 1000, 10000) < 0)
+            continue;
+         if (!strstr ((char *) atbuf, "OK"))
+            continue;
+      }
+      if (!strstr ((char *) atbuf, "CONNECT OK"))
+         continue;
+      revk_info (TAG, "Mobile connected");
+      // TODO - is restart packet needed?
+      while (1)
+      {                         // Connected, send data as needed
          sleep (1);
          if (tracki != tracko)
          {                      // Send data
@@ -829,14 +896,14 @@ at_task (void *X)
             {
                char temp[30];
                snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", tracklen[tracko]);
-               if (atcmd (temp, 1000) < 0)
+               if (atcmd (temp, 1000, 0) < 0)
                   break;
                if (!strstr (atbuf, ">"))
                   break;
                uart_write_bytes (atuart, (void *) track[tracko], tracklen[tracko]);
-               if (atcmd (NULL, 1000) < 0)
+               if (atcmd (NULL, 10000, 0) < 0)
                   break;
-               if (!strstr (atbuf, "SENT"))
+               if (!strstr (atbuf, "SEND OK"))
                   break;
                tracko = (tracko + 1) % MAXTRACK;
             }
@@ -844,7 +911,7 @@ at_task (void *X)
          }
          // TODO keep alive
       }
-      atcmd ("AT+CIPCLOSE", 10000);
+      revk_info (TAG, "Mobile disconnected");
    }
 }
 
@@ -858,7 +925,7 @@ nmea_task (void *z)
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes (gpsuart, p,
                                buf + sizeof (buf) - p,
-                               10);
+                               10 / portTICK_PERIOD_MS);
       if (l < 0)
          sleep (1);
       if (l <= 0)
@@ -911,80 +978,88 @@ nmea_task (void *z)
 }
 
 void
-rdp (unsigned int l, unsigned int h, unsigned int margincm)
-{                               // Reduce
-   if (l + 1 >= h)
-      return;
-   fix_t *a = &fix[l];
-   fix_t *b = &fix[h];
-   // Centre for working out metres
-   int clat = (a->lat + b->lat) / 2;
-   int clon = (a->lon + b->lon) / 2;
-   int calt = (a->alt + b->alt) / 2;
-   int ctim = (a->tim + b->tim) / 2;
-   float slat = 111111.0 * cos (M_PI * clat / 600000.0 / 180.0);
-   inline float x (fix_t * p)
+rdp (unsigned int L, unsigned int H, unsigned int margincm)
+{                               // Reduce, non recursive
+   while (L + 1 < H)
    {
-      return (float) (p->lon - clon) * slat / 600000.0;
-   }
-   inline float y (fix_t * p)
-   {
-      return (float) (p->lat - clat) * 111111.0 / 600000.0;
-   }
-   inline float z (fix_t * p)
-   {
-      return (float) (p->alt - calt) / altscale;
-   }
-   inline float t (fix_t * p)
-   {
-      return (float) (p->tim - ctim) * secondcm / 1000.0;
-   }
-   inline float distsq (float dx, float dy, float dz, float dt)
-   {                            // Distance in 4D space
-      return dx * dx + dy * dy + dz * dz + dt * dt;
-   }
-   float DX = x (b) - x (a);
-   float DY = y (b) - y (a);
-   float DZ = z (b) - z (a);
-   float DT = t (b) - t (a);
-   float LSQ = distsq (DX, DY, DZ, DT);
-   int bestn = -1;
-   float best = 0;
-   float marginsq = (float) margincm * margincm / 10000.0;
-   int n;
-   for (n = l + 1; n < h; n++)
-   {
-      fix_t *p = &fix[n];
-      if (p->tim)
-      {
-         float d = 0;
-         if (LSQ < (MINL * MINL))       // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
-            d = distsq (x (p), y (p), z (p), t (p));    // (centre is 0,0,0,0)
-         else
-         {
-            float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
-            d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
-         }
-         if (bestn >= 0 && d < best)
-            continue;
-         bestn = n;             // New furthest
-         best = d;
+      unsigned int l = L,
+         h;
+      int c = 0;
+      for (h = L + 1; h < H && !fix[h].keep; h++)
+         if (fix[h].tim)
+            c++;
+      if (!c)
+      {                         // Found a range, but all done.
+         L = h;
+         continue;
       }
-   }
-   if (best < marginsq)
-   {                            // All points are within margin - so all to be pruned
+      if (L + 1 >= H)
+         break;                 // Done
+      fix_t *a = &fix[l];
+      fix_t *b = &fix[h];
+      a->keep = 1;
+      b->keep = 1;
+      // Centre for working out metres
+      int clat = (a->lat + b->lat) / 2;
+      int clon = (a->lon + b->lon) / 2;
+      int calt = (a->alt + b->alt) / 2;
+      int ctim = (a->tim + b->tim) / 2;
+      float slat = 111111.0 * cos (M_PI * clat / 600000.0 / 180.0);
+      inline float x (fix_t * p)
+      {
+         return (float) (p->lon - clon) * slat / 600000.0;
+      }
+      inline float y (fix_t * p)
+      {
+         return (float) (p->lat - clat) * 111111.0 / 600000.0;
+      }
+      inline float z (fix_t * p)
+      {
+         return (float) (p->alt - calt) / altscale;
+      }
+      inline float t (fix_t * p)
+      {
+         return (float) (p->tim - ctim) * secondcm / 1000.0;
+      }
+      inline float distsq (float dx, float dy, float dz, float dt)
+      {                         // Distance in 4D space
+         return dx * dx + dy * dy + dz * dz + dt * dt;
+      }
+      float DX = x (b) - x (a);
+      float DY = y (b) - y (a);
+      float DZ = z (b) - z (a);
+      float DT = t (b) - t (a);
+      float LSQ = distsq (DX, DY, DZ, DT);
+      int bestn = -1;
+      float best = 0;
+      float marginsq = (float) margincm * margincm / 10000.0;
+      int n;
       for (n = l + 1; n < h; n++)
-         fix[n].tim = 0;
-      return;
-   }
-   if (bestn - l > h - bestn)
-   {
-      rdp (bestn, h, margincm);
-      rdp (l, bestn, margincm);
-   } else
-   {
-      rdp (l, bestn, margincm);
-      rdp (bestn, h, margincm);
+      {
+         fix_t *p = &fix[n];
+         if (p->tim)
+         {
+            float d = 0;
+            if (LSQ < (MINL * MINL))    // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
+               d = distsq (x (p), y (p), z (p), t (p)); // (centre is 0,0,0,0)
+            else
+            {
+               float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
+               d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
+            }
+            if (bestn >= 0 && d < best)
+               continue;
+            bestn = n;          // New furthest
+            best = d;
+         }
+      }
+      if (best < marginsq)
+      {                         // All points are within margin - so all to be pruned
+         for (n = l + 1; n < h; n++)
+            fix[n].tim = 0;
+         continue;;
+      }
+      fix[bestn].keep = 1;
    }
 }
 
@@ -997,7 +1072,11 @@ rdppack (unsigned int last, unsigned int margincm)
      o = 0;
    for (i = 0; i <= last; i++)
       if (fix[i].tim)
-         fix[o++] = fix[i];
+      {
+         fix[o] = fix[i];
+         fix[o].keep = 0;
+         o++;
+      }
    return o - 1;
 }
 
@@ -1092,73 +1171,75 @@ app_main ()
       if (fixsave)
       {                         // Time to save a fix
          fixnow = 0;
-         if (fixdebug)
-            revk_info ("fix", "Process %u fixes", fixsave + 1);
          // Reduce fixes
          unsigned int last = fixsave;
          unsigned int m = margincm;
-         while (1)
+         while (m < 100000)
          {
-            last = rdppack (last, margincm);
+            last = rdppack (last, m);
             if (fixdebug)
-               revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, m);
-            if (last < MAXSEND)
+               revk_info ("fix", "%u reduced to %u fixes at %ucm", fixsave + 1, last + 1, m);
+            if (last <= MAXSEND)
                break;
-            m *= 2;
+            m += margincm;
          }
-         // Make tracking packet
-         // TODO
-         uint8_t *t = track[tracki],
-            *p = t;
-         *p++ = 0x2A;           // Version
-         *p++ = revk_binid >> 16;
-         *p++ = revk_binid >> 8;
-         *p++ = revk_binid;
-         *p++ = basetim >> 24;
-         *p++ = basetim >> 16;
-         *p++ = basetim >> 8;
-         *p++ = basetim;
-         p += 2;                //Length
-         int n;
-         for (n = 0; n < last - 1; n++)
+         if (last <= MAXSEND)
          {
-            fix_t *f = &fix[n];
-            unsigned int v = f->tim;
-            *p++ = v >> 8;
-            *p++ = v;
-            v = f->alt;
-            *p++ = v >> 8;
-            *p++ = v;
-            v = f->lat;
-            *p++ = v >> 24;
-            *p++ = v >> 16;
-            *p++ = v >> 8;
-            *p++ = v;
-            v = f->lon;
-            *p++ = v >> 24;
-            *p++ = v >> 16;
-            *p++ = v >> 8;
-            *p++ = v;
-         }
-         t[8] = (p - t) >> 8;   // Poke length
-         t[9] = (p - t);
-         // CRC
-         unsigned int crc = esp_crc32_be (0, t, p - t);
-         *p++ = crc >> 24;
-         *p++ = crc >> 16;
-         *p++ = crc >> 8;
-         *p++ = crc;
-         // Pad
-         while (((p - t) - 8) & 0xF)
+            // Make tracking packet
+            uint8_t *t = track[tracki],
+               *p = t;
+            *p++ = 0x2A;        // Version
+            *p++ = revk_binid >> 16;
+            *p++ = revk_binid >> 8;
+            *p++ = revk_binid;
+            *p++ = basetim >> 24;
+            *p++ = basetim >> 16;
+            *p++ = basetim >> 8;
+            *p++ = basetim;
+            p += 2;             // Length
+            *p++ = 0;           // Message type
             *p++ = 0;
-         // Encrypt
-         // TODO
-         tracklen[tracki] = p - t;
-         xSemaphoreTake (track_mutex, portMAX_DELAY);
-         tracki = (tracki + 1) % MAXTRACK;
-         if (tracki == tracko)
-            tracko = (tracko + 1) % MAXTRACK;
-         xSemaphoreGive (track_mutex);
+            int n;
+            for (n = 0; n < last - 1; n++)
+            {
+               fix_t *f = &fix[n];
+               unsigned int v = f->tim;
+               *p++ = v >> 8;
+               *p++ = v;
+               v = f->alt;
+               *p++ = v >> 8;
+               *p++ = v;
+               v = f->lat;
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+               v = f->lon;
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+            }
+            t[8] = (p - t - 10) >> 8;   // Poke length
+            t[9] = (p - t - 10);
+            // CRC
+            unsigned int crc = esp_crc32_be (0, t, p - t);
+            *p++ = crc >> 24;
+            *p++ = crc >> 16;
+            *p++ = crc >> 8;
+            *p++ = crc;
+            // Pad
+            while (((p - t) - 8) & 0xF)
+               *p++ = 0;
+            // Encrypt
+            // TODO
+            tracklen[tracki] = p - t;
+            xSemaphoreTake (track_mutex, portMAX_DELAY);
+            tracki = (tracki + 1) % MAXTRACK;
+            if (tracki == tracko)
+               tracko = (tracko + 1) % MAXTRACK;
+            xSemaphoreGive (track_mutex);
+         }
          fixmove = fixsave;     // move back for next block
          fixsave = 0;
       }
