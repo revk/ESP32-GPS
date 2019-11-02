@@ -37,7 +37,7 @@ static const char TAG[] = "GPS";
 	b(fixdebug,N)	\
 	u32(interval,600)\
 	u32(keepalive,60)\
-	u32(margincm,50)\
+	u32(margincm,10)\
 	u32(altscale,10)\
 	s(apn,"mobiledata")\
 	s(loghost,"mqtt.revk.uk")\
