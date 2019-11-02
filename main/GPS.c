@@ -31,6 +31,7 @@ static const char TAG[] = "GPS";
         s8(atkey,4)	\
         s8(atrst,5)	\
         s8(atpwr,-1)	\
+	b(fixdebug,N)	\
 	u32(interval,600)\
 	u32(keepalive,60)\
 	u32(margincm,100)\
@@ -470,14 +471,15 @@ nmea (char *s)
    if (!gpsstarted && (esp_timer_get_time () > 10000000 || !revk_offline ()))
    {                            // The delay is to allow debug logging, etc.
       revk_info (TAG, "GPS running");
-      gpscmd ("$PMTK220,200"); // Fix rate
-      gpscmd ("$PMTK314,0,0,5,1,50,0,0,0,0,0,0,0,0,0,0,0,0,50,0");   // What to send
-      gpscmd ("$PMTK301,%d", waas ? 2 : 0); // WAAS
-      gpscmd ("$PMTK313,%d", sbas ? 1 : 0); // SBAS
-      gpscmd ("$PMTK513,%d", sbas ? 1 : 0); // SBAS
-      gpscmd ("$PMTK286,%d", aic ? 1 : 0);	// AIC
-      gpscmd ("$PMTK869,1,%d", easy ? 1 : 0); // Easy
-      gpscmd ("$PMTK225,%d", (always ? 8 : 0) + (backup ? 1 : 0)); // Periodic
+      gpscmd ("$PMTK220,200");  // Fix rate
+      gpscmd ("$PQTXT,W,0,1");    // Disable GPTXT
+      gpscmd ("$PMTK314,0,0,5,1,50,0,0,0,0,0,0,0,0,0,0,0,0,50,0");      // What to send
+      gpscmd ("$PMTK301,%d", waas ? 2 : 0);     // WAAS
+      gpscmd ("$PMTK313,%d", sbas ? 1 : 0);     // SBAS
+      gpscmd ("$PMTK513,%d", sbas ? 1 : 0);     // SBAS
+      gpscmd ("$PMTK286,%d", aic ? 1 : 0);      // AIC
+      gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);   // Easy
+      gpscmd ("$PMTK225,%d", (always ? 8 : 0) + (backup ? 1 : 0));      // Periodic
       gpsstarted = 1;
    }
    char *f[50];
