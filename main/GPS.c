@@ -78,6 +78,7 @@ char courseforce = 0;
 char hdopforce = 0;
 char pdopforce = 0;
 char vdopforce = 0;
+char gpsstarted = 0;
 
 static SemaphoreHandle_t cmd_mutex = NULL;
 static SemaphoreHandle_t at_mutex = NULL;
@@ -267,13 +268,13 @@ gpscmd (const char *fmt, ...)
    char *p;
    for (p = s + 1; *p; p++)
       c ^= *p;
+   if (gpsdebug)
+      revk_info ("tx", "%s", s);
    if (*s == '$')
       p += sprintf (p, "*%02X\r\n", c); // We allowed space
    xSemaphoreTake (cmd_mutex, portMAX_DELAY);
    uart_write_bytes (gpsuart, s, p - s);
    xSemaphoreGive (cmd_mutex);
-   if (gpsdebug)
-      revk_info ("tx", "%s", s);
 }
 
 #define ATBUFSIZE 2000
@@ -286,7 +287,7 @@ atcmd (const void *cmd, int t)
    {
       uart_write_bytes (atuart, cmd, strlen ((char *) cmd));
       uart_write_bytes (atuart, "\r", 1);
-      revk_info ("Tx", "%s", cmd);
+      revk_info ("attx", "%s", cmd);
    }
    int l = uart_read_bytes (atuart, atbuf, ATBUFSIZE - 1, t);
    uint8_t *p = atbuf,
@@ -299,7 +300,7 @@ atcmd (const void *cmd, int t)
          e--;
       *e = 0;
       if (e > p)
-         revk_info ("Rx", "%s", p);
+         revk_info ("atrx", "%s", p);
    }
    xSemaphoreGive (at_mutex);
    return p;
@@ -390,7 +391,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       gpscmd ("%s", value);
       return "";
    }
-   if (!strcmp (tag, "Tx") && len)
+   if (!strcmp (tag, "attx") && len)
    {                            // Send arbitrary AT command (do not include *XX or CR/LF)
       atcmd (value, 100);
       return "";
@@ -453,22 +454,23 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
 static void
 nmea (char *s)
 {
-   if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
-      return;
-   static char started = 0;
-   if (!started && (esp_timer_get_time () > 5000000 || !revk_offline ()))
-   {                            // The delay is to allow debug logging, etc.
-      revk_info (TAG, "GPS running");
-      gpscmd ("$PMTK301,%d", waas ? 2 : 0);
-      gpscmd ("$PMTK313,%d", sbas ? 1 : 0);
-      gpscmd ("$PMTK513,%d", sbas ? 1 : 0);
-      gpscmd ("$PMTK286,%d", aic ? 1 : 0);
-      gpscmd ("$PMTK869,1,%d", aic ? 1 : 0);
-      gpscmd ("$PMTK225,%d", (always ? 8 : 0) + (backup ? 1 : 0));
-      started = 1;
-   }
    if (gpsdebug)
       revk_info ("rx", "%s", s);
+   if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
+      return;
+   if (!gpsstarted && (esp_timer_get_time () > 10000000 || !revk_offline ()))
+   {                            // The delay is to allow debug logging, etc.
+      revk_info (TAG, "GPS running");
+      gpscmd ("$PMTK220,200"); // Fix rate
+      gpscmd ("$PMTK314,0,0,5,1,50,0,0,0,0,0,0,0,0,0,0,0,0,50,0");   // What to send
+      gpscmd ("$PMTK301,%d", waas ? 2 : 0); // WAAS
+      gpscmd ("$PMTK313,%d", sbas ? 1 : 0); // SBAS
+      gpscmd ("$PMTK513,%d", sbas ? 1 : 0); // SBAS
+      gpscmd ("$PMTK286,%d", aic ? 1 : 0);	// AIC
+      gpscmd ("$PMTK869,1,%d", easy ? 1 : 0); // Easy
+      gpscmd ("$PMTK225,%d", (always ? 8 : 0) + (backup ? 1 : 0)); // Periodic
+      gpsstarted = 1;
+   }
    char *f[50];
    int n = 0;
    s++;
@@ -484,7 +486,8 @@ nmea (char *s)
    if (!n)
       return;
    if (!strncmp (f[0], "GPGGA", 5) && n >= 14)
-   {                            // Fix
+   {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
+
       if (strlen (f[2]) > 2 && strlen (f[4]) > 3)
       {
          if (!latforce)
@@ -502,20 +505,19 @@ nmea (char *s)
       gsep = strtof (f[10], NULL);
       return;
    }
-   if (!strncmp (f[0], "GPRMC", 5) && n >= 12)
-   {
-      if (strlen (f[1]) >= 6 && strlen (f[9]) >= 6 && !timeforce)
+   if (!strncmp (f[0], "GPZDA", 5) && n >= 5)
+   {                            // Time: $GPZDA,093624.000,02,11,2019,,
+      if (strlen (f[1]) == 10 && !timeforce)
       {
          struct tm t = { };
+         struct timeval v = { };
          t.tm_hour = (f[1][0] - '0') * 10 + f[1][1] - '0';
          t.tm_min = (f[1][2] - '0') * 10 + f[1][3] - '0';
          t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
-         t.tm_year = 100 + (f[9][4] - '0') * 10 + f[9][5] - '0';
-         t.tm_mon = (f[9][2] - '0') * 10 + f[9][3] - '0' - 1;
-         t.tm_mday = (f[9][0] - '0') * 10 + f[9][1] - '0';
-         struct timeval v = { };
-         if (f[1][6] == '.')
-            v.tv_usec = atoi (f[1] + 7) * 1000;
+         v.tv_usec = atoi (f[1] + 7) * 1000;
+         t.tm_year = atoi (f[4]) - 1900;
+         t.tm_mon = atoi (f[3]) - 1;
+         t.tm_mday = atoi (f[2]);
          v.tv_sec = mktime (&t);
          settimeofday (&v, NULL);
       }
@@ -748,10 +750,26 @@ app_main ()
       oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
       oled_set (x, 8, 4);
    }
+   if (oledsda >= 0 && oledscl >= 0)
+      revk_task ("Display", display_task, NULL);
+   // Main task...
+   if (gpspps >= 0)
+      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
+   if (gpsfix >= 0)
+      gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
+   if (gpspps >= 0)
+      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
+   if (gpsen >= 0)
+   {                            // Enable
+      gpio_set_level (gpsen, 1);
+      gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
+   }
+   uint8_t buf[1000],
+    *p = buf;
    {
       // Init UART for GPS
       uart_config_t uart_config = {
-         .baud_rate = gpsbaud,  // $PMT251,baud to change rate used
+         .baud_rate = gpsbaud,
          .data_bits = UART_DATA_8_BITS,
          .parity = UART_PARITY_DISABLE,
          .stop_bits = UART_STOP_BITS_1,
@@ -764,19 +782,6 @@ app_main ()
       else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
          revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
    }
-   if (gpsen >= 0)
-   {                            // Enable
-      gpio_set_level (gpsen, 1);
-      gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
-   }
-   if (gpspps >= 0)
-      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
-   if (gpsfix >= 0)
-      gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
-   if (gpspps >= 0)
-      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
-   if (oledsda >= 0 && oledscl >= 0)
-      revk_task ("Display", display_task, NULL);
    if (attx >= 0 && atrx >= 0 && atpwr >= 0)
    {
       // Init UART for Mobile
@@ -800,9 +805,6 @@ app_main ()
       gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
       revk_task ("Mobile", at_task, NULL);
    }
-   // Main task...
-   uint8_t buf[1000],
-    *p = buf;
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
@@ -837,7 +839,11 @@ app_main ()
                if (p[1] == 'G')
                   nmea ((char *) p);
                else
+               {
+                  if (!strcmp ((char *) p, "$PMTK010,1"))
+                     gpsstarted = 0;    // Resend config
                   revk_info ("rx", "%s", p);    // Other packet
+               }
             }
          } else if (l > p)
             revk_error (TAG, "[%.*s]", l - p, p);
