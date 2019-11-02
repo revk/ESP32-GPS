@@ -148,7 +148,7 @@ main (int argc, const char *argv[])
       double DY = y (b) - y (a);
       double DZ = z (b) - z (a);
       double DT = t (b) - t (a);
-      double LSQ = distqs (DX, DY, DZ, DT);
+      double LSQ = distsq (DX, DY, DZ, DT);
       int bestn = -1;
       double best = 0;
       int n;

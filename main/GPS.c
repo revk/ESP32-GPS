@@ -32,11 +32,13 @@ static const char TAG[] = "GPS";
         s8(atrst,5)	\
         s8(atpwr,-1)	\
 	u8(fixpersec,10)\
+	b(fixdump,N)	\
 	b(fixdebug,N)	\
 	u32(interval,600)\
 	u32(keepalive,60)\
 	u32(margincm,100)\
 	u32(secondcm,10)\
+	u32(altscale,10)\
 	s(loghost,"mqtt.revk.uk")\
 	u32(logport,6666)\
 	bn(aes,16)	\
@@ -77,7 +79,7 @@ float hdop = 0;
 float vdop = 0;
 float course = 0;
 int sats = 0;
-int fix = 0;
+int fixtype = 0;
 int fixmode = 0;
 char gotfix = 0;
 char lonforce = 0;
@@ -90,8 +92,24 @@ char hdopforce = 0;
 char pdopforce = 0;
 char vdopforce = 0;
 char gpsstarted = 0;
+#define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
 time_t basetim = 0;             // Base time for fixtim
+typedef struct fix_s fix_t;
+struct fix_s
+{                               // 12 byte fix data
+   unsigned short tim;
+   short alt;
+   int lat;
+   int lon;
+};
+#define	MAXFIX 6100
+#define	MAXSEND	120
+fix_t fix[MAXFIX];
+unsigned int fixnext = 0;       // Next fix to store
+volatile int fixsave = 0;       // Time to save fixes
+volatile int fixmove = 0;       // move base
+volatile char fixnow = 0;       // Force fix
 
 static SemaphoreHandle_t cmd_mutex = NULL;
 static SemaphoreHandle_t at_mutex = NULL;
@@ -359,6 +377,11 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       gpscmd ("$PMTK183");      // Log status
       return "";
    }
+   if (!strcmp (tag, "fix"))
+   {                            // Force fix dump now
+      fixnow = 1;
+      return "";
+   }
    if (!strcmp (tag, "time"))
    {
       if (!len)
@@ -504,7 +527,7 @@ nmea (char *s)
 
       if (strlen (f[1]) >= 10 && strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
       {
-         fix = atoi (f[6]);
+         fixtype = atoi (f[6]);
          sats = atoi (f[7]);
          if (!altforce)
             alt = strtof (f[9], NULL);
@@ -537,11 +560,36 @@ nmea (char *s)
             if (fixtim / 10 + 100 < (gpszda % 86400))
                fixtim += 864000;        // Day wrap
             if (!basetim)
-               basetim = gpszda;
+               basetim = gpszda - 1;
             fixtim -= (basetim - gpszda / 86400 * 86400) * 10;
             int fixalt = round (alt);
-            if (fixdebug)
-               revk_info ("fix", "base=%u tim=%u lat=%d lon=%d alt=%d", (unsigned int) basetim, fixtim, fixlat, fixlon, fixalt);
+            if (fixnext < MAXFIX)
+            {
+               fix[fixnext].tim = fixtim;
+               fix[fixnext].alt = fixalt;
+               fix[fixnext].lat = fixlat;
+               fix[fixnext].lon = fixtim;
+               if (fixdump)
+                  revk_info ("fix", "fix:%u tim=%u lat=%d lon=%d alt=%d", fixnext, fixtim, fixlat, fixlon, fixalt);
+               fixnext++;
+               if (fixmove)
+               {                // Move back fixes
+                  unsigned int n,
+                    p = 0;
+                  int diff = fix[fixmove].tim / 10 * 10 - 10;
+                  basetim += diff / 10;
+                  for (n = fixmove; n < fixnext; n++)
+                  {
+                     fix[p] = fix[n];
+                     fix[p].tim -= diff;
+                     p++;
+                  }
+                  fixnext = p;
+                  fixmove = 0;
+               }
+               if (!fixsave && (fixnow || fixnext >= MAXFIX - 100 || (gpszda > basetim && gpszda - basetim > interval)))
+                  fixsave = fixnext - 1;        // Save
+            }
          }
       }
       return;
@@ -619,7 +667,7 @@ display_task (void *p)
       y -= 10;
       oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",
                  speed < speedlow ? "-" : speed > speedhigh ? "+" : " ");
-      oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fix == 2 ? "Diff" : fix == 1 ? "GPS" : "No fix");
+      oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fixtype == 2 ? "Diff" : fixtype == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
@@ -764,90 +812,10 @@ at_task (void *X)
 }
 
 void
-app_main ()
+nmea_task (void *z)
 {
-   esp_err_t err;
-   cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
-   at_mutex = xSemaphoreCreateMutex (); // Shared command access
-   revk_init (&app_command);
-#define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
-#define bn(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_BOOLEAN);
-#define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
-#define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s(n,d) revk_register(#n,0,0,&n,d,0);
-   settings
-#undef u32
-#undef s8
-#undef u8
-#undef b
-#undef bn
-#undef s
-      if (oledsda >= 0 && oledscl >= 0)
-      oled_start (1, oledaddress, oledscl, oledsda, oledflip);
-   oled_set_contrast (oledcontrast);
-   for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
-   {
-      oled_set (x, CONFIG_OLED_HEIGHT - 12, 4);
-      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
-      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
-      oled_set (x, 8, 4);
-   }
-   if (oledsda >= 0 && oledscl >= 0)
-      revk_task ("Display", display_task, NULL);
-   // Main task...
-   if (gpspps >= 0)
-      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
-   if (gpsfix >= 0)
-      gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
-   if (gpspps >= 0)
-      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
-   if (gpsen >= 0)
-   {                            // Enable
-      gpio_set_level (gpsen, 1);
-      gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
-   }
    uint8_t buf[1000],
     *p = buf;
-   {
-      // Init UART for GPS
-      uart_config_t uart_config = {
-         .baud_rate = gpsbaud,
-         .data_bits = UART_DATA_8_BITS,
-         .parity = UART_PARITY_DISABLE,
-         .stop_bits = UART_STOP_BITS_1,
-         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-      };
-      if ((err = uart_param_config (gpsuart, &uart_config)))
-         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-      else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
-         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-      else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
-         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
-   }
-   if (attx >= 0 && atrx >= 0 && atpwr >= 0)
-   {
-      // Init UART for Mobile
-      uart_config_t uart_config = {
-         .baud_rate = atbaud,
-         .data_bits = UART_DATA_8_BITS,
-         .parity = UART_PARITY_DISABLE,
-         .stop_bits = UART_STOP_BITS_1,
-         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-      };
-      if ((err = uart_param_config (atuart, &uart_config)))
-         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-      else if ((err = uart_set_pin (atuart, attx, atrx, -1, -1)))
-         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-      else if ((err = uart_driver_install (atuart, 256, 0, 0, NULL, 0)))
-         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
-      if (atkey >= 0)
-         gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
-      if (atrst >= 0)
-         gpio_set_direction (atrst, GPIO_MODE_OUTPUT);
-      gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
-      revk_task ("Mobile", at_task, NULL);
-   }
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
@@ -901,5 +869,203 @@ app_main ()
          continue;
       }
       p = buf;                  // Start from scratch
+   }
+}
+
+void
+rdp (unsigned int l, unsigned int h, unsigned int margincm)
+{                               // Reduce
+   if (l + 1 >= h)
+      return;
+   fix_t *a = &fix[l];
+   fix_t *b = &fix[h];
+   // Centre for working out metres
+   int clat = (a->lat + b->lat) / 2;
+   int clon = (a->lon + b->lon) / 2;
+   int calt = (a->alt + b->alt) / 2;
+   int ctim = (a->tim + b->tim) / 2;
+   float slat = 111111.0 * cos (M_PI * clat / 600000.0 / 180.0);
+   inline float x (fix_t * p)
+   {
+      return (float) (p->lon - clon) * slat / 600000.0;
+   }
+   inline float y (fix_t * p)
+   {
+      return (float) (p->lat - clat) * 111111.0 / 600000.0;
+   }
+   inline float z (fix_t * p)
+   {
+      return (float) (p->alt - calt) / altscale;
+   }
+   inline float t (fix_t * p)
+   {
+      return (float) (p->tim - ctim) * secondcm / 1000.0;
+   }
+   inline float distsq (float dx, float dy, float dz, float dt)
+   {                            // Distance in 4D space
+      return dx * dx + dy * dy + dz * dz + dt * dt;
+   }
+   float DX = x (b) - x (a);
+   float DY = y (b) - y (a);
+   float DZ = z (b) - z (a);
+   float DT = t (b) - t (a);
+   float LSQ = distsq (DX, DY, DZ, DT);
+   int bestn = -1;
+   float best = 0;
+   float marginsq = (float) margincm * margincm / 10000.0;
+   int n;
+   for (n = l + 1; n < h; n++)
+   {
+      fix_t *p = &fix[n];
+      if (p->tim)
+      {
+         float d = 0;
+         if (LSQ < (MINL * MINL))       // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
+            d = distsq (x (p), y (p), z (p), t (p));    // (centre is 0,0,0,0)
+         else
+         {
+            float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
+            d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
+         }
+         if (bestn >= 0 && d < best)
+            continue;
+         bestn = n;             // New furthest
+         best = d;
+      }
+   }
+   if (best < marginsq)
+   {                            // All points are within margin - so all to be pruned
+      for (n = l + 1; n < h; n++)
+         fix[n].tim = 0;
+      return;
+   }
+   rdp (l, bestn, margincm);
+   rdp (bestn, h, margincm);
+}
+
+unsigned int
+rdppack (unsigned int last, unsigned int margincm)
+{                               // RDP 0-last and pack and return new last
+   rdp (0, last, margincm);
+   // Pack
+   unsigned int i,
+     o = 0;
+   for (i = 0; i <= last; i++)
+      if (fix[i].tim)
+         fix[o++] = fix[i];
+   return o - 1;
+}
+
+void
+app_main ()
+{
+   esp_err_t err;
+   cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
+   at_mutex = xSemaphoreCreateMutex (); // Shared command access
+   revk_init (&app_command);
+#define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
+#define bn(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_BOOLEAN);
+#define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
+#define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define s(n,d) revk_register(#n,0,0,&n,d,0);
+   settings
+#undef u32
+#undef s8
+#undef u8
+#undef b
+#undef bn
+#undef s
+      if (oledsda >= 0 && oledscl >= 0)
+      oled_start (1, oledaddress, oledscl, oledsda, oledflip);
+   oled_set_contrast (oledcontrast);
+   for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
+   {
+      oled_set (x, CONFIG_OLED_HEIGHT - 12, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
+      oled_set (x, 8, 4);
+   }
+   if (oledsda >= 0 && oledscl >= 0)
+      revk_task ("Display", display_task, NULL);
+   // Main task...
+   if (gpspps >= 0)
+      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
+   if (gpsfix >= 0)
+      gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
+   if (gpspps >= 0)
+      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
+   if (gpsen >= 0)
+   {                            // Enable
+      gpio_set_level (gpsen, 1);
+      gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
+   }
+   {
+      // Init UART for GPS
+      uart_config_t uart_config = {
+         .baud_rate = gpsbaud,
+         .data_bits = UART_DATA_8_BITS,
+         .parity = UART_PARITY_DISABLE,
+         .stop_bits = UART_STOP_BITS_1,
+         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+      };
+      if ((err = uart_param_config (gpsuart, &uart_config)))
+         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
+      else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
+         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
+      else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
+         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+   }
+   if (attx >= 0 && atrx >= 0 && atpwr >= 0)
+   {
+      // Init UART for Mobile
+      uart_config_t uart_config = {
+         .baud_rate = atbaud,
+         .data_bits = UART_DATA_8_BITS,
+         .parity = UART_PARITY_DISABLE,
+         .stop_bits = UART_STOP_BITS_1,
+         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+      };
+      if ((err = uart_param_config (atuart, &uart_config)))
+         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
+      else if ((err = uart_set_pin (atuart, attx, atrx, -1, -1)))
+         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
+      else if ((err = uart_driver_install (atuart, 256, 0, 0, NULL, 0)))
+         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+      if (atkey >= 0)
+         gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
+      if (atrst >= 0)
+         gpio_set_direction (atrst, GPIO_MODE_OUTPUT);
+      gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
+      revk_task ("Mobile", at_task, NULL);
+   }
+   revk_task ("NMEA", nmea_task, NULL);
+   while (1)
+   {                            // main task
+      sleep (1);
+      // TODO keepalive
+      if (fixsave)
+      {                         // Time to save a fix
+         fixnow = 0;
+         if (fixdebug)
+            revk_info ("fix", "Process %u fixes", fixsave + 1);
+         // Reduce fixes
+         unsigned int last = fixsave;
+         unsigned int m = margincm;
+         while (1)
+         {
+            last = rdppack (last, margincm);
+            if (fixdebug)
+               revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, m);
+            if (last < MAXSEND)
+               break;
+            m *= 2;
+         }
+         // Make tracking packet
+         // TODO
+
+         fixmove = fixsave;     // move back for next block
+         fixsave = 0;
+      }
    }
 }
