@@ -38,7 +38,6 @@ static const char TAG[] = "GPS";
 	u32(interval,600)\
 	u32(keepalive,60)\
 	u32(margincm,50)\
-	u32(secondcm,10)\
 	u32(altscale,10)\
 	s(apn,"mobiledata")\
 	s(loghost,"mqtt.revk.uk")\
@@ -101,10 +100,10 @@ typedef struct fix_s fix_t;
 struct fix_s
 {                               // 12 byte fix data
    unsigned char keep:1;
-   unsigned short tim:15;
-   short alt;
-   int lat;
-   int lon;
+   short tim:15;                // 0.1 seconds
+   short alt;                   // 1 metre
+   int lat;                     // min*10000
+   int lon;                     // min*10000
 };
 #define	MAXFIX 6600
 #define MAXTRACK 6
@@ -996,6 +995,7 @@ nmea_task (void *z)
 void
 rdp (unsigned int L, unsigned int H, unsigned int margincm)
 {                               // Reduce, non recursive
+   float marginsq = (float) margincm * (float) margincm / 10000.0;
    while (L + 1 < H)
    {
       unsigned int l = L,
@@ -1009,17 +1009,14 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
          L = h;
          continue;
       }
-      if (L + 1 >= H)
-         break;                 // Done
       fix_t *a = &fix[l];
       fix_t *b = &fix[h];
       a->keep = 1;
       b->keep = 1;
       // Centre for working out metres
-      int clat = a->lat / 2 + b->lat / 2;       // Yes, integer and not spot on - used as reference so does not need to be spot on
+      int clat = a->lat / 2 + b->lat / 2;
       int clon = a->lon / 2 + b->lon / 2;
-      int calt = a->alt / 2 + b->alt / 2;
-      int ctim = a->tim / 2 + b->tim / 2;
+      int calt = ((int) a->alt + (int) b->alt) / 2;
       float slat = 111111.0 * cos (M_PI * clat / 600000.0 / 180.0);
       inline float x (fix_t * p)
       {
@@ -1031,24 +1028,18 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
       }
       inline float z (fix_t * p)
       {
-         return (float) (p->alt - calt) / altscale;
+         return (float) (p->alt - calt) / (float) altscale;
       }
-      inline float t (fix_t * p)
-      {
-         return (float) (p->tim - ctim) * secondcm / 100.0 / 10.0;
-      }
-      inline float distsq (float dx, float dy, float dz, float dt)
+      inline float distsq (float dx, float dy, float dz)
       {                         // Distance in 4D space
-         return dx * dx + dy * dy + dz * dz + dt * dt;
+         return dx * dx + dy * dy + dz * dz;
       }
       float DX = x (b) - x (a);
       float DY = y (b) - y (a);
       float DZ = z (b) - z (a);
-      float DT = t (b) - t (a);
-      float LSQ = distsq (DX, DY, DZ, DT);
+      float LSQ = distsq (DX, DY, DZ);
       int bestn = -1;
       float best = 0;
-      float marginsq = (float) margincm * margincm / 10000.0;
       int n;
       for (n = l + 1; n < h; n++)
       {
@@ -1056,12 +1047,12 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
          if (p->tim)
          {
             float d = 0;
-            if (LSQ < (MINL * MINL))    // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
-               d = distsq (x (p), y (p), z (p), t (p)); // (centre is 0,0,0,0)
+            if (!LSQ)
+               d = distsq (x (p) - x (a), y (p) - y (a), z (p) - z (a));        // Simple distance from point
             else
             {
-               float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
-               d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
+               float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ) / LSQ;
+               d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p));
             }
             if (bestn >= 0 && d <= best)
                continue;
@@ -1074,9 +1065,9 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
          for (n = l + 1; n < h; n++)
             fix[n].tim = 0;
          L = h;
-         continue;;
+         continue;
       }
-      fix[bestn].keep = 1;
+      fix[bestn].keep = 1;      // keep this middle point
    }
 }
 
