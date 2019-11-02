@@ -31,6 +31,7 @@ static const char TAG[] = "GPS";
         s8(atkey,4)	\
         s8(atrst,5)	\
         s8(atpwr,-1)	\
+	u8(fixpersec,10)\
 	b(fixdebug,N)	\
 	u32(interval,600)\
 	u32(keepalive,60)\
@@ -89,6 +90,8 @@ char hdopforce = 0;
 char pdopforce = 0;
 char vdopforce = 0;
 char gpsstarted = 0;
+time_t gpszda = 0;              // Last ZDA
+time_t basetim = 0;             // Base time for fixtim
 
 static SemaphoreHandle_t cmd_mutex = NULL;
 static SemaphoreHandle_t at_mutex = NULL;
@@ -471,9 +474,9 @@ nmea (char *s)
    if (!gpsstarted && (esp_timer_get_time () > 10000000 || !revk_offline ()))
    {                            // The delay is to allow debug logging, etc.
       revk_info (TAG, "GPS running");
-      gpscmd ("$PMTK220,200");  // Fix rate
-      gpscmd ("$PQTXT,W,0,1");    // Disable GPTXT
-      gpscmd ("$PMTK314,0,0,5,1,50,0,0,0,0,0,0,0,0,0,0,0,0,50,0");      // What to send
+      gpscmd ("$PMTK220,%d", 1000 / fixpersec); // Fix rate
+      gpscmd ("$PQTXT,W,0,1");  // Disable GPTXT
+      gpscmd ("$PMTK314,0,0,%d,1,%d,0,0,0,0,0,0,0,0,0,0,0,0,%d,0", fixpersec, fixpersec * 10, fixpersec * 10);  // What to send
       gpscmd ("$PMTK301,%d", waas ? 2 : 0);     // WAAS
       gpscmd ("$PMTK313,%d", sbas ? 1 : 0);     // SBAS
       gpscmd ("$PMTK513,%d", sbas ? 1 : 0);     // SBAS
@@ -499,8 +502,13 @@ nmea (char *s)
    if (!strncmp (f[0], "GPGGA", 5) && n >= 14)
    {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
 
-      if (strlen (f[2]) > 2 && strlen (f[4]) > 3)
+      if (strlen (f[1]) >= 10 && strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
       {
+         fix = atoi (f[6]);
+         sats = atoi (f[7]);
+         if (!altforce)
+            alt = strtof (f[9], NULL);
+         gsep = strtof (f[10], NULL);
          if (!latforce)
             lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtof (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
          if (!lonforce)
@@ -508,12 +516,34 @@ nmea (char *s)
                ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtof (f[4] + 3, NULL) / 60) * (f[5][0] ==
                                                                                                                 'E' ? 1 : -1);
          gotfix = 1;
+         if (gpszda)
+         {                      // Store fix data
+            // Lat in minutes*10000
+            int fixlat =
+               (((f[2][0] - '0') * 10 + f[2][1] - '0') * 60 + (f[2][2] - '0') * 10 + f[2][3] - '0') * 10000 + (f[2][5] -
+                                                                                                               '0') * 1000 +
+               (f[2][6] - '0') * 100 + (f[2][7] - '0') * 10 + f[2][8] - '0';
+            if (f[3][0] == 'S')
+               fixlat = 0 - fixlat;
+            // Lon in minutes *10000
+            int fixlon =
+               (((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0') * 60 + (f[4][3] - '0') * 10 + f[4][4] -
+                '0') * 10000 + (f[4][6] - '0') * 1000 + (f[4][7] - '0') * 100 + (f[4][8] - '0') * 10 + f[4][9] - '0';
+            if (f[5][0] == 'W')
+               fixlon = 0 - fixlon;
+            unsigned int fixtim =
+               ((((f[1][0] - '0') * 10 + f[1][1] - '0') * 60 + (f[1][2] - '0') * 10 + f[1][3] - '0') * 60 + (f[1][4] - '0') * 10 +
+                f[1][5] - '0') * 10 + f[1][7] - '0';
+            if (fixtim / 10 + 100 < (gpszda % 86400))
+               fixtim += 864000;        // Day wrap
+            if (!basetim)
+               basetim = gpszda;
+            fixtim -= (basetim - gpszda / 86400 * 86400) * 10;
+            int fixalt = round (alt);
+            if (fixdebug)
+               revk_info ("fix", "base=%u tim=%u lat=%d lon=%d alt=%d", (unsigned int) basetim, fixtim, fixlat, fixlon, fixalt);
+         }
       }
-      fix = atoi (f[6]);
-      sats = atoi (f[7]);
-      if (!altforce)
-         alt = strtof (f[9], NULL);
-      gsep = strtof (f[10], NULL);
       return;
    }
    if (!strncmp (f[0], "GPZDA", 5) && n >= 5)
@@ -522,14 +552,14 @@ nmea (char *s)
       {
          struct tm t = { };
          struct timeval v = { };
+         t.tm_year = atoi (f[4]) - 1900;
+         t.tm_mon = atoi (f[3]) - 1;
+         t.tm_mday = atoi (f[2]);
          t.tm_hour = (f[1][0] - '0') * 10 + f[1][1] - '0';
          t.tm_min = (f[1][2] - '0') * 10 + f[1][3] - '0';
          t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
          v.tv_usec = atoi (f[1] + 7) * 1000;
-         t.tm_year = atoi (f[4]) - 1900;
-         t.tm_mon = atoi (f[3]) - 1;
-         t.tm_mday = atoi (f[2]);
-         v.tv_sec = mktime (&t);
+         gpszda = v.tv_sec = mktime (&t);
          settimeofday (&v, NULL);
       }
       return;
