@@ -31,6 +31,13 @@ static const char TAG[] = "GPS";
         s8(atkey,4)	\
         s8(atrst,5)	\
         s8(atpwr,-1)	\
+	u32(interval,600)\
+	u32(keepalive,60)\
+	u32(margincm,100)\
+	u32(secondcm,10)\
+	s(loghost,"mqtt.revk.uk")\
+	u32(logport,6666)\
+	bn(aes,16)	\
 	u8(sun,0)	\
 	u32(logslow,300)\
 	u32(logfast,1)	\
@@ -48,12 +55,14 @@ static const char TAG[] = "GPS";
 #define s8(n,d)	int8_t n;
 #define u8(n,d)	uint8_t n;
 #define b(n,d) uint8_t n;
+#define bn(n,b) uint8_t n[b];
 #define s(n,d) char * n;
 settings
 #undef u32
 #undef s8
 #undef u8
 #undef b
+#undef bn
 #undef s
 float speed = 0;
 float bearing = 0;
@@ -730,6 +739,7 @@ app_main ()
    at_mutex = xSemaphoreCreateMutex (); // Shared command access
    revk_init (&app_command);
 #define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
+#define bn(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_BOOLEAN);
 #define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
@@ -739,6 +749,7 @@ app_main ()
 #undef s8
 #undef u8
 #undef b
+#undef bn
 #undef s
       if (oledsda >= 0 && oledscl >= 0)
       oled_start (1, oledaddress, oledscl, oledsda, oledflip);
