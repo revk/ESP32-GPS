@@ -1210,7 +1210,7 @@ app_main ()
             *p++ = 0;           // Message type
             *p++ = 0;
             int n;
-            for (n = 0; n < last - 1; n++)
+            for (n = 0; n < last; n++)
             {
                fix_t *f = &fix[n];
                unsigned int v = f->tim;
