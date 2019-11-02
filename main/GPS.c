@@ -106,7 +106,7 @@ struct fix_s
    int lat;
    int lon;
 };
-#define	MAXFIX 6100
+#define	MAXFIX 6600
 #define MAXTRACK 6
 #define MAXDATA 1400            // Size of packet
 #define	MAXSEND	((MAXDATA-8-4-28)/16*16/sizeof(fix_t))
@@ -752,19 +752,35 @@ display_task (void *p)
             int m = ((float) s / LUNY); // full moon count
             s -= (float) m *LUNY;       // seconds since full moon
             float phase = (float) s * M_PI * 2 / LUNY;
+#define w (21.0/2.0)
             if (phase < M_PI)
             {                   // dim on right (northern hemisphere)
-               float q = 10.0 * cos (phase);
-               for (int d = -10; d <= 10; d++)
-                  for (int x = 11 + q * sqrt (1 - (float)d / 10.0 * (float)d / 10.0); x < 21; x++)
-                     oled_set (x, y + 10 + d, oled_get (x, y + 10 + d) >> 3);
+               float q = w * cos (phase);
+               for (int Y = 0; Y < w * 2; Y++)
+               {
+                  float d = (float) Y + 0.5 - w;
+                  float v = q * sqrt (1 - (float) d / w * (float) d / w) + w;
+                  int l = ceil (v);
+                  if (l)
+                     oled_set (l - 1, y + Y, ((float) l - v) * oled_get (l - 1, y + Y));
+                  for (int X = l; X < CONFIG_OLED_WIDTH; X++)
+                     oled_set (X, Y + y, (X + Y) & 1 ? 0 : oled_get (X, Y + y) >> 3);
+               }
             } else
             {                   // dim on left (northern hemisphere)
-               float q = -10.0 * cos (phase);
-               for (int d = -10; d <= 10; d++)
-                  for (int x = 0; x < 11 + q * sqrt (1 - (float) d / 10.0 * (float) d / 10.0); x++)
-                     oled_set (x, y + 10 + d, oled_get (x, y + 10 + d) >> 3);
+               float q = -w * cos (phase);
+               for (int Y = 0; Y < w * 2; Y++)
+               {
+                  float d = (float) Y + 0.5 - w;
+                  float v = q * sqrt (1 - (float) d / w * (float) d / w) + w;
+                  int r = floor (v);
+                  if (r < w * 2)
+                     oled_set (r, Y + y, ((float) r + 1 - v) * oled_get (r, Y + y));
+                  for (int X = 0; X < r; X++)
+                     oled_set (X, Y + y, (X + Y) & 1 ? 0 : oled_get (X, Y + y) >> 3);
+               }
             }
+#undef w
          }
          x = 22;
          if (o / 3600 < 1000)
@@ -1000,10 +1016,10 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
       a->keep = 1;
       b->keep = 1;
       // Centre for working out metres
-      int clat = (a->lat + b->lat) / 2;
-      int clon = (a->lon + b->lon) / 2;
-      int calt = (a->alt + b->alt) / 2;
-      int ctim = (a->tim + b->tim) / 2;
+      int clat = a->lat / 2 + b->lat / 2;       // Yes, integer and not spot on - used as reference so does not need to be spot on
+      int clon = a->lon / 2 + b->lon / 2;
+      int calt = a->alt / 2 + b->alt / 2;
+      int ctim = a->tim / 2 + b->tim / 2;
       float slat = 111111.0 * cos (M_PI * clat / 600000.0 / 180.0);
       inline float x (fix_t * p)
       {
@@ -1047,7 +1063,7 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
                float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
                d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - z (p));
             }
-            if (bestn >= 0 && d < best)
+            if (bestn >= 0 && d <= best)
                continue;
             bestn = n;          // New furthest
             best = d;
@@ -1057,7 +1073,7 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
       {                         // All points are within margin - so all to be pruned
          for (n = l + 1; n < h; n++)
             fix[n].tim = 0;
-	 L=h;
+         L = h;
          continue;;
       }
       fix[bestn].keep = 1;
@@ -1173,13 +1189,15 @@ app_main ()
       {                         // Time to save a fix
          fixnow = 0;
          // Reduce fixes
+         if (fixdebug)
+            revk_info ("fix", "%u fixes recorded", fixsave + 1);
          unsigned int last = fixsave;
          unsigned int m = margincm;
          while (m < 100000)
          {
             last = rdppack (last, m);
             if (fixdebug)
-               revk_info ("fix", "%u reduced to %u fixes at %ucm", fixsave + 1, last + 1, m);
+               revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, m);
             if (last <= MAXSEND)
                break;
             m += margincm;
