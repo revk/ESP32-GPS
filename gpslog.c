@@ -40,7 +40,6 @@ const char *sqlconffile = NULL;
 const char *sqltable = "gps";
 const char *sqldevice = "device";
 
-
 static const unsigned int crc32_table[] = {
    0x00000000, 0x04c11db7, 0x09823b6e, 0x0d4326d9,
    0x130476dc, 0x17c56b6b, 0x1a864db2, 0x1e475005,
@@ -233,6 +232,7 @@ udp_task (void)
       size_t len = recvfrom (s, rx, sizeof (rx) - 1, 0, (struct sockaddr *) &from, &fromlen);
       if (len < 0)
          return -1;
+      // TODO update port/IP for sending messages bacck
       process_udp (&sql, len, rx);
    }
 }
@@ -266,7 +266,7 @@ main (int argc, const char *argv[])
          {"mqtt-id", 0, POPT_ARG_STRING, &mqttid, 0, "MQTT id", "id"},
          {"locus", 'L', POPT_ARG_NONE, &locus, 0, "Get LOCUS file"},
          {"save", 0, POPT_ARG_NONE, &save, 0, "Save LOCUS file"},
-         {"bindport", 0, POPT_ARG_INT, &bindport, 0, "UDP port to bind for collecting tracking"},
+         {"port", 0, POPT_ARG_STRING, &bindport, 0, "UDP port to bind for collecting tracking"},
          {"bindhost", 0, POPT_ARG_STRING, &bindhost, 0, "UDP host to bind for collecting tracking"},
          {"debug", 'V', POPT_ARG_NONE, &debug, 0, "Debug"},
          POPT_AUTOHELP {}

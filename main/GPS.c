@@ -332,7 +332,8 @@ atcmd (const void *cmd, int t1, int t2)
    {
       uart_write_bytes (atuart, cmd, strlen ((char *) cmd));
       uart_write_bytes (atuart, "\r", 1);
-      revk_info ("attx", "%s", cmd);
+      if (atdebug)
+         revk_info ("attx", "%s", cmd);
    }
    int l = uart_read_bytes (atuart, (void *) atbuf, 1, (t1 ? : 100) / portTICK_PERIOD_MS);
    if (l > 0)
@@ -356,7 +357,7 @@ atcmd (const void *cmd, int t1, int t2)
    if (l >= 0)
    {
       atbuf[l] = 0;
-      if (l)
+      if (l && atdebug)
          revk_info ("atrx", "%s", atbuf);
    } else
       atbuf[0] = 0;
