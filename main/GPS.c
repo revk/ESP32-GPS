@@ -116,8 +116,8 @@ uint8_t track[MAXTRACK][MAXDATA];
 int tracklen[MAXTRACK] = { };
 
 volatile unsigned int tracki = 0,
-   tracko = 0,
-   trackm = 0;;
+   tracko = 0;
+volatile char trackmqtt = 0;
 SemaphoreHandle_t track_mutex = NULL;
 fix_t fix[MAXFIX];
 unsigned int fixnext = 0;       // Next fix to store
@@ -387,8 +387,8 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
 {
    if (!strcmp (tag, "test"))
    {
-revk_info("test","BE~%08X LE~%08X",esp_crc32_be (0, value, len),esp_crc32_le (0, value, len));
-	   return "";
+      revk_info ("test", "BE~%08X LE~%08X", esp_crc32_be (0, value, len), esp_crc32_le (0, value, len));
+      return "";
    }
    if (!strcmp (tag, "contrast"))
    {
@@ -400,10 +400,29 @@ revk_info("test","BE~%08X LE~%08X",esp_crc32_be (0, value, len),esp_crc32_le (0,
       sntp_stop ();
       return "";
    }
+   if (!strcmp (tag, "disconnect"))
+   {
+      xSemaphoreTake (track_mutex, portMAX_DELAY);
+      trackmqtt = 0;
+      xSemaphoreGive (track_mutex);
+      return "";
+   }
    if (!strcmp (tag, "connect"))
    {
+      xSemaphoreTake (track_mutex, portMAX_DELAY);
+      trackmqtt = 1;
+      xSemaphoreGive (track_mutex);
       if (logslow || logfast)
          gpscmd ("$PMTK183");   // Log status
+      if (attx < 0 || atrx < 0)
+      {                         // Back to oldest over MQTT
+         xSemaphoreTake (track_mutex, portMAX_DELAY);
+         if (tracki < MAXTRACK)
+            tracko = 0;
+         else
+            tracko = tracki - MAXTRACK;
+         xSemaphoreGive (track_mutex);
+      }
       return "";
    }
    if (!strcmp (tag, "status"))
@@ -412,17 +431,17 @@ revk_info("test","BE~%08X LE~%08X",esp_crc32_be (0, value, len),esp_crc32_le (0,
       return "";
    }
    if (!strcmp (tag, "resend"))
-   {                            // Resend log data
-      xSemaphoreTake (track_mutex, portMAX_DELAY);
+   {                            // Resend log data - TODO arg being time from which to resend
       // Back to oldest
+      xSemaphoreTake (track_mutex, portMAX_DELAY);
       if (tracki < MAXTRACK)
-         trackm = 0;
+         tracko = 0;
       else
-         trackm = tracki - MAXTRACK;
+         tracko = tracki - MAXTRACK;
       xSemaphoreGive (track_mutex);
       return "";
    }
-   if (!strcmp (tag, "fix")||!strcmp(tag,"upgrade")||!strcmp(tag,"restart"))
+   if (!strcmp (tag, "fix") || !strcmp (tag, "upgrade") || !strcmp (tag, "restart"))
    {                            // Force fix dump now
       fixnow = 1;
       return "";
@@ -930,7 +949,7 @@ at_task (void *X)
       revk_info (TAG, "Mobile connected");
       while (1)
       {                         // Connected, send data as needed
-         if (tracko < tracki)
+         if (!trackmqtt && tracko < tracki)
          {                      // Send data
             xSemaphoreTake (track_mutex, portMAX_DELAY);
             if (tracko < tracki)
@@ -969,18 +988,18 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      if (tracki != trackm)
+      if (trackmqtt && tracko < tracki)
       {                         // Send data
          xSemaphoreTake (track_mutex, portMAX_DELAY);
-         if (tracki != trackm)
+         if (tracko < tracki)
          {
-            if (trackm + MAXTRACK >= tracki)
+            if (tracko + MAXTRACK >= tracki)
             {
-               unsigned int len = tracklen[trackm % MAXTRACK];
+               unsigned int len = tracklen[tracko % MAXTRACK];
                if (len)
-                  revk_raw ("info", "udp", len, track[trackm % MAXTRACK], 0);
+                  revk_raw ("info", "udp", len, track[tracko % MAXTRACK], 0);
             }
-            trackm++;
+            tracko++;
          }
          xSemaphoreGive (track_mutex);
       } else
@@ -1269,8 +1288,6 @@ app_main ()
             xSemaphoreTake (track_mutex, portMAX_DELAY);
             if (tracki >= MAXTRACK && tracko < tracki + 1 - MAXTRACK)
                tracko = tracki + 1 - MAXTRACK;  // Lost as wrapped
-            if (tracki >= MAXTRACK && trackm < tracki + 1 - MAXTRACK)
-               trackm = tracki + 1 - MAXTRACK;  // Lost as wrapped
             tracklen[tracki % MAXTRACK] = 0;    // Ensure not sent until we have put in data
             xSemaphoreGive (track_mutex);
             uint8_t *t = track[tracki],
@@ -1288,8 +1305,8 @@ app_main ()
             *p++ = 0;           // Message type
             *p++ = 0;
             int n;
-            for (n = 0; n < last; n++)
-            {
+            for (n = 1; n <= last; n++)
+            {                   // Don't send first as it is duplicate of last from previous packet
                fix_t *f = &fix[n];
                unsigned int v = f->tim;
                *p++ = v >> 8;
