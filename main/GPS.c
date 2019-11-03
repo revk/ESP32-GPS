@@ -109,7 +109,7 @@ struct fix_s
    int lon;                     // min*10000
 };
 #define	MAXFIX 6600
-#define MAXTRACK 32
+#define MAXTRACK 16
 #define MAXDATA 1450            // Size of packet
 #define	MAXSEND	((MAXDATA-8-2-4-28)/16*16/sizeof(fix_t))
 uint8_t track[MAXTRACK][MAXDATA];
@@ -1048,25 +1048,22 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
 {                               // Reduce, non recursive
    float dlost = 0,
       dkept = 0;
-   unsigned int L = 0;
+   unsigned int l = 0,
+      h = H;                    // Progress
+   fix[0].keep = 1;
+   fix[H].keep = 1;
    float marginsq = (float) margincm * (float) margincm / 10000.0;
-   while (L + 1 < H)
+   while (l < H)
    {
-      unsigned int l = L,
-         h;
-      int c = 0;
-      for (h = L + 1; h < H && !fix[h].keep; h++)
-         if (fix[h].tim)
-            c++;
-      if (!c)
-      {                         // Found a range, but all done.
-         L = h;
+      if (l == h)
+         for (h++; h < H && !fix[h].keep; h++); // Find second half
+      if (l + 1 == h)
+      {                         // No points
+         l++;
          continue;
       }
       fix_t *a = &fix[l];
       fix_t *b = &fix[h];
-      a->keep = 1;
-      b->keep = 1;
       // Centre for working out metres
       int clat = a->lat / 2 + b->lat / 2;
       int clon = a->lon / 2 + b->lon / 2;
@@ -1126,12 +1123,13 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
             dlost = best;
          for (n = l + 1; n < h; n++)
             fix[n].tim = 0;
-         L = h;
+         l = h;                 // Next block
          continue;
       }
       if (!dkept || best < dkept)
          dkept = best;
       fix[bestn].keep = 1;      // keep this middle point
+      h = bestn;                // First half recursive
    }
    // Pack
    unsigned int i,
@@ -1253,7 +1251,7 @@ app_main ()
               dkept;
             last = rdp (last, m, &dlost, &dkept);
             if (fixdebug && last < fixsave)
-               revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, dkept);
+               revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, dlost);
             if (last <= MAXSEND)
                break;
             m = dkept + retrycm;
@@ -1327,6 +1325,7 @@ app_main ()
             tracklen[tracki % MAXTRACK] = p - t;
             tracki++;
             xSemaphoreGive (track_mutex);
+            revk_info ("crctest", "%02X %02X %02X %02X %08X", t[4], t[5], t[6], t[7], esp_crc32_be (0, t + 4, 4));      // TODO
          }
          fixmove = fixsave;     // move back for next block
          fixsave = 0;
