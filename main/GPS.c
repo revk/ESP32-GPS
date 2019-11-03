@@ -1183,7 +1183,7 @@ app_main ()
    track_mutex = xSemaphoreCreateMutex ();
    revk_init (&app_command);
 #define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
-#define h(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_HEX);
+#define h(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_BINARY|SETTING_HEX);
 #define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);

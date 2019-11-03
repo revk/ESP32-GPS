@@ -88,7 +88,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data)
       int n;
       for (n = 0; n < sizeof (key); n++)
          key[n] =
-            (((isalpha (aes[n * 2]) ? 9 : 0) + (aes[n * 2] & 0xF)) << 4) + isalpha (aes[n * 2 + 1] ? 9 : 0) +
+            (((isalpha (aes[n * 2]) ? 9 : 0) + (aes[n * 2] & 0xF)) << 4) + (isalpha (aes[n * 2 + 1]) ? 9 : 0) +
             (aes[n * 2 + 1] & 0xF);
       memcpy (iv, data, 8);
       memcpy (iv + 8, data, 8);
@@ -257,8 +257,15 @@ main (int argc, const char *argv[])
       obj = obj;
       rc = rc;
       char *sub = NULL;
-      asprintf (&sub, "info/%s/#", mqttappname);
+      asprintf (&sub, "state/%s/#", mqttappname);
       int e = mosquitto_subscribe (mqtt, NULL, sub, 0);
+      if (e)
+         errx (1, "MQTT subscribe failed %s (%s)", mosquitto_strerror (e), sub);
+      if (debug)
+         warnx ("MQTT Sub %s", sub);
+      free (sub);
+      asprintf (&sub, "info/%s/#", mqttappname);
+      e = mosquitto_subscribe (mqtt, NULL, sub, 0);
       if (e)
          errx (1, "MQTT subscribe failed %s (%s)", mosquitto_strerror (e), sub);
       if (debug)
@@ -295,20 +302,27 @@ main (int argc, const char *argv[])
          warnx ("No payload %s", topic);
          return;
       }
-      char *type = strrchr (topic, '/');
-      if (!type)
+      char *type = NULL;
+      char *tag = NULL;
+      char *message = topic;
+      char *app = strchr (topic, '/');
+      if (app)
       {
-         warnx ("Unknown topic %s", topic);
-         return;
+         *app++ = 0;
+         tag = strchr (app, '/');
+         if (tag)
+         {
+            *tag++ = 0;
+            type = strchr (tag, '/');
+            if (type)
+               *type++ = 0;
+         }
       }
-      *type++ = 0;
-      char *tag = strrchr (topic, '/');
       if (!tag)
       {
-         warnx ("Unknown topic %s", topic);
+         warnx ("No tag %s", topic);
          return;
       }
-      *tag++ = 0;
       char *val = malloc (msg->payloadlen + 1);
       memcpy (val, msg->payload, msg->payloadlen);
       val[msg->payloadlen] = 0;
@@ -324,196 +338,234 @@ main (int argc, const char *argv[])
          if (debug)
             warnx ("New device [%s]", tag);
       }
-      if (!strcmp (type, "udp"))
-         process_udp (&sql, msg->payloadlen, msg->payload);
-      else if (!strcmp (type, "rx"))
+      if (!strcmp (message, "state"))
       {
-         char *f[100],
-          *p = val;
-         int n = 0;
-         while (*p && n < sizeof (f) / sizeof (*f))
-         {
-            f[n++] = p;
-            while (*p && *p != ',')
-               p++;
-            if (*p)
-               *p++ = 0;
-         }
-         if (n >= 11 && !strcmp (val, "$PMTKLOG"))
-         {                      // Status: $PMTKLOG,32,1,a,31,15,0,0,0,8032,100
-            if (locus && atoi (f[9]))
-            {                   // There is data to log
-               char *topic;
-               if (asprintf (&topic, "command/%s/%s/dump", mqttappname, l->tag) < 0)
-                  errx (1, "malloc");
-               int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
-               if (e)
-                  errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
-               free (topic);
-            }
-            if (bindport)
+         if (!type && *val == '1')
+         {                      // device connected
+            if (resend)
             {
                char *topic;
-               if (asprintf (&topic, "command/%s/%s/resend", mqttappname, l->tag) < 0)
+               if (asprintf (&topic, "command/%s/%s/resend", mqttappname, tag) < 0)
                   errx (1, "malloc");
                int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
                if (e)
                   errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                free (topic);
             }
-         } else if (n >= 2 && !strcmp (val, "$PMTKLOX"))
-         {                      // Data: $PMTKLOX,0,1366
-            int type = atoi (f[1]);
-            if (!type)
-            {                   // Start
-               int rec = atoi (f[2]);
-               if (l->len)
-               {                // Clear previous data not completed
+            SQL_RES *res = sql_safe_query_store_free (&sql, sql_printf ("SELECT * from `%#S` WHERE `device`=%#s", sqldevice, tag));
+            if (!sql_fetch_row (res))
+            {                   // New device, whooooa
+               int r = open ("/dev/urandom", O_RDONLY);
+               if (r >= 0)
+               {
+                  char aes[16];
+                  if (read (r, aes, 16) == 16)
+                  {
+                     char hex[33];
+                     int n;
+                     for (n = 0; n < 16; n++)
+                        sprintf (hex + n * 2, "%02X", aes[n]);
+                     char *topic;
+                     if (asprintf (&topic, "setting/%s/%s/aes", mqttappname, tag) < 0)
+                        errx (1, "malloc");
+                     int e = mosquitto_publish (mqtt, NULL, topic, 32, hex, 1, 0);
+                     if (e)
+                        errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
+                     free (topic);
+                     sql_safe_query_free (&sql, sql_printf ("INSERT INTO `%#S` SET `device`=%#s,`aes`=%#s", sqldevice, tag, hex));
+                     if (debug)
+                        warnx ("New device created and allocated new AES key [%s]", tag);
+                  }
+                  close (r);
+               }
+            }
+            sql_free_result (res);
+         }
+      } else if (!strcmp (message, "info"))
+      {
+         if (!strcmp (type, "udp"))
+            process_udp (&sql, msg->payloadlen, msg->payload);
+         else if (!strcmp (type, "rx"))
+         {
+            char *f[100],
+             *p = val;
+            int n = 0;
+            while (*p && n < sizeof (f) / sizeof (*f))
+            {
+               f[n++] = p;
+               while (*p && *p != ',')
+                  p++;
+               if (*p)
+                  *p++ = 0;
+            }
+            if (n >= 11 && !strcmp (val, "$PMTKLOG"))
+            {                   // Status: $PMTKLOG,32,1,a,31,15,0,0,0,8032,100
+               if (locus && atoi (f[9]))
+               {                // There is data to log
+                  char *topic;
+                  if (asprintf (&topic, "command/%s/%s/dump", mqttappname, tag) < 0)
+                     errx (1, "malloc");
+                  int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
+                  if (e)
+                     errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
+                  free (topic);
+               }
+            } else if (n >= 2 && !strcmp (val, "$PMTKLOX"))
+            {                   // Data: $PMTKLOX,0,1366
+               int type = atoi (f[1]);
+               if (!type)
+               {                // Start
+                  int rec = atoi (f[2]);
+                  if (l->len)
+                  {             // Clear previous data not completed
+                     free (l->data);
+                     l->data = NULL;
+                     l->len = 0;
+                     l->ptr = 0;
+                  }
+                  l->lines = rec;
+                  l->line = 0;  // Expected
+                  if (debug)
+                     warnx ("%s Download %d lines", tag, rec);
+               } else if (type == 1)
+               {                // Data
+                  if (l->lines)
+                  {
+                     int rec = atoi (f[2]);
+                     if (l->line != rec)
+                     {
+                        warnx ("%s Expected %d got %d", tag, l->line, rec);
+                        l->lines = 0;   // Bad
+                     } else if (l->lines <= rec)
+                     {
+                        warnx ("%s Max %d got %d", tag, l->lines, rec);
+                        l->lines = 0;   // Bad
+                     } else
+                     {          // Process: $PMTKLOX,1,1356,8820B15D,025FAD4D,42387A48,BF480046,9720B15D,025CAD4D,42037948,BF4A0060,A620B15D,025FAD4D,424E7B48,BF4B001C,B520B15D,0263AD4D,42007D48,BF4C007C,C420B15D,025EAD4D,42047848,BF4B0036,D320B15D,025DAD4D,42787648,BF4B0050
+                        int q = 3;
+                        while (q < n)
+                        {
+                           unsigned long v = strtoul (f[q], NULL, 16);
+                           if (l->len < l->ptr + 4)
+                              l->data = realloc (l->data, l->len += 1024);
+                           l->data[l->ptr++] = (v >> 24);
+                           l->data[l->ptr++] = (v >> 16);
+                           l->data[l->ptr++] = (v >> 8);
+                           l->data[l->ptr++] = v;
+                           q++;
+                        }
+                        l->line++;
+                     }
+                  }
+               } else if (type == 2)
+               {                // End
+                  if (!l->lines)
+                     warnx ("%s Download failed", tag);
+                  else if (l->line != l->lines)
+                     warnx ("%s Bad completion, expected %d got %d", tag, l->lines, l->line);
+                  else
+                  {             // Save
+                     if (debug)
+                        warnx ("%s Downloaded %d lines", tag, l->lines);
+
+                     // There looks to be a header and then records
+                     // 16-byte LOCUS buffer format
+                     // 0-3 = UTC (in UNIX ticks format)
+                     // 4 = FIX flag
+                     // 5-8 = Latitude
+                     // 9-12 = Longitude
+                     // 13-14 = Height
+                     // 15 = Checksum
+                     sql_transaction (&sql);
+                     unsigned char *p = l->data,
+                        *e = l->data + l->ptr;
+                     while (p + 16 <= e)
+                     {
+#if 0
+                        warnx ("%08X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                               (int) (p - l->data), p[0], p[1], p[2],
+                               p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
+#endif
+                        if (!((p - l->data) & 0xFFF))
+                        {       // Header stuff?
+                           p += 0x40;
+                           continue;
+                        }
+                        unsigned char c = 0;
+                        for (int q = 0; q < 16; q++)
+                           c ^= p[q];
+                        if (c)
+                        {
+                           warnx ("%s Bad checksum at %04X", tag, (int) (p - l->data));
+                           l->lines = 0;
+                           break;
+                        }
+                        time_t ts = p[0] + (p[1] << 8) + (p[2] << 16) + (p[3] << 24);
+                        if (ts != 0xFFFFFFFF)
+                        {
+                           unsigned char fix = p[4];
+                           double get (int o)
+                           {
+                              unsigned int v = p[o] + (p[o + 1] << 8) + (p[o + 2] << 16) + (p[o + 3] << 24);
+                              if (v == 0xFFFFFFFF)
+                                 return 0;
+                              double d = (1.0 + ((double) (v & 0x7FFFFF)) / 8388607.0) * pow (2, ((int) ((v >> 23) & 0xFF) - 127));
+                              if (v & 0x80000000)
+                                 d = -d;
+                              return d;
+                           }
+                           double lat = get (5);
+                           double lon = get (9);
+                           short height = p[13] + (p[14] << 8);
+                           if (isnormal (lat) && isnormal (lon))
+                              sql_safe_query_free (&sql,
+                                                   sql_printf
+                                                   ("INSERT IGNORE INTO `%#S` SET `device`=%#s,`utc`=%#U,`fix`=%d,`lat`=%lf,`lon`=%lf,height=%d",
+                                                    sqltable, tag, ts, fix, lat, lon, height));
+                        }
+                        p += 16;
+                     }
+                     if (sql_commit (&sql))
+                     {
+                        warnx ("%s commit failed", tag);
+                        l->lines = 0;
+                     }
+                     if (save)
+                     {
+                        chdir ("/tmp");
+                        int f = open (tag, O_WRONLY | O_CREAT);
+                        write (f, l->data, l->ptr);
+                        close (f);
+                     }
+                     if (!debug && l->lines)
+                     {
+                        // Clear log
+                        char *topic;
+                        if (asprintf (&topic, "command/%s/%s/erase", mqttappname, tag) < 0)
+                           errx (1, "malloc");
+                        int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
+                        if (e)
+                           errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
+                        free (topic);
+                     }
+                  }
+                  // Free
                   free (l->data);
                   l->data = NULL;
                   l->len = 0;
                   l->ptr = 0;
-               }
-               l->lines = rec;
-               l->line = 0;     // Expected
-               if (debug)
-                  warnx ("%s Download %d lines", l->tag, rec);
-            } else if (type == 1)
-            {                   // Data
-               if (l->lines)
-               {
-                  int rec = atoi (f[2]);
-                  if (l->line != rec)
-                  {
-                     warnx ("%s Expected %d got %d", l->tag, l->line, rec);
-                     l->lines = 0;      // Bad
-                  } else if (l->lines <= rec)
-                  {
-                     warnx ("%s Max %d got %d", l->tag, l->lines, rec);
-                     l->lines = 0;      // Bad
-                  } else
-                  {             // Process: $PMTKLOX,1,1356,8820B15D,025FAD4D,42387A48,BF480046,9720B15D,025CAD4D,42037948,BF4A0060,A620B15D,025FAD4D,424E7B48,BF4B001C,B520B15D,0263AD4D,42007D48,BF4C007C,C420B15D,025EAD4D,42047848,BF4B0036,D320B15D,025DAD4D,42787648,BF4B0050
-                     int q = 3;
-                     while (q < n)
-                     {
-                        unsigned long v = strtoul (f[q], NULL, 16);
-                        if (l->len < l->ptr + 4)
-                           l->data = realloc (l->data, l->len += 1024);
-                        l->data[l->ptr++] = (v >> 24);
-                        l->data[l->ptr++] = (v >> 16);
-                        l->data[l->ptr++] = (v >> 8);
-                        l->data[l->ptr++] = v;
-                        q++;
-                     }
-                     l->line++;
-                  }
-               }
-            } else if (type == 2)
-            {                   // End
-               if (!l->lines)
-                  warnx ("%s Download failed", l->tag);
-               else if (l->line != l->lines)
-                  warnx ("%s Bad completion, expected %d got %d", l->tag, l->lines, l->line);
-               else
-               {                // Save
-                  if (debug)
-                     warnx ("%s Downloaded %d lines", l->tag, l->lines);
-
-                  // There looks to be a header and then records
-                  // 16-byte LOCUS buffer format
-                  // 0-3 = UTC (in UNIX ticks format)
-                  // 4 = FIX flag
-                  // 5-8 = Latitude
-                  // 9-12 = Longitude
-                  // 13-14 = Height
-                  // 15 = Checksum
-                  sql_transaction (&sql);
-                  unsigned char *p = l->data,
-                     *e = l->data + l->ptr;
-                  while (p + 16 <= e)
-                  {
-#if 0
-                     warnx ("%08X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-                            (int) (p - l->data), p[0], p[1], p[2],
-                            p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
-#endif
-                     if (!((p - l->data) & 0xFFF))
-                     {          // Header stuff?
-                        p += 0x40;
-                        continue;
-                     }
-                     unsigned char c = 0;
-                     for (int q = 0; q < 16; q++)
-                        c ^= p[q];
-                     if (c)
-                     {
-                        warnx ("%s Bad checksum at %04X", l->tag, (int) (p - l->data));
-                        l->lines = 0;
-                        break;
-                     }
-                     time_t ts = p[0] + (p[1] << 8) + (p[2] << 16) + (p[3] << 24);
-                     if (ts != 0xFFFFFFFF)
-                     {
-                        unsigned char fix = p[4];
-                        double get (int o)
-                        {
-                           unsigned int v = p[o] + (p[o + 1] << 8) + (p[o + 2] << 16) + (p[o + 3] << 24);
-                           if (v == 0xFFFFFFFF)
-                              return 0;
-                           double d = (1.0 + ((double) (v & 0x7FFFFF)) / 8388607.0) * pow (2, ((int) ((v >> 23) & 0xFF) - 127));
-                           if (v & 0x80000000)
-                              d = -d;
-                           return d;
-                        }
-                        double lat = get (5);
-                        double lon = get (9);
-                        short height = p[13] + (p[14] << 8);
-                        if (isnormal (lat) && isnormal (lon))
-                           sql_safe_query_free (&sql,
-                                                sql_printf
-                                                ("INSERT IGNORE INTO `%#S` SET `device`=%#s,`utc`=%#U,`fix`=%d,`lat`=%lf,`lon`=%lf,height=%d",
-                                                 sqltable, l->tag, ts, fix, lat, lon, height));
-                     }
-                     p += 16;
-                  }
-                  if (sql_commit (&sql))
-                  {
-                     warnx ("%s commit failed", l->tag);
-                     l->lines = 0;
-                  }
-                  if (save)
-                  {
-                     chdir ("/tmp");
-                     int f = open (l->tag, O_WRONLY | O_CREAT);
-                     write (f, l->data, l->ptr);
-                     close (f);
-                  }
-                  if (!debug && l->lines)
-                  {
-                     // Clear log
-                     char *topic;
-                     if (asprintf (&topic, "command/%s/%s/erase", mqttappname, l->tag) < 0)
-                        errx (1, "malloc");
-                     int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
-                     if (e)
-                        errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
-                     free (topic);
-                  }
-               }
-               // Free
-               free (l->data);
-               l->data = NULL;
-               l->len = 0;
-               l->ptr = 0;
-               l->lines = 0;
-               l->line = 0;
-            } else
-               warnx ("%s Unknown type %d", l->tag, type);
-         } else if (strcmp (val, "$PMTK001"))
-            warnx ("rx %s %s", l->tag, val);    // Unknown
+                  l->lines = 0;
+                  l->line = 0;
+               } else
+                  warnx ("%s Unknown type %d", tag, type);
+            } else if (strcmp (val, "$PMTK001"))
+               warnx ("rx %s %s", tag, val);    // Unknown
+         } else
+            warnx ("rx %s %s", tag, message);   // Unknown
       }
       free (val);
    }
+
    mosquitto_connect_callback_set (mqtt, connect);
    mosquitto_disconnect_callback_set (mqtt, disconnect);
    mosquitto_message_callback_set (mqtt, message);
