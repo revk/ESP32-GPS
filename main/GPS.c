@@ -47,8 +47,8 @@ static const char TAG[] = "GPS";
 	u32(logport,6666)\
 	h(aes,16)	\
 	u8(sun,0)	\
-	u32(logslow,300)\
-	u32(logfast,1)	\
+	u32(logslow,0)	\
+	u32(logfast,0)	\
 	u32(speedlow,1)	\
 	u32(speedhigh,4)\
 	b(waas,Y)	\
@@ -397,7 +397,8 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "connect"))
    {
-      gpscmd ("$PMTK183");      // Log status
+      if (logslow || logfast)
+         gpscmd ("$PMTK183");   // Log status
       return "";
    }
    if (!strcmp (tag, "status"))
@@ -1326,7 +1327,8 @@ app_main ()
             tracklen[tracki % MAXTRACK] = p - t;
             tracki++;
             xSemaphoreGive (track_mutex);
-            revk_info ("crctest", "%02X %02X %02X %02X %08X", t[4], t[5], t[6], t[7], esp_crc32_be (0, t + 4, 4));      // TODO
+            uint8_t test[] = "TEST";
+            revk_info ("crctest", "%02X %02X %02X %02X %08X", test[0], test[1], test[2], test[3], esp_crc32_be (0, test, 4));   // TODO
          }
          fixmove = fixsave;     // move back for next block
          fixsave = 0;
