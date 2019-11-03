@@ -3,6 +3,7 @@
 static const char TAG[] = "GPS";
 
 #include "revk.h"
+#include <esp32/aes.h>
 #include <driver/i2c.h>
 #include <driver/uart.h>
 #include <math.h>
@@ -44,7 +45,7 @@ static const char TAG[] = "GPS";
 	s(apn,"mobiledata")\
 	s(loghost,"mqtt.revk.uk")\
 	u32(logport,6666)\
-	bn(aes,16)	\
+	h(aes,16)	\
 	u8(sun,0)	\
 	u32(logslow,300)\
 	u32(logfast,1)	\
@@ -62,14 +63,14 @@ static const char TAG[] = "GPS";
 #define s8(n,d)	int8_t n;
 #define u8(n,d)	uint8_t n;
 #define b(n,d) uint8_t n;
-#define bn(n,b) uint8_t n[b];
+#define h(n,b) uint8_t n[b];
 #define s(n,d) char * n;
 settings
 #undef u32
 #undef s8
 #undef u8
 #undef b
-#undef bn
+#undef h
 #undef s
 float speed = 0;
 float bearing = 0;
@@ -115,7 +116,8 @@ uint8_t track[MAXTRACK][MAXDATA];
 int tracklen[MAXTRACK] = { };
 
 volatile unsigned int tracki = 0,
-   tracko = 0;
+   tracko = 0,
+   trackm = 0;;
 // TODO MQTT reporting
 // TODO resending
 SemaphoreHandle_t track_mutex = NULL;
@@ -404,6 +406,13 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       gpscmd ("$PMTK183");      // Log status
       return "";
    }
+   if (!strcmp (tag, "resend"))
+   {                            // Resend log data
+      xSemaphoreTake (track_mutex, portMAX_DELAY);
+      trackm = (tracki + MAXTRACK - 1) % MAXTRACK;
+      xSemaphoreGive (track_mutex);
+      return "";
+   }
    if (!strcmp (tag, "fix"))
    {                            // Force fix dump now
       fixnow = 1;
@@ -615,8 +624,16 @@ nmea (char *s)
                   fixnext = p;
                   fixmove = 0;
                }
-               if (!fixsave && (fixnow || fixnext >= MAXFIX - 100 || (gpszda > basetim && gpszda - basetim > interval)))
+               if (!fixsave && (fixnow || fixnext > MAXFIX - 100 || (gpszda > basetim && gpszda - basetim > interval)))
+               {
+                  if (fixdebug && fixnow)
+                     revk_info ("fix", "Fix forced");
+                  if (fixdebug && fixnext > MAXFIX - 100)
+                     revk_info ("fix", "Fix full %d", fixnext);
+                  if (fixdebug && (gpszda > basetim && gpszda - basetim > interval))
+                     revk_info ("fix", "Fix time %u", gpszda - basetim);
                   fixsave = fixnext - 1;        // Save
+               }
             }
          }
       }
@@ -902,7 +919,6 @@ at_task (void *X)
       if (!strstr ((char *) atbuf, "CONNECT OK"))
          continue;
       revk_info (TAG, "Mobile connected");
-      // TODO - is restart packet needed?
       while (1)
       {                         // Connected, send data as needed
          sleep (1);
@@ -911,17 +927,20 @@ at_task (void *X)
             xSemaphoreTake (track_mutex, portMAX_DELAY);
             if (tracki != tracko)
             {
-               char temp[30];
-               snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", tracklen[tracko]);
-               if (atcmd (temp, 1000, 0) < 0)
-                  break;
-               if (!strstr (atbuf, ">"))
-                  break;
-               uart_write_bytes (atuart, (void *) track[tracko], tracklen[tracko]);
-               if (atcmd (NULL, 10000, 0) < 0)
-                  break;
-               if (!strstr (atbuf, "SEND OK"))
-                  break;
+               if (tracklen[tracko])
+               {
+                  char temp[30];
+                  snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", tracklen[tracko]);
+                  if (atcmd (temp, 1000, 0) < 0)
+                     break;
+                  if (!strstr (atbuf, ">"))
+                     break;
+                  uart_write_bytes (atuart, (void *) track[tracko], tracklen[tracko]);
+                  if (atcmd (NULL, 10000, 0) < 0)
+                     break;
+                  if (!strstr (atbuf, "SEND OK"))
+                     break;
+               }
                tracko = (tracko + 1) % MAXTRACK;
             }
             xSemaphoreGive (track_mutex);
@@ -929,6 +948,26 @@ at_task (void *X)
          // TODO keep alive
       }
       revk_info (TAG, "Mobile disconnected");
+   }
+}
+
+void
+log_task (void *z)
+{                               // Log via MQTT
+   while (1)
+   {
+      sleep (1);
+      if (tracki != trackm)
+      {                         // Send data
+         xSemaphoreTake (track_mutex, portMAX_DELAY);
+         if (tracki != trackm)
+         {
+            if (tracklen[trackm])
+               revk_raw ("info", "udp", tracklen[trackm], track[trackm], 0);
+            trackm = (trackm + 1) % MAXTRACK;
+         }
+         xSemaphoreGive (track_mutex);
+      }
    }
 }
 
@@ -994,9 +1033,12 @@ nmea_task (void *z)
    }
 }
 
-void
-rdp (unsigned int L, unsigned int H, unsigned int margincm)
+unsigned int
+rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *dkeptp)
 {                               // Reduce, non recursive
+   float dlost = 0,
+      dkept = 0;
+   unsigned int L = 0;
    float marginsq = (float) margincm * (float) margincm / 10000.0;
    while (L + 1 < H)
    {
@@ -1070,29 +1112,31 @@ rdp (unsigned int L, unsigned int H, unsigned int margincm)
       }
       if (best < marginsq)
       {                         // All points are within margin - so all to be pruned
+         if (best > dlost)
+            dlost = best;
          for (n = l + 1; n < h; n++)
             fix[n].tim = 0;
          L = h;
          continue;
       }
+      if (!dkept || best < dkept)
+         dkept = best;
       fix[bestn].keep = 1;      // keep this middle point
    }
-}
-
-unsigned int
-rdppack (unsigned int last, unsigned int margincm)
-{                               // RDP 0-last and pack and return new last
-   rdp (0, last, margincm);
    // Pack
    unsigned int i,
      o = 0;
-   for (i = 0; i <= last; i++)
+   for (i = 0; i <= H; i++)
       if (fix[i].tim)
       {
          fix[o] = fix[i];
          fix[o].keep = 0;
          o++;
       }
+   if (dlostp)
+      *dlostp = ceil (sqrt (dlost) * 100.0);
+   if (dkeptp)
+      *dkeptp = floor (sqrt (dkept) * 100.0);
    return o - 1;
 }
 
@@ -1105,7 +1149,7 @@ app_main ()
    track_mutex = xSemaphoreCreateMutex ();
    revk_init (&app_command);
 #define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
-#define bn(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_BOOLEAN);
+#define h(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_HEX);
 #define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
@@ -1115,7 +1159,7 @@ app_main ()
 #undef s8
 #undef u8
 #undef b
-#undef bn
+#undef h
 #undef s
       if (oledsda >= 0 && oledscl >= 0)
       oled_start (1, oledaddress, oledscl, oledsda, oledflip);
@@ -1181,6 +1225,7 @@ app_main ()
       revk_task ("Mobile", at_task, NULL);
    }
    revk_task ("NMEA", nmea_task, NULL);
+   revk_task ("Log", log_task, NULL);
    while (1)
    {                            // main task
       sleep (1);
@@ -1194,16 +1239,21 @@ app_main ()
          unsigned int m = margincm;
          while (m < 100000)
          {
-            last = rdppack (last, m);
+            unsigned int dlost,
+              dkept;
+            last = rdp (last, m, &dlost, &dkept);
             if (fixdebug)
-               revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, m);
+               revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, dkept);
             if (last <= MAXSEND)
                break;
-            m += retrycm;
+            m = dkept + retrycm;
          }
          if (last <= MAXSEND)
          {
             // Make tracking packet
+            xSemaphoreTake (track_mutex, portMAX_DELAY);
+            tracklen[tracki] = 0;
+            xSemaphoreGive (track_mutex);
             uint8_t *t = track[tracki],
                *p = t;
             *p++ = 0x2A;        // Version
@@ -1214,6 +1264,7 @@ app_main ()
             *p++ = basetim >> 16;
             *p++ = basetim >> 8;
             *p++ = basetim;
+            uint8_t *e = p;
             p += 2;             // Length
             *p++ = 0;           // Message type
             *p++ = 0;
@@ -1238,8 +1289,8 @@ app_main ()
                *p++ = v >> 8;
                *p++ = v;
             }
-            t[8] = (p - t - 10) >> 8;   // Poke length
-            t[9] = (p - t - 10);
+            e[0] = (p - t - 10) >> 8;   // Poke length
+            e[1] = (p - t - 10);
             // CRC
             unsigned int crc = esp_crc32_be (0, t, p - t);
             *p++ = crc >> 24;
@@ -1247,15 +1298,24 @@ app_main ()
             *p++ = crc >> 8;
             *p++ = crc;
             // Pad
-            while (((p - t) - 8) & 0xF)
+            while ((p - e) & 0xF)
                *p++ = 0;
             // Encrypt
-            // TODO
-            tracklen[tracki] = p - t;
+            uint8_t iv[16];
+            memcpy (iv, t, 8);
+            memcpy (iv + 8, t, 8);
+            esp_aes_context ctx;
+            esp_aes_init (&ctx);
+            esp_aes_setkey (&ctx, aes, 128);
+            esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, p - e, iv, e, e);
+            esp_aes_free (&ctx);
             xSemaphoreTake (track_mutex, portMAX_DELAY);
+            tracklen[tracki] = p - t;
             tracki = (tracki + 1) % MAXTRACK;
             if (tracki == tracko)
                tracko = (tracko + 1) % MAXTRACK;
+            if (tracki == trackm)
+               trackm = (trackm + 1) % MAXTRACK;
             xSemaphoreGive (track_mutex);
          }
          fixmove = fixsave;     // move back for next block
