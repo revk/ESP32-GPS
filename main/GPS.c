@@ -109,17 +109,15 @@ struct fix_s
    int lon;                     // min*10000
 };
 #define	MAXFIX 6600
-#define MAXTRACK 6
-#define MAXDATA 1400            // Size of packet
-#define	MAXSEND	((MAXDATA-8-4-28)/16*16/sizeof(fix_t))
+#define MAXTRACK 32
+#define MAXDATA 1450            // Size of packet
+#define	MAXSEND	((MAXDATA-8-2-4-28)/16*16/sizeof(fix_t))
 uint8_t track[MAXTRACK][MAXDATA];
 int tracklen[MAXTRACK] = { };
 
 volatile unsigned int tracki = 0,
    tracko = 0,
    trackm = 0;;
-// TODO MQTT reporting
-// TODO resending
 SemaphoreHandle_t track_mutex = NULL;
 fix_t fix[MAXFIX];
 unsigned int fixnext = 0;       // Next fix to store
@@ -409,7 +407,11 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    if (!strcmp (tag, "resend"))
    {                            // Resend log data
       xSemaphoreTake (track_mutex, portMAX_DELAY);
-      trackm = (tracki + MAXTRACK - 1) % MAXTRACK;
+      // Back to oldest
+      if (tracki < MAXTRACK)
+         trackm = 0;
+      else
+         trackm = tracki - MAXTRACK;
       xSemaphoreGive (track_mutex);
       return "";
    }
@@ -922,26 +924,30 @@ at_task (void *X)
       while (1)
       {                         // Connected, send data as needed
          sleep (1);
-         if (tracki != tracko)
+         if (tracko < tracki)
          {                      // Send data
             xSemaphoreTake (track_mutex, portMAX_DELAY);
-            if (tracki != tracko)
+            if (tracko < tracki)
             {
-               if (tracklen[tracko])
-               {
-                  char temp[30];
-                  snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", tracklen[tracko]);
-                  if (atcmd (temp, 1000, 0) < 0)
-                     break;
-                  if (!strstr (atbuf, ">"))
-                     break;
-                  uart_write_bytes (atuart, (void *) track[tracko], tracklen[tracko]);
-                  if (atcmd (NULL, 10000, 0) < 0)
-                     break;
-                  if (!strstr (atbuf, "SEND OK"))
-                     break;
+               if (tracko + MAXTRACK >= tracki)
+               {                // Not wrapped
+                  unsigned int len = tracklen[tracko % MAXTRACK];
+                  if (len)
+                  {
+                     char temp[30];
+                     snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
+                     if (atcmd (temp, 1000, 0) < 0)
+                        break;
+                     if (!strstr (atbuf, ">"))
+                        break;
+                     uart_write_bytes (atuart, (void *) track[tracko % MAXTRACK], len);
+                     if (atcmd (NULL, 10000, 0) < 0)
+                        break;
+                     if (!strstr (atbuf, "SEND OK"))
+                        break;
+                  }
                }
-               tracko = (tracko + 1) % MAXTRACK;
+               tracko++;
             }
             xSemaphoreGive (track_mutex);
          }
@@ -962,9 +968,13 @@ log_task (void *z)
          xSemaphoreTake (track_mutex, portMAX_DELAY);
          if (tracki != trackm)
          {
-            if (tracklen[trackm])
-               revk_raw ("info", "udp", tracklen[trackm], track[trackm], 0);
-            trackm = (trackm + 1) % MAXTRACK;
+            if (trackm + MAXTRACK >= tracki)
+            {
+               unsigned int len = tracklen[trackm % MAXTRACK];
+               if (len)
+                  revk_raw ("info", "udp", len, track[trackm % MAXTRACK], 0);
+            }
+            trackm++;
          }
          xSemaphoreGive (track_mutex);
       }
@@ -1242,7 +1252,7 @@ app_main ()
             unsigned int dlost,
               dkept;
             last = rdp (last, m, &dlost, &dkept);
-            if (fixdebug)
+            if (fixdebug && last < fixsave)
                revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, dkept);
             if (last <= MAXSEND)
                break;
@@ -1252,7 +1262,11 @@ app_main ()
          {
             // Make tracking packet
             xSemaphoreTake (track_mutex, portMAX_DELAY);
-            tracklen[tracki] = 0;
+            if (tracki >= MAXTRACK && tracko < tracki + 1 - MAXTRACK)
+               tracko = tracki + 1 - MAXTRACK;  // Lost as wrapped
+            if (tracki >= MAXTRACK && trackm < tracki + 1 - MAXTRACK)
+               trackm = tracki + 1 - MAXTRACK;  // Lost as wrapped
+            tracklen[tracki % MAXTRACK] = 0;    // Ensure not sent until we have put in data
             xSemaphoreGive (track_mutex);
             uint8_t *t = track[tracki],
                *p = t;
@@ -1310,12 +1324,8 @@ app_main ()
             esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, p - e, iv, e, e);
             esp_aes_free (&ctx);
             xSemaphoreTake (track_mutex, portMAX_DELAY);
-            tracklen[tracki] = p - t;
-            tracki = (tracki + 1) % MAXTRACK;
-            if (tracki == tracko)
-               tracko = (tracko + 1) % MAXTRACK;
-            if (tracki == trackm)
-               trackm = (trackm + 1) % MAXTRACK;
+            tracklen[tracki % MAXTRACK] = p - t;
+            tracki++;
             xSemaphoreGive (track_mutex);
          }
          fixmove = fixsave;     // move back for next block
