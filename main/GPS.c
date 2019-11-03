@@ -923,7 +923,6 @@ at_task (void *X)
       revk_info (TAG, "Mobile connected");
       while (1)
       {                         // Connected, send data as needed
-         sleep (1);
          if (tracko < tracki)
          {                      // Send data
             xSemaphoreTake (track_mutex, portMAX_DELAY);
@@ -950,7 +949,8 @@ at_task (void *X)
                tracko++;
             }
             xSemaphoreGive (track_mutex);
-         }
+         } else
+            sleep (1);
          // TODO keep alive
       }
       revk_info (TAG, "Mobile disconnected");
@@ -962,7 +962,6 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      sleep (1);
       if (tracki != trackm)
       {                         // Send data
          xSemaphoreTake (track_mutex, portMAX_DELAY);
@@ -977,7 +976,8 @@ log_task (void *z)
             trackm++;
          }
          xSemaphoreGive (track_mutex);
-      }
+      } else
+         sleep (1);
    }
 }
 

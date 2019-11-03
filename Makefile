@@ -21,7 +21,7 @@ CCOPTS=${SQLINC} -I. -I/usr/local/ssl/include -D_GNU_SOURCE -g -Wall -funsigned-
 OPTS=-L/usr/local/ssl/lib ${SQLLIB} ${CCOPTS}
 
 gpslog: gpslog.c SQLlib/sqllib.o
-	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o
+	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o -lcrypto
 gpsout: gpsout.c SQLlib/sqllib.o
 	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o
 
