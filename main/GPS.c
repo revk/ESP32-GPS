@@ -385,6 +385,11 @@ lograte (int rate)
 const char *
 app_command (const char *tag, unsigned int len, const unsigned char *value)
 {
+   if (!strcmp (tag, "test"))
+   {
+revk_info("test","BE~%08X LE~%08X",esp_crc32_be (0, value, len),esp_crc32_le (0, value, len));
+	   return "";
+   }
    if (!strcmp (tag, "contrast"))
    {
       oled_set_contrast (atoi ((char *) value));
@@ -417,7 +422,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       xSemaphoreGive (track_mutex);
       return "";
    }
-   if (!strcmp (tag, "fix"))
+   if (!strcmp (tag, "fix")||!strcmp(tag,"upgrade")||!strcmp(tag,"restart"))
    {                            // Force fix dump now
       fixnow = 1;
       return "";
@@ -1306,11 +1311,11 @@ app_main ()
             e[0] = (p - t - 10) >> 8;   // Poke length
             e[1] = (p - t - 10);
             // CRC
-            unsigned int crc = esp_crc32_be (0, t, p - t);
-            *p++ = crc >> 24;
-            *p++ = crc >> 16;
-            *p++ = crc >> 8;
+            unsigned int crc = ~esp_crc32_le (0, t, p - t);
             *p++ = crc;
+            *p++ = crc >> 8;
+            *p++ = crc >> 16;
+            *p++ = crc >> 24;
             // Pad
             while ((p - e) & 0xF)
                *p++ = 0;
@@ -1327,8 +1332,6 @@ app_main ()
             tracklen[tracki % MAXTRACK] = p - t;
             tracki++;
             xSemaphoreGive (track_mutex);
-            uint8_t test[] = "TEST";
-            revk_info ("crctest", "%02X %02X %02X %02X %08X", test[0], test[1], test[2], test[3], esp_crc32_be (0, test, 4));   // TODO
          }
          fixmove = fixsave;     // move back for next block
          fixsave = 0;
