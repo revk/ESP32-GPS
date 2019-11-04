@@ -1101,6 +1101,8 @@ at_task (void *X)
                xSemaphoreGive (track_mutex);
             }
             int len = atcmd (NULL, 1000, 0);
+            if (len > 0)
+               revk_info ("fix", "Got %d: %02X", len, *atbuf);
             if (len >= 24 && *atbuf == VERSION)
             {                   // Rx?
 

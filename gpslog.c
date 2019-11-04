@@ -205,6 +205,7 @@ encode (SQL * sqlp, unsigned char *buf, unsigned int len)
       }
    }
    sql_free_result (res);
+   *p++ = VERSION;              // Yes, WTF, the SIM800 truncates
    return p - buf;
 }
 
