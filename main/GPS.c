@@ -659,7 +659,7 @@ nmea (char *s)
             while (s > 1 && isdigit ((int) *p))
             {
                s /= 10;
-               fixlon += s * (*p++ - '0');
+               fixtim += s * (*p++ - '0');
             }
             if (fixtim / TSCALE + 100 < (gpszda % 86400))
                fixtim += 86400 * TSCALE;        // Day wrap
