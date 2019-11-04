@@ -2,7 +2,7 @@
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
 #define TSCALE  100             // Per second
-#define SCALE   100000          // Per angle minute
+#define DSCALE   100000          // Per angle minute
 
 #include <stdio.h>
 #include <string.h>
