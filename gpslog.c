@@ -139,7 +139,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                p += 12;
             }
             sql_string_t s = { };
-            sql_sprintf (&s, "UPDATE `%#S` SET `lastudp`=%#T,`lastfix`=concat(%#U,'.%u')",
+            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T,`lastfix`=concat(%#U,'.%u')",
                           sqldevice, t, t + (lastfix / 10), lastfix % 10);
             if (addr)
                sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
