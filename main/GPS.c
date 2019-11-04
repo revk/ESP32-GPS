@@ -96,6 +96,9 @@ char hdopforce = 0;
 char pdopforce = 0;
 char vdopforce = 0;
 char gpsstarted = 0;
+char iccid[22] = { };
+char imei[22] = { };
+
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
 time_t basetim = 0;             // Base time for fixtim
@@ -424,6 +427,10 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
             tracko = tracki - MAXTRACK;
          xSemaphoreGive (track_mutex);
       }
+      if (*iccid)
+         revk_info ("iccid", "%s", iccid);
+      if (*imei)
+         revk_info ("imei", "%s", imei);
       return "";
    }
    if (!strcmp (tag, "status"))
@@ -919,108 +926,138 @@ void
 at_task (void *X)
 {
    atbuf = malloc (ATBUFSIZE);
-   gpio_set_level (atpwr, 0);
-   sleep (1);
-   gpio_set_level (atrst, 0);
-   gpio_set_level (atpwr, 1);
-   sleep (1);
-   gpio_set_level (atrst, 1);
-   while (atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && strncmp (atbuf, "OK", 2)));    // TODO give up and power cycle?
-   atcmd ("ATE0", 0, 0);
-   atcmd ("AT+CCID", 0, 0);
-   atcmd ("AT+GSN", 0, 0);
-   int delay = 1;
    while (1)
    {
-      while (delay--)
-         atcmd (NULL, 1000, 0);
-      delay = 1;
-      if (atcmd ("AT+CIPSHUT", 2000, 0) < 0)
-         continue;
-      if (!strstr ((char *) atbuf, "SHUT OK"))
-         continue;
-      while (1)
-      {
+      gpio_set_level (atpwr, 0);
+      sleep (1);
+      gpio_set_level (atrst, 0);
+      gpio_set_level (atpwr, 1);
+      sleep (1);
+      gpio_set_level (atrst, 1);
+      int try = 60;
+      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && strncmp (atbuf, "OK", 2))) && --try)
          sleep (1);
-         if (atcmd ("AT+CREG?", 1000, 1000) < 0)
-            continue;
-         if (!strstr ((char *) atbuf, "OK"))
-            continue;
-         if (strstr ((char *) atbuf, "+CREG: 0,1") || strstr ((char *) atbuf, "+CREG: 0,5"))
-            break;
-      }
+      if (!try)
+         continue;              // Cause power cycle and try again
+      atcmd ("ATE0", 0, 0);
+      atcmd (NULL, 0, 0);
+      if (atcmd ("AT+GSN", 0, 0) > 0)
       {
-         char temp[200];
-         snprintf (temp, sizeof (temp), "AT+CSTT=\"%s\"", apn);
-         if (atcmd (temp, 1000, 0) < 0)
-            continue;
-         if (!strstr ((char *) atbuf, "OK"))
-            continue;
+         char *p = atbuf,
+            *o = imei;
+         while (*p && *p < ' ')
+            p++;
+         while (isdigit ((int) *p) && o < imei + sizeof (imei) - 1)
+            *o++ = *p++;
+         *o = 0;
+         if (*imei)
+            revk_info ("imei", "%s", imei);
       }
-      if (atcmd ("AT+CIICR", 10000, 0) < 0)
-         continue;
-      if (!strstr ((char *) atbuf, "OK"))
-         continue;
-      delay = 600;              // We established a connection so don't immediately close and re-establish as that is rude
-      if (atcmd ("AT+CIFSR", 20000, 0) < 0)
-         continue;
-      if (!strstr ((char *) atbuf, "."))
-         continue;              // Yeh, not an OK after the IP!!! How fucking stupid
-#if 0
-      if (atcmd ("AT+CIPMUX=0", 1000) < 0)
-         continue;
-      if (!strstr ((char *) atbuf, "OK"))
-         continue;
-#endif
+      if (atcmd ("AT+CCID", 0, 0) > 0)
       {
-         char temp[200];
-         snprintf (temp, sizeof (temp), "AT+CIPSTART=\"UDP\",\"%s\",%d", loghost, logport);
-         if (atcmd (temp, 1000, 10000) < 0)
-            continue;
-         if (!strstr ((char *) atbuf, "OK"))
-            continue;
+         char *p = atbuf,
+            *o = iccid;
+         while (*p && *p < ' ')
+            p++;
+         while (isdigit ((int) *p) && o < iccid + sizeof (iccid) - 1)
+            *o++ = *p++;
+         *o = 0;
+         if (*iccid)
+            revk_info ("iccid", "%s", iccid);
       }
-      if (!strstr ((char *) atbuf, "CONNECT OK"))
-         continue;
-      revk_info (TAG, "Mobile connected");
+      int delay = 1;
       while (1)
-      {                         // Connected, send data as needed
-         if (!trackmqtt && tracko < tracki)
-         {                      // Send data
-            xSemaphoreTake (track_mutex, portMAX_DELAY);
-            if (tracko < tracki)
-            {
-               if (tracko + MAXTRACK >= tracki)
-               {                // Not wrapped
-                  uint8_t buf[MAXDATA];
-                  unsigned int len = trackmsg (buf, tracko);
-                  if (len)
-                  {
-                     uint32_t ts = (buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7];
-                     if (ts > trackbase)
+      {
+         while (delay--)
+            atcmd (NULL, 1000, 0);
+         delay = 1;
+         if (atcmd ("AT+CIPSHUT", 2000, 0) < 0)
+            continue;
+         if (!strstr ((char *) atbuf, "SHUT OK"))
+            continue;
+         while (1)
+         {
+            sleep (1);
+            if (atcmd ("AT+CREG?", 1000, 1000) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+            if (strstr ((char *) atbuf, "+CREG: 0,1") || strstr ((char *) atbuf, "+CREG: 0,5"))
+               break;
+         }
+         {
+            char temp[200];
+            snprintf (temp, sizeof (temp), "AT+CSTT=\"%s\"", apn);
+            if (atcmd (temp, 1000, 0) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+         }
+         if (atcmd ("AT+CIICR", 10000, 0) < 0)
+            continue;
+         if (!strstr ((char *) atbuf, "OK"))
+            continue;
+         delay = 600;           // We established a connection so don't immediately close and re-establish as that is rude
+         if (atcmd ("AT+CIFSR", 20000, 0) < 0)
+            continue;
+         if (!strstr ((char *) atbuf, "."))
+            continue;           // Yeh, not an OK after the IP!!! How fucking stupid
+#if 0
+         if (atcmd ("AT+CIPMUX=0", 1000) < 0)
+            continue;
+         if (!strstr ((char *) atbuf, "OK"))
+            continue;
+#endif
+         {
+            char temp[200];
+            snprintf (temp, sizeof (temp), "AT+CIPSTART=\"UDP\",\"%s\",%d", loghost, logport);
+            if (atcmd (temp, 1000, 10000) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+         }
+         if (!strstr ((char *) atbuf, "CONNECT OK"))
+            continue;
+         revk_info (TAG, "Mobile connected");
+         while (1)
+         {                      // Connected, send data as needed
+            if (!trackmqtt && tracko < tracki)
+            {                   // Send data
+               xSemaphoreTake (track_mutex, portMAX_DELAY);
+               if (tracko < tracki)
+               {
+                  if (tracko + MAXTRACK >= tracki)
+                  {             // Not wrapped
+                     uint8_t buf[MAXDATA];
+                     unsigned int len = trackmsg (buf, tracko);
+                     if (len)
                      {
-                        char temp[30];
-                        snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
-                        if (atcmd (temp, 1000, 0) < 0)
-                           break;
-                        if (!strstr (atbuf, ">"))
-                           break;
-                        uart_write_bytes (atuart, (void *) buf, len);
-                        if (atcmd (NULL, 10000, 0) < 0)
-                           break;
-                        if (!strstr (atbuf, "SEND OK"))
-                           break;
+                        uint32_t ts = (buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7];
+                        if (ts > trackbase)
+                        {
+                           char temp[30];
+                           snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
+                           if (atcmd (temp, 1000, 0) < 0)
+                              break;
+                           if (!strstr (atbuf, ">"))
+                              break;
+                           uart_write_bytes (atuart, (void *) buf, len);
+                           if (atcmd (NULL, 10000, 0) < 0)
+                              break;
+                           if (!strstr (atbuf, "SEND OK"))
+                              break;
+                        }
                      }
                   }
+                  tracko++;
                }
-               tracko++;
+               xSemaphoreGive (track_mutex);
             }
-            xSemaphoreGive (track_mutex);
+            sleep (1);          // Rate limit sending anyway
+            // TODO keep alive
          }
-         sleep (1);             // Rate limit sending anyway
-         // TODO keep alive
+         revk_info (TAG, "Mobile disconnected");
       }
-      revk_info (TAG, "Mobile disconnected");
    }
 }
 

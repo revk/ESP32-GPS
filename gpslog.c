@@ -140,7 +140,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             }
             sql_string_t s = { };
             sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T,`lastfix`=concat(%#U,'.%u')",
-                          sqldevice, t, t + (lastfix / 10), lastfix % 10);
+                         sqldevice, t, t + (lastfix / 10), lastfix % 10);
             if (addr)
                sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
             sql_sprintf (&s, " WHERE `device`=%#s", id);
@@ -446,6 +446,12 @@ main (int argc, const char *argv[])
                   errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                free (topic);
             }
+         } else if (!strcmp (type, "iccid"))
+         {
+            sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `iccid`=%#s WHERE `device`=%#s", sqldevice, val, tag));
+         } else if (!strcmp (type, "imei"))
+         {
+            sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `imei`=%#s WHERE `device`=%#s", sqldevice, val, tag));
          } else if (!strcmp (type, "rx"))
          {
             char *f[100],
