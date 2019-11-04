@@ -143,7 +143,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                           sqldevice, t, t + (lastfix / 10), lastfix % 10);
             if (addr)
                sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
-            sql_sprintf (&s, " WHERE `device`=%#s)", id);
+            sql_sprintf (&s, " WHERE `device`=%#s", id);
             sql_safe_query_s (sqlp, &s);
             if (sql_commit (sqlp))
                return "Bad SQL commit";
