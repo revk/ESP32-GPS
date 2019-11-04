@@ -2,7 +2,7 @@
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 static const char TAG[] = "GPS";
 
-#define	TSCALE	100             // Per second
+#define	TSCALE	10              // Per second
 #define	DSCALE	100000          // Per angle minute
 
 #include "revk.h"
@@ -109,11 +109,11 @@ time_t basetim = 0;             // Base time for fixtim
 typedef struct fix_s fix_t;
 struct fix_s
 {                               // 12 byte fix data
-   unsigned char keep:1;
-   short tim:15;                // 0.1 seconds
+   unsigned char keep:1;        // Keep this point
+   short tim:15;                // secs*TSCALE
    short alt;                   // 1 metre
-   int lat;                     // min*10000
-   int lon;                     // min*10000
+   int lat;                     // min*DSCALE
+   int lon;                     // min*DSCALE
 };
 #define	MAXFIX 6600
 #define MAXDATA 1450            // Size of packet
@@ -585,8 +585,6 @@ nmea (char *s)
       return;
    if (!gpsstarted && (esp_timer_get_time () > 10000000 || !revk_offline ()))
    {                            // The delay is to allow debug logging, etc.
-      if (fixdebug)
-         revk_info (TAG, "GPS running");
       gpscmd ("$PMTK220,%d", 1000 / fixpersec); // Fix rate
       gpscmd ("$PQTXT,W,0,1");  // Disable GPTXT
       gpscmd ("$PMTK314,0,0,%d,1,%d,0,0,0,0,0,0,0,0,0,0,0,0,%d,0", fixpersec, fixpersec * 10, fixpersec * 10);  // What to send
@@ -597,6 +595,8 @@ nmea (char *s)
       gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);   // Easy
       gpscmd ("$PMTK225,%d", (always ? 8 : 0) + (backup ? 1 : 0));      // Periodic
       gpsstarted = 1;
+      if (fixdebug)
+         revk_info (TAG, "GPS running");
    }
    char *f[50];
    int n = 0;
@@ -725,7 +725,11 @@ nmea (char *s)
          t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
          v.tv_usec = atoi (f[1] + 7) * 1000;
          if (!gpszda)
+         {
             sntp_stop ();
+            if (fixdebug)
+               revk_info ("fix", "Set clock %s-%s-%s %s", f[4], f[3], f[2], f[1]);
+         }
          gpszda = v.tv_sec = mktime (&t);
          settimeofday (&v, NULL);
       }
@@ -1391,7 +1395,7 @@ app_main ()
          fixnow = 0;
          // Reduce fixes
          if (fixdebug)
-            revk_info ("fix", "%u fixes recorded", fixsave + 1);
+            revk_info ("fix", "%u fixes recorded", fixsave);
          unsigned int last = fixsave;
          unsigned int m = margincm;
          while (m < 100000)
@@ -1400,7 +1404,7 @@ app_main ()
               dkept;
             last = rdp (last, m, &dlost, &dkept);
             if (fixdebug && last < fixsave)
-               revk_info ("fix", "Reduced to %u fixes at %ucm", last + 1, dlost);
+               revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
             if (last <= MAXSEND)
                break;
             m = dkept + retrycm;

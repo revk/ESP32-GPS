@@ -1,8 +1,9 @@
 // GPS dump - when a GPS unit reports it has log data, this initiates a dump and stored to database
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
-#define TSCALE  100             // Per second
-#define DSCALE   100000          // Per angle minute
+#define TSCALE  10             // Per second
+#define	TPART	"%01u"
+#define DSCALE  100000          // Per angle minute
 
 #include <stdio.h>
 #include <string.h>
@@ -137,12 +138,12 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
                sql_safe_query_free (sqlp,
                                     sql_printf
-                                    ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'.%02u'),`alt`=%d,`lat`=%.8lf,lon=%.8lf",
+                                    ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'."TPART"'),`alt`=%d,`lat`=%.8lf,lon=%.8lf",
                                      sqltable, id, t + (tim / TSCALE), tim % TSCALE, alt, (double) lat / 60.0/DSCALE, (double) lon / 60.0/DSCALE));
                p += 12;
             }
             sql_string_t s = { };
-            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T,`lastfix`=concat(%#U,'.%02u')",
+            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T,`lastfix`=concat(%#U,'."TPART"')",
                          sqldevice, t, t + (lastfix / TSCALE), lastfix % TSCALE);
             if (addr)
                sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
