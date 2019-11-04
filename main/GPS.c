@@ -1424,18 +1424,17 @@ app_main ()
             revk_info ("fix", "%u fixes recorded", fixsave);
          unsigned int last = fixsave - 1;
          unsigned int m = margincm;
-         if (last > MAXSEND)
-            while (m < 100000)
-            {
-               unsigned int dlost,
-                 dkept;
-               last = rdp (last, m, &dlost, &dkept);
-               if (fixdebug && last < fixsave)
-                  revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
-               if (last <= MAXSEND)
-                  break;
-               m = dkept + retrycm;
-            }
+         while (m < 100000)
+         {
+            unsigned int dlost,
+              dkept;
+            last = rdp (last, m, &dlost, &dkept);
+            if (fixdebug && last < fixsave)
+               revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
+            if (last <= MAXSEND)
+               break;
+            m = dkept + retrycm;
+         }
          if (last <= MAXSEND)
          {
             // Make tracking packet
