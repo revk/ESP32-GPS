@@ -116,10 +116,17 @@ struct fix_s
    int lon;                     // min*10000
 };
 #define	MAXFIX 6600
-#define MAXTRACK 16
 #define MAXDATA 1450            // Size of packet
 #define	MAXSEND	((MAXDATA-8-2-4-28)/16*16/sizeof(fix_t))
+
+#ifdef CONFIG_ESP32_SPIRAM_SUPPORT
+#define MAXTRACK 16
+EXT_RAM_ATTR uint8_t track[MAXTRACK][MAXDATA]; // TODO once ESP-IDF is fixed, allow much more storage
+#else
+#define MAXTRACK 16
 uint8_t track[MAXTRACK][MAXDATA];
+#endif
+
 int tracklen[MAXTRACK] = { };
 
 volatile unsigned int tracki = 0,
