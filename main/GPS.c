@@ -118,6 +118,7 @@ int tracklen[MAXTRACK] = { };
 volatile unsigned int tracki = 0,
    tracko = 0;
 volatile char trackmqtt = 0;
+volatile uint32_t trackbase = 0;        // Send tracking for records after this time
 SemaphoreHandle_t track_mutex = NULL;
 fix_t fix[MAXFIX];
 unsigned int fixnext = 0;       // Next fix to store
@@ -431,9 +432,14 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       return "";
    }
    if (!strcmp (tag, "resend"))
-   {                            // Resend log data - TODO arg being time from which to resend
-      // Back to oldest
+   {                            // Resend log data
       xSemaphoreTake (track_mutex, portMAX_DELAY);
+      if (len)
+      {
+         struct tm t = { };
+         strptime ((char *) value, "%F %T", &t);
+         trackbase = mktime (&t);
+      }
       if (tracki < MAXTRACK)
          tracko = 0;
       else
@@ -957,26 +963,31 @@ at_task (void *X)
                if (tracko + MAXTRACK >= tracki)
                {                // Not wrapped
                   unsigned int len = tracklen[tracko % MAXTRACK];
-                  if (len)
+                  if (len > 8)
                   {
-                     char temp[30];
-                     snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
-                     if (atcmd (temp, 1000, 0) < 0)
-                        break;
-                     if (!strstr (atbuf, ">"))
-                        break;
-                     uart_write_bytes (atuart, (void *) track[tracko % MAXTRACK], len);
-                     if (atcmd (NULL, 10000, 0) < 0)
-                        break;
-                     if (!strstr (atbuf, "SEND OK"))
-                        break;
+                     uint8_t *t = track[tracko % MAXTRACK];
+                     uint32_t ts = (t[4] << 24) + (t[5] << 16) + (t[6] << 8) + t[7];
+                     if (ts > trackbase)
+                     {
+                        char temp[30];
+                        snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
+                        if (atcmd (temp, 1000, 0) < 0)
+                           break;
+                        if (!strstr (atbuf, ">"))
+                           break;
+                        uart_write_bytes (atuart, (void *) t, len);
+                        if (atcmd (NULL, 10000, 0) < 0)
+                           break;
+                        if (!strstr (atbuf, "SEND OK"))
+                           break;
+                     }
                   }
                }
                tracko++;
             }
             xSemaphoreGive (track_mutex);
-         } else
-            sleep (1);
+         }
+         sleep (1);             // Rate limit sending anyway
          // TODO keep alive
       }
       revk_info (TAG, "Mobile disconnected");
@@ -996,14 +1007,19 @@ log_task (void *z)
             if (tracko + MAXTRACK >= tracki)
             {
                unsigned int len = tracklen[tracko % MAXTRACK];
-               if (len)
-                  revk_raw ("info", "udp", len, track[tracko % MAXTRACK], 0);
+               if (len > 8)
+               {
+                  uint8_t *t = track[tracko % MAXTRACK];
+                  uint32_t ts = (t[4] << 24) + (t[5] << 16) + (t[6] << 8) + t[7];
+                  if (ts > trackbase)
+                     revk_raw ("info", "udp", len, track[tracko % MAXTRACK], 0);
+               }
             }
             tracko++;
          }
          xSemaphoreGive (track_mutex);
       } else
-         sleep (1);
+         sleep (1);             // Wait for next message to send
    }
 }
 
@@ -1303,7 +1319,7 @@ app_main ()
             uint8_t *e = p;
             p += 2;             // Length
             *p++ = 0;           // Message type
-            *p++ = 0;
+            *p++ = 1;           // TODO how the hell do I do change of type for oldest when signed and encrypted... Grrr
             int n;
             for (n = 1; n <= last; n++)
             {                   // Don't send first as it is duplicate of last from previous packet

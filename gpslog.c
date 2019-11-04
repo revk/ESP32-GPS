@@ -340,7 +340,10 @@ main (int argc, const char *argv[])
       }
       if (!strcmp (message, "state"))
       {
-         if (!type && *val == '1')
+         if (!type && *val == '0')
+         {                      // Off wifi/mqtt
+            sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `mqtt`=NULL WHERE `device`=%#s", sqldevice, tag));
+         } else if (!type && *val == '1')
          {                      // device connected
             if (resend)
             {
@@ -380,6 +383,21 @@ main (int argc, const char *argv[])
                }
             }
             sql_free_result (res);
+            char *v = val;
+            while (*v && *v != ' ')
+               v++;
+            while (*v == ' ')
+               v++;
+            if (!strncmp (v, "ESP32 ", 6))
+               v += 6;
+            while (*v == ' ')
+               v++;
+            char *e = v;
+            while (*e && *e != ' ')
+               e++;
+            *e = 0;
+            sql_safe_query_free (&sql,
+                                 sql_printf ("UPDATE `%#S` SET `mqtt`=NOW(),`version`=%#s WHERE `device`=%#s", sqldevice, v, tag));
          }
       } else if (!strcmp (message, "info"))
       {
