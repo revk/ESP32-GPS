@@ -1100,18 +1100,28 @@ at_task (void *X)
                }
                xSemaphoreGive (track_mutex);
             }
-	    int len=atcmd(NULL,1000,0);
-	    if(len>=24&&*atbuf==VERSION)
-	    { // Rx?
-		    // Check Chip ID
-		    
-		    // Decrypt
-		    
-		    // Check CRC
-		    
-		    // Process message
+            int len = atcmd (NULL, 1000, 0);
+            if (len >= 24 && *atbuf == VERSION)
+            {                   // Rx?
 
-	    }
+               // TODO bodge just to resend all for now
+               xSemaphoreTake (track_mutex, portMAX_DELAY);
+               trackbase = 0;
+               if (tracki < MAXTRACK)
+                  tracko = 0;
+               else
+                  tracko = tracki - MAXTRACK;
+               xSemaphoreGive (track_mutex);
+
+               // Check Chip ID
+
+               // Decrypt
+
+               // Check CRC
+
+               // Process message
+
+            }
             // TODO keep alives
          }
          revk_info (TAG, "Mobile disconnected");
