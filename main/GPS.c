@@ -885,6 +885,36 @@ display_task (void *p)
    }
 }
 
+unsigned int
+trackmsg (uint8_t * buf, unsigned trackn)
+{                               // Make a track message for sending
+   unsigned int len = tracklen[trackn % MAXTRACK];
+   uint8_t *src = track[trackn % MAXTRACK];
+   if (len < 8)
+      return len;
+   memcpy (buf, src, len);
+   if (!trackn || trackn == tracki - MAXTRACK)
+      buf[11] = 0;              // Oldest
+   else
+      buf[11] = 1;              // Not oldest
+   unsigned int crc = ~esp_crc32_le (0, buf, len);
+   buf[len++] = crc;
+   buf[len++] = crc >> 8;
+   buf[len++] = crc >> 16;
+   buf[len++] = crc >> 24;
+   while ((len - 8) & 15)
+      buf[len++] = 0;           // Padding
+   uint8_t iv[16];
+   memcpy (iv, buf, 8);
+   memcpy (iv + 8, buf, 8);
+   esp_aes_context ctx;
+   esp_aes_init (&ctx);
+   esp_aes_setkey (&ctx, aes, 128);
+   esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
+   esp_aes_free (&ctx);
+   return len;
+}
+
 void
 at_task (void *X)
 {
@@ -962,11 +992,11 @@ at_task (void *X)
             {
                if (tracko + MAXTRACK >= tracki)
                {                // Not wrapped
-                  unsigned int len = tracklen[tracko % MAXTRACK];
-                  if (len > 8)
+                  uint8_t buf[MAXDATA];
+                  unsigned int len = trackmsg (buf, tracko);
+                  if (len)
                   {
-                     uint8_t *t = track[tracko % MAXTRACK];
-                     uint32_t ts = (t[4] << 24) + (t[5] << 16) + (t[6] << 8) + t[7];
+                     uint32_t ts = (buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7];
                      if (ts > trackbase)
                      {
                         char temp[30];
@@ -975,7 +1005,7 @@ at_task (void *X)
                            break;
                         if (!strstr (atbuf, ">"))
                            break;
-                        uart_write_bytes (atuart, (void *) t, len);
+                        uart_write_bytes (atuart, (void *) buf, len);
                         if (atcmd (NULL, 10000, 0) < 0)
                            break;
                         if (!strstr (atbuf, "SEND OK"))
@@ -1006,13 +1036,13 @@ log_task (void *z)
          {
             if (tracko + MAXTRACK >= tracki)
             {
-               unsigned int len = tracklen[tracko % MAXTRACK];
-               if (len > 8)
+               uint8_t buf[MAXDATA];
+               unsigned int len = trackmsg (buf, tracko);
+               if (len)
                {
-                  uint8_t *t = track[tracko % MAXTRACK];
-                  uint32_t ts = (t[4] << 24) + (t[5] << 16) + (t[6] << 8) + t[7];
+                  uint32_t ts = (buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7];
                   if (ts > trackbase)
-                     revk_raw ("info", "udp", len, track[tracko % MAXTRACK], 0);
+                     revk_raw ("info", "udp", len, buf, 0);
                }
             }
             tracko++;
@@ -1319,7 +1349,7 @@ app_main ()
             uint8_t *e = p;
             p += 2;             // Length
             *p++ = 0;           // Message type
-            *p++ = 1;           // TODO how the hell do I do change of type for oldest when signed and encrypted... Grrr
+            *p++ = 0;           // TODO how the hell do I do change of type for oldest when signed and encrypted... Grrr
             int n;
             for (n = 1; n <= last; n++)
             {                   // Don't send first as it is duplicate of last from previous packet
@@ -1343,24 +1373,6 @@ app_main ()
             }
             e[0] = (p - t - 10) >> 8;   // Poke length
             e[1] = (p - t - 10);
-            // CRC
-            unsigned int crc = ~esp_crc32_le (0, t, p - t);
-            *p++ = crc;
-            *p++ = crc >> 8;
-            *p++ = crc >> 16;
-            *p++ = crc >> 24;
-            // Pad
-            while ((p - e) & 0xF)
-               *p++ = 0;
-            // Encrypt
-            uint8_t iv[16];
-            memcpy (iv, t, 8);
-            memcpy (iv + 8, t, 8);
-            esp_aes_context ctx;
-            esp_aes_init (&ctx);
-            esp_aes_setkey (&ctx, aes, 128);
-            esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, p - e, iv, e, e);
-            esp_aes_free (&ctx);
             xSemaphoreTake (track_mutex, portMAX_DELAY);
             tracklen[tracki % MAXTRACK] = p - t;
             tracki++;

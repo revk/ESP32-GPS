@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <popt.h>
 #include <err.h>
@@ -59,18 +60,19 @@ crc32 (unsigned int len, const unsigned char *data)
    return crc;
 }
 
-void
-process_udp (SQL * sqlp, unsigned int len, unsigned char *data)
+time_t
+process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr, unsigned short port)
 {
+   time_t resend = 0;
    if (len < 8 + 16)
    {
       warnx ("Bad UDP len %d", len);
-      return;
+      return resend;
    }
    if (*data != 0x2A)
    {
       warnx ("Bad version %02X", *data);
-      return;
+      return resend;
    }
    char id[7];
    sprintf (id, "%02X%02X%02X", data[1], data[2], data[3]);
@@ -112,33 +114,42 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data)
          return "CRC failure";
       unsigned int type = (p[0] << 8) + p[1];
       p += 2;
-      if (!type)
+      if (!type || type == 1)
       {                         // Tracking
-         // TODO work out if missed data so we can request resend
-         unsigned short lastfix = 0;
-         sql_transaction (sqlp);
-         while (p + 12 <= e)
+         time_t last = sql_time_utc (sql_colz (res, "lastfix"));
+         if (t > last && type == 1)
+            resend = t;         // Missing data
+         else
          {
-            unsigned short tim = (p[0] << 8) + p[1];
-            if (tim > lastfix)
-               lastfix = tim;
-            short alt = (p[2] << 8) + p[3];
-            int lat = (p[4] << 24) + (p[5] << 16) + (p[6] << 8) + p[7];
-            int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
-            sql_safe_query_free (sqlp,
-                                 sql_printf ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'.%u'),`alt`=%d,`lat`=%f,lon=%f",
-                                             sqltable, id, t + (tim / 10), tim % 10, alt, (float) lat / 600000.0,
-                                             (float) lon / 600000.0));
-            p += 12;
+            resend = 0;
+            unsigned short lastfix = 0;
+            sql_transaction (sqlp);
+            while (p + 12 <= e)
+            {
+               unsigned short tim = (p[0] << 8) + p[1];
+               if (tim > lastfix)
+                  lastfix = tim;
+               short alt = (p[2] << 8) + p[3];
+               int lat = (p[4] << 24) + (p[5] << 16) + (p[6] << 8) + p[7];
+               int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
+               sql_safe_query_free (sqlp,
+                                    sql_printf
+                                    ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'.%u'),`alt`=%d,`lat`=%f,lon=%f",
+                                     sqltable, id, t + (tim / 10), tim % 10, alt, (float) lat / 600000.0, (float) lon / 600000.0));
+               p += 12;
+            }
+            sql_string_t s = { };
+            sql_sprintf (&s, "UPDATE `%#S` SET `lastudp`=%#T,`lastfix`=concat(%#U,'.%u')",
+                          sqldevice, t, t + (lastfix / 10), lastfix % 10);
+            if (addr)
+               sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
+            sql_sprintf (&s, " WHERE `device`=%#s)", id);
+            sql_safe_query_s (sqlp, &s);
+            if (sql_commit (sqlp))
+               return "Bad SQL commit";
+            if (p < e)
+               return "Bad length";
          }
-         sql_safe_query_free (sqlp,
-                              sql_printf
-                              ("UPDATE `%#S` SET `lastudp`=%#T,`lastfix`=concat(%#U,'.%u') WHERE `device`=%#s AND (`lastudp` IS NULL OR `lastudp`<%#T)",
-                               sqldevice, t, t + (lastfix / 10), lastfix % 10, id, t));
-         if (sql_commit (sqlp))
-            return "Bad SQL commit";
-         if (p < e)
-            return "Bad length";
       } else
          return "Unknown message type";
       return NULL;
@@ -147,6 +158,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data)
    if (e)
       warnx ("%s: %s", id, e);  // Error
    sql_free_result (res);
+   return resend;
 }
 
 const char *bindhost = NULL;
@@ -180,8 +192,24 @@ udp_task (void)
       size_t len = recvfrom (s, rx, sizeof (rx) - 1, 0, (struct sockaddr *) &from, &fromlen);
       if (len < 0)
          return -1;
-      // TODO update port/IP for sending messages back
-      process_udp (&sql, len, rx);
+      unsigned short port = 0;
+      char addr[INET6_ADDRSTRLEN + 1] = "";
+      if (from.sin6_family == AF_INET)
+      {
+         inet_ntop (from.sin6_family, &((struct sockaddr_in *) &from)->sin_addr, addr, sizeof (addr));
+         port = ((struct sockaddr_in *) &from)->sin_port;
+      } else
+      {
+         inet_ntop (from.sin6_family, &from.sin6_addr, addr, sizeof (addr));
+         port = from.sin6_port;
+      }
+      if (!strncmp (addr, "::ffff:", 7) && strchr (addr, '.'))
+         strcpy (addr, addr + 7);
+      time_t resend = process_udp (&sql, len, rx, addr, port);
+      if (resend)
+      {                         // TODO request resend
+
+      }
    }
 }
 
@@ -399,11 +427,26 @@ main (int argc, const char *argv[])
             sql_safe_query_free (&sql,
                                  sql_printf ("UPDATE `%#S` SET `mqtt`=NOW(),`version`=%#s WHERE `device`=%#s", sqldevice, v, tag));
          }
-      } else if (!strcmp (message, "info"))
+      } else if (!strcmp (message, "info") && type)
       {
          if (!strcmp (type, "udp"))
-            process_udp (&sql, msg->payloadlen, msg->payload);
-         else if (!strcmp (type, "rx"))
+         {
+            time_t resend = process_udp (&sql, msg->payloadlen, msg->payload, NULL, 0);
+            if (resend)
+            {
+               char temp[22];
+               struct tm t;
+               gmtime_r (&resend, &t);
+               strftime (temp, sizeof (temp), "%F %T", &t);
+               char *topic;
+               if (asprintf (&topic, "command/%s/%s/resend", mqttappname, tag) < 0)
+                  errx (1, "malloc");
+               int e = mosquitto_publish (mqtt, NULL, topic, strlen (temp), temp, 1, 0);
+               if (e)
+                  errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
+               free (topic);
+            }
+         } else if (!strcmp (type, "rx"))
          {
             char *f[100],
              *p = val;
@@ -576,10 +619,9 @@ main (int argc, const char *argv[])
                   l->line = 0;
                } else
                   warnx ("%s Unknown type %d", tag, type);
-            } else if (strcmp (val, "$PMTK001"))
+            } else if (strcmp (val, "$PMTK001") && strncmp (val, "$PMTK010", 8))
                warnx ("rx %s %s", tag, val);    // Unknown
-         } else
-            warnx ("rx %s %s", tag, message);   // Unknown
+         }
       }
       free (val);
    }
