@@ -121,7 +121,7 @@ struct fix_s
 
 #ifdef CONFIG_ESP32_SPIRAM_SUPPORT
 #define MAXTRACK 16
-EXT_RAM_ATTR uint8_t track[MAXTRACK][MAXDATA]; // TODO once ESP-IDF is fixed, allow much more storage
+EXT_RAM_ATTR uint8_t track[MAXTRACK][MAXDATA];  // TODO once ESP-IDF is fixed, allow much more storage
 #else
 #define MAXTRACK 16
 uint8_t track[MAXTRACK][MAXDATA];
@@ -584,7 +584,8 @@ nmea (char *s)
       return;
    if (!gpsstarted && (esp_timer_get_time () > 10000000 || !revk_offline ()))
    {                            // The delay is to allow debug logging, etc.
-      revk_info (TAG, "GPS running");
+      if (fixdebug)
+         revk_info (TAG, "GPS running");
       gpscmd ("$PMTK220,%d", 1000 / fixpersec); // Fix rate
       gpscmd ("$PQTXT,W,0,1");  // Disable GPTXT
       gpscmd ("$PMTK314,0,0,%d,1,%d,0,0,0,0,0,0,0,0,0,0,0,0,%d,0", fixpersec, fixpersec * 10, fixpersec * 10);  // What to send
@@ -683,6 +684,8 @@ nmea (char *s)
                     p = 0;
                   int diff = fix[fixmove].tim / TSCALE * TSCALE - TSCALE;
                   basetim += diff / TSCALE;
+                  if (fixdebug)
+                     revk_info ("fix", "Fix moved %d, diff=%d, last tim=%u", fixmove, diff, fix[fixmove].tim);
                   for (n = fixmove; n < fixnext; n++)
                   {
                      fix[p] = fix[n];
