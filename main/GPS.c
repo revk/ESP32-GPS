@@ -626,10 +626,10 @@ nmea (char *s)
             int s = DSCALE;
             int fixlat = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * s;
             p += 5;
-            while (s && isdigit ((int) *p))
+            while (s > 1 && isdigit ((int) *p))
             {
-               fixlat += s * (*p++ - '0');
                s /= 10;
+               fixlat += s * (*p++ - '0');
             }
             if (f[3][0] == 'S')
                fixlat = 0 - fixlat;
@@ -637,10 +637,10 @@ nmea (char *s)
             p = f[4];
             int fixlon = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 100 + (p[3] - '0') * 10 + p[4] - '0') * s;
             p += 6;
-            while (s && isdigit ((int) *p))
+            while (s > 1 && isdigit ((int) *p))
             {
-               fixlon += s * (*p++ - '0');
                s /= 10;
+               fixlon += s * (*p++ - '0');
             }
             if (f[5][0] == 'W')
                fixlon = 0 - fixlon;
@@ -649,13 +649,13 @@ nmea (char *s)
             unsigned int fixtim =
                ((((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * 60 + (p[4] - '0') * 10 + p[5] - '0') * s;
             p += 7;
-            while (s && isdigit ((int) *p))
+            while (s > 1 && isdigit ((int) *p))
             {
-               fixlon += s * (*p++ - '0');
                s /= 10;
+               fixlon += s * (*p++ - '0');
             }
-            if (fixtim / TSCALE + 1000 < (gpszda % 86400))
-               fixtim += 864000;        // Day wrap
+            if (fixtim / TSCALE + 100 < (gpszda % 86400))
+               fixtim += 86400 * TSCALE;        // Day wrap
             if (!basetim)
                basetim = gpszda - 1;
             fixtim -= (basetim - gpszda / 86400 * 86400) * TSCALE;
@@ -1075,7 +1075,7 @@ at_task (void *X)
                            }
                         }
                      }
-                  }
+                  }             // else lost data
                   tracko++;
                }
                xSemaphoreGive (track_mutex);
@@ -1108,7 +1108,7 @@ log_task (void *z)
                   if (ts > trackbase)
                      revk_raw ("info", "udp", len, buf, 0);
                }
-            }
+            }                   // else lost data
             tracko++;
          }
          xSemaphoreGive (track_mutex);
@@ -1400,7 +1400,7 @@ app_main ()
                tracko = tracki + 1 - MAXTRACK;  // Lost as wrapped
             tracklen[tracki % MAXTRACK] = 0;    // Ensure not sent until we have put in data
             xSemaphoreGive (track_mutex);
-            uint8_t *t = track[tracki],
+            uint8_t *t = track[tracki % MAXTRACK],
                *p = t;
             *p++ = 0x2A;        // Version
             *p++ = revk_binid >> 16;
