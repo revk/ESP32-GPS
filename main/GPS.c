@@ -412,7 +412,8 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "wifi"))
    {                            // WiFi connected, but not need for SNTP as we have GPS
-      sntp_stop ();
+      if (gpszda)
+         sntp_stop ();
       return "";
    }
    if (!strcmp (tag, "disconnect"))
@@ -723,6 +724,8 @@ nmea (char *s)
          t.tm_min = (f[1][2] - '0') * 10 + f[1][3] - '0';
          t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
          v.tv_usec = atoi (f[1] + 7) * 1000;
+         if (!gpszda)
+            sntp_stop ();
          gpszda = v.tv_sec = mktime (&t);
          settimeofday (&v, NULL);
       }
