@@ -2,6 +2,9 @@
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 static const char TAG[] = "GPS";
 
+#define	TSCALE	100             // Per second
+#define	DSCALE	100000          // Per angle minute
+
 #include "revk.h"
 #include <esp32/aes.h>
 #include <driver/i2c.h>
@@ -618,27 +621,43 @@ nmea (char *s)
          gotfix = 1;
          if (gpszda)
          {                      // Store fix data
-            // Lat in minutes*10000
-            int fixlat =
-               (((f[2][0] - '0') * 10 + f[2][1] - '0') * 60 + (f[2][2] - '0') * 10 + f[2][3] - '0') * 10000 + (f[2][5] -
-                                                                                                               '0') * 1000 +
-               (f[2][6] - '0') * 100 + (f[2][7] - '0') * 10 + f[2][8] - '0';
+            char *p = f[2];
+            int s = DSCALE;
+            int fixlat = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * s;
+            p += 5;
+            while (s && isdigit ((int)*p))
+            {
+               fixlat += s * (*p++ - '0');
+               s /= 10;
+            }
             if (f[3][0] == 'S')
                fixlat = 0 - fixlat;
-            // Lon in minutes *10000
-            int fixlon =
-               (((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0') * 60 + (f[4][3] - '0') * 10 + f[4][4] -
-                '0') * 10000 + (f[4][6] - '0') * 1000 + (f[4][7] - '0') * 100 + (f[4][8] - '0') * 10 + f[4][9] - '0';
+            s = DSCALE;
+            p = f[4];
+            int fixlon = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 100 + (p[3] - '0') * 10 + p[4] - '0') * s;
+            p += 6;
+            while (s && isdigit ((int)*p))
+            {
+               fixlon += s * (*p++ - '0');
+               s /= 10;
+            }
             if (f[5][0] == 'W')
                fixlon = 0 - fixlon;
+            s = TSCALE;
+            p = f[1];
             unsigned int fixtim =
-               ((((f[1][0] - '0') * 10 + f[1][1] - '0') * 60 + (f[1][2] - '0') * 10 + f[1][3] - '0') * 60 + (f[1][4] - '0') * 10 +
-                f[1][5] - '0') * 10 + f[1][7] - '0';
-            if (fixtim / 10 + 100 < (gpszda % 86400))
+               ((((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * 60 + (p[4] - '0') * 10 + p[5] - '0') * s;
+            p += 7;
+            while (s && isdigit ((int)*p))
+            {
+               fixlon += s * (*p++ - '0');
+               s /= 10;
+            }
+            if (fixtim / TSCALE + 1000 < (gpszda % 86400))
                fixtim += 864000;        // Day wrap
             if (!basetim)
                basetim = gpszda - 1;
-            fixtim -= (basetim - gpszda / 86400 * 86400) * 10;
+            fixtim -= (basetim - gpszda / 86400 * 86400) * TSCALE;
             int fixalt = round (alt);
             if (fixnext < MAXFIX)
             {
@@ -654,8 +673,8 @@ nmea (char *s)
                {                // Move back fixes
                   unsigned int n,
                     p = 0;
-                  int diff = fix[fixmove].tim / 10 * 10 - 10;
-                  basetim += diff / 10;
+                  int diff = fix[fixmove].tim / TSCALE * TSCALE - TSCALE;
+                  basetim += diff / TSCALE;
                   for (n = fixmove; n < fixnext; n++)
                   {
                      fix[p] = fix[n];
@@ -1037,15 +1056,17 @@ at_task (void *X)
                         {
                            char temp[30];
                            snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
-                           if (atcmd (temp, 1000, 0) < 0)
+                           if (atcmd (temp, 1000, 0) < 0 || !strstr (atbuf, ">"))
+                           {
+                              xSemaphoreGive (track_mutex);
                               break;
-                           if (!strstr (atbuf, ">"))
-                              break;
+                           }
                            uart_write_bytes (atuart, (void *) buf, len);
-                           if (atcmd (NULL, 10000, 0) < 0)
+                           if (atcmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
+                           {
+                              xSemaphoreGive (track_mutex);
                               break;
-                           if (!strstr (atbuf, "SEND OK"))
-                              break;
+                           }
                         }
                      }
                   }
@@ -1178,14 +1199,14 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
       int clon = a->lon / 2 + b->lon / 2;
       int calt = ((int) a->alt + (int) b->alt) / 2;
       int ctim = ((int) a->tim + (int) b->tim) / 2;
-      float slat = 111111.0 * cos (M_PI * clat / 600000.0 / 180.0);
+      float slat = 111111.0 * cos (M_PI * clat / 60.0 / 180.0 / DSCALE);
       inline float x (fix_t * p)
       {
-         return (float) (p->lon - clon) * slat / 600000.0;
+         return (float) (p->lon - clon) * slat / 60.0 / DSCALE;
       }
       inline float y (fix_t * p)
       {
-         return (float) (p->lat - clat) * 111111.0 / 600000.0;
+         return (float) (p->lat - clat) * 111111.0 / 60.0 / DSCALE;
       }
       inline float z (fix_t * p)
       {
@@ -1193,7 +1214,7 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
       }
       inline float t (fix_t * p)
       {
-         return (float) (p->tim - ctim) * secondcm / 100.0 / 10.0;
+         return (float) (p->tim - ctim) * secondcm / 100.0 / TSCALE;
       }
       inline float distsq (float dx, float dy, float dz, float dt)
       {                         // Distance in 4D space
