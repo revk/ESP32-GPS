@@ -39,6 +39,7 @@ static const char TAG[] = "GPS";
 	u8(fixpersec,10)\
 	b(fixdump,N)	\
 	b(fixdebug,N)	\
+	b(battery,Y)	\
 	u32(interval,600)\
 	u32(keepalive,60)\
 	u32(secondcm,10)\
@@ -625,7 +626,7 @@ nmea (char *s)
             int s = DSCALE;
             int fixlat = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * s;
             p += 5;
-            while (s && isdigit ((int)*p))
+            while (s && isdigit ((int) *p))
             {
                fixlat += s * (*p++ - '0');
                s /= 10;
@@ -636,7 +637,7 @@ nmea (char *s)
             p = f[4];
             int fixlon = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 100 + (p[3] - '0') * 10 + p[4] - '0') * s;
             p += 6;
-            while (s && isdigit ((int)*p))
+            while (s && isdigit ((int) *p))
             {
                fixlon += s * (*p++ - '0');
                s /= 10;
@@ -648,7 +649,7 @@ nmea (char *s)
             unsigned int fixtim =
                ((((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * 60 + (p[4] - '0') * 10 + p[5] - '0') * s;
             p += 7;
-            while (s && isdigit ((int)*p))
+            while (s && isdigit ((int) *p))
             {
                fixlon += s * (*p++ - '0');
                s /= 10;
@@ -984,9 +985,13 @@ at_task (void *X)
          if (*iccid)
             revk_info ("iccid", "%s", iccid);
       }
+      atcmd ("AT+CBC", 0, 0);
       int delay = 1;
+      try = 10;
       while (1)
       {
+         if (!--try)
+            break;              // Power cycle
          while (delay--)
             atcmd (NULL, 1000, 0);
          delay = 1;
@@ -1037,6 +1042,7 @@ at_task (void *X)
          }
          if (!strstr ((char *) atbuf, "CONNECT OK"))
             continue;
+         try = 10;
          revk_info (TAG, "Mobile connected");
          while (1)
          {                      // Connected, send data as needed
