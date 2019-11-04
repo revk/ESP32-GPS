@@ -1,9 +1,10 @@
 // GPS dump - when a GPS unit reports it has log data, this initiates a dump and stored to database
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
-#define TSCALE  10             // Per second
+#define TSCALE  10              // Per second
 #define	TPART	"%01u"
 #define DSCALE  100000          // Per angle minute
+#define VERSION	0x2A
 
 #include <stdio.h>
 #include <string.h>
@@ -138,12 +139,13 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
                sql_safe_query_free (sqlp,
                                     sql_printf
-                                    ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'."TPART"'),`alt`=%d,`lat`=%.8lf,lon=%.8lf",
-                                     sqltable, id, t + (tim / TSCALE), tim % TSCALE, alt, (double) lat / 60.0/DSCALE, (double) lon / 60.0/DSCALE));
+                                    ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'." TPART
+                                     "'),`alt`=%d,`lat`=%.8lf,lon=%.8lf", sqltable, id, t + (tim / TSCALE), tim % TSCALE, alt,
+                                     (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE));
                p += 12;
             }
             sql_string_t s = { };
-            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T,`lastfix`=concat(%#U,'."TPART"')",
+            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T,`lastfix`=concat(%#U,'." TPART "')",
                          sqldevice, t, t + (lastfix / TSCALE), lastfix % TSCALE);
             if (addr)
                sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
@@ -163,6 +165,47 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       warnx ("%s: %s", id, e);  // Error
    sql_free_result (res);
    return resend;
+}
+
+unsigned int
+encode (SQL * sqlp, unsigned char *buf, unsigned int len)
+{
+   buf[8] = (len - 10) >> 8;
+   buf[9] = (len - 10);
+   unsigned char *p = buf + len;
+   unsigned int crc = crc32 (p - buf, buf);     // The CRC
+   *p++ = crc;
+   *p++ = crc >> 8;
+   *p++ = crc >> 16;
+   *p++ = crc >> 24;
+   while ((p - buf - 8) & 0xF)
+      *p++ = 0;                 // Padding
+   char id[7];
+   snprintf (id, sizeof (id), "%02X%02X%02X", buf[1], buf[2], buf[3]);
+   SQL_RES *res = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * from `%#S` WHERE `device`=%#s", sqldevice, id));
+   if (sql_fetch_row (res))
+   {
+      char *aes = sql_colz (res, "aes");
+      if (strlen (aes) >= 32)
+      {
+         unsigned char key[16],
+           iv[16];;
+         int n;
+         for (n = 0; n < sizeof (key); n++)
+            key[n] =
+               (((isalpha (aes[n * 2]) ? 9 : 0) + (aes[n * 2] & 0xF)) << 4) + (isalpha (aes[n * 2 + 1]) ? 9 : 0) +
+               (aes[n * 2 + 1] & 0xF);
+         memcpy (iv, buf, 8);
+         memcpy (iv + 8, buf, 8);
+         EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new ();
+         EVP_EncryptInit_ex (ctx, EVP_aes_128_cbc (), NULL, key, iv);
+         EVP_CIPHER_CTX_set_padding (ctx, 0);
+         EVP_EncryptUpdate (ctx, buf + 8, &n, buf + 8, (p - buf) - 8);
+         EVP_EncryptFinal_ex (ctx, buf + 8 + n, &n);
+      }
+   }
+   sql_free_result (res);
+   return p - buf;
 }
 
 const char *bindhost = NULL;
@@ -212,7 +255,27 @@ udp_task (void)
       time_t resend = process_udp (&sql, len, rx, addr, port);
       if (resend)
       {                         // TODO request resend
-
+         unsigned char buf[100],
+          *p = buf;
+         *p++ = VERSION;
+         *p++ = rx[1];          // ID
+         *p++ = rx[2];
+         *p++ = rx[3];
+         time_t now = time (0);
+         *p++ = now >> 24;
+         *p++ = now >> 16;
+         *p++ = now >> 8;
+         *p++ = now;
+         p += 2;                // Len
+         *p++ = 0;              // Message (resend=0)
+         *p++ = 0;
+         *p++ = 0;
+         *p++ = 0;
+         *p++ = resend >> 24;   // resend reference
+         *p++ = resend >> 16;
+         *p++ = resend >> 8;
+         *p++ = resend;
+         sendto (s, buf, encode (&sql, buf, p - buf), 0, (struct sockaddr *) &from, fromlen);
       }
    }
 }

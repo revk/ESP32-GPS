@@ -4,6 +4,7 @@ static const char TAG[] = "GPS";
 
 #define	TSCALE	10              // Per second
 #define	DSCALE	100000          // Per angle minute
+#define	VERSION	0x2A
 
 #include "revk.h"
 #include <esp32/aes.h>
@@ -402,7 +403,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
 {
    if (!strcmp (tag, "test"))
    {
-      revk_info ("test", "BE~%08X LE~%08X", esp_crc32_be (0, value, len), esp_crc32_le (0, value, len));
+      trackmqtt = 0;            // Switch to mobile
       return "";
    }
    if (!strcmp (tag, "contrast"))
@@ -704,7 +705,7 @@ nmea (char *s)
                      revk_info ("fix", "Fix full %d", fixnext);
                   if (fixdebug && (gpszda > basetim && gpszda - basetim > interval))
                      revk_info ("fix", "Fix time %u", gpszda - basetim);
-                  fixsave = fixnext - 1;        // Save
+                  fixsave = fixnext;    // Save
                }
             }
          }
@@ -1065,6 +1066,8 @@ at_task (void *X)
          {                      // Connected, send data as needed
             if (!trackmqtt && tracko < tracki)
             {                   // Send data
+               if (fixdebug)
+                  revk_info ("fix", "at:tracko=%u", tracko);
                xSemaphoreTake (track_mutex, portMAX_DELAY);
                if (tracko < tracki)
                {
@@ -1097,8 +1100,19 @@ at_task (void *X)
                }
                xSemaphoreGive (track_mutex);
             }
-            sleep (1);          // Rate limit sending anyway
-            // TODO keep alive
+	    int len=atcmd(NULL,1000,0);
+	    if(len>=24&&*atbuf==VERSION)
+	    { // Rx?
+		    // Check Chip ID
+		    
+		    // Decrypt
+		    
+		    // Check CRC
+		    
+		    // Process message
+
+	    }
+            // TODO keep alives
          }
          revk_info (TAG, "Mobile disconnected");
       }
@@ -1112,6 +1126,8 @@ log_task (void *z)
    {
       if (trackmqtt && tracko < tracki)
       {                         // Send data
+         if (fixdebug)
+            revk_info ("fix", "mqtt:tracko=%u", tracko);
          xSemaphoreTake (track_mutex, portMAX_DELAY);
          if (tracko < tracki)
          {
@@ -1396,19 +1412,20 @@ app_main ()
          // Reduce fixes
          if (fixdebug)
             revk_info ("fix", "%u fixes recorded", fixsave);
-         unsigned int last = fixsave;
+         unsigned int last = fixsave - 1;
          unsigned int m = margincm;
-         while (m < 100000)
-         {
-            unsigned int dlost,
-              dkept;
-            last = rdp (last, m, &dlost, &dkept);
-            if (fixdebug && last < fixsave)
-               revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
-            if (last <= MAXSEND)
-               break;
-            m = dkept + retrycm;
-         }
+         if (last > MAXSEND)
+            while (m < 100000)
+            {
+               unsigned int dlost,
+                 dkept;
+               last = rdp (last, m, &dlost, &dkept);
+               if (fixdebug && last < fixsave)
+                  revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
+               if (last <= MAXSEND)
+                  break;
+               m = dkept + retrycm;
+            }
          if (last <= MAXSEND)
          {
             // Make tracking packet
@@ -1419,7 +1436,7 @@ app_main ()
             xSemaphoreGive (track_mutex);
             uint8_t *t = track[tracki % MAXTRACK],
                *p = t;
-            *p++ = 0x2A;        // Version
+            *p++ = VERSION;     // Version
             *p++ = revk_binid >> 16;
             *p++ = revk_binid >> 8;
             *p++ = revk_binid;
@@ -1459,7 +1476,7 @@ app_main ()
             tracki++;
             xSemaphoreGive (track_mutex);
          }
-         fixmove = fixsave;     // move back for next block
+         fixmove = fixsave - 1; // move back for next block
          fixsave = 0;
       }
    }
