@@ -144,7 +144,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          {
             if (debug)
                fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
-            resend = last + 1;  // Missing data
+            resend = last;  // Missing data
          } else
          {
             resend = 0;
