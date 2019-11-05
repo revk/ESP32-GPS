@@ -405,6 +405,7 @@ lograte (int rate)
 const char *
 app_command (const char *tag, unsigned int len, const unsigned char *value)
 {
+   static time_t wifilost = 0;
    if (!strcmp (tag, "test"))
    {
       trackmqtt = 0;            // Switch to mobile
@@ -426,6 +427,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       xSemaphoreTake (track_mutex, portMAX_DELAY);
       trackmqtt = 0;
       xSemaphoreGive (track_mutex);
+      wifilost = time (0);
       return "";
    }
    if (!strcmp (tag, "connect"))
@@ -435,19 +437,12 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       xSemaphoreGive (track_mutex);
       if (logslow || logfast)
          gpscmd ("$PMTK183");   // Log status
-      if (attx < 0 || atrx < 0)
-      {                         // Back to oldest over MQTT
-         xSemaphoreTake (track_mutex, portMAX_DELAY);
-         if (tracki < MAXTRACK)
-            tracko = 0;
-         else
-            tracko = tracki - MAXTRACK;
-         xSemaphoreGive (track_mutex);
-      }
       if (*iccid)
          revk_info ("iccid", "%s", iccid);
       if (*imei)
          revk_info ("imei", "%s", imei);
+      if (attx < 0 || atrx < 0)
+         trackreset (wifilost); // Resend
       return "";
    }
    if (!strcmp (tag, "status"))
