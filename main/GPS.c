@@ -137,8 +137,8 @@ volatile uint32_t trackbase = 0;        // Send tracking for records after this 
 SemaphoreHandle_t track_mutex = NULL;
 fix_t fix[MAXFIX];
 unsigned int fixnext = 0;       // Next fix to store
-volatile int fixsave = 0;       // Time to save fixes
-volatile int fixmove = 0;       // move base
+volatile int fixsave = 0;       // Time to save fixes (-1 means not, so we do a zero fix at start)
+volatile int fixdelete = 0;     // Delete this many fixes from start on next fix
 volatile char fixnow = 0;       // Force fix
 
 SemaphoreHandle_t cmd_mutex = NULL;
@@ -666,8 +666,8 @@ nmea (char *s)
             }
             if (fixtim / TSCALE + 100 < (gpszda % 86400))
                fixtim += 86400 * TSCALE;        // Day wrap
-            if (!basetim)
-               basetim = gpszda - 1;
+            if (!fixnext)
+               basetim = gpszda / 86400 * 86400 + fixtim / TSCALE;      // First fix base time
             fixtim -= (basetim - gpszda / 86400 * 86400) * TSCALE;
             int fixalt = round (alt);
             if (fixnext < MAXFIX)
@@ -680,32 +680,40 @@ nmea (char *s)
                if (fixdump)
                   revk_info ("fix", "fix:%u tim=%u lat=%d lon=%d alt=%d", fixnext, fixtim, fixlat, fixlon, fixalt);
                fixnext++;
-               if (fixmove)
+               if (fixdelete)
                {                // Move back fixes
                   unsigned int n,
                     p = 0;
-                  int diff = fix[fixmove].tim / TSCALE * TSCALE - TSCALE;
+                  int diff = 0;
+                  if (fixdelete + 1 < fixnext)
+                     diff = fix[fixdelete].tim / TSCALE * TSCALE;      // Adjust time of further fixes
                   basetim += diff / TSCALE;
                   if (fixdebug)
-                     revk_info ("fix", "Fix moved %d, diff=%d, last tim=%u", fixmove, diff, fix[fixmove].tim);
-                  for (n = fixmove; n < fixnext; n++)
+                     revk_info ("fix", "Fix deleted %d, adjust %d", fixdelete, diff);
+                  for (n = fixdelete + 1; n < fixnext; n++)
                   {
                      fix[p] = fix[n];
                      fix[p].tim -= diff;
                      p++;
                   }
                   fixnext = p;
-                  fixmove = 0;
+                  fixdelete = 0;
                }
-               if (!fixsave && (fixnow || fixnext > MAXFIX - 100 || (gpszda > basetim && gpszda - basetim > interval)))
+               if (fixsave < 0
+                   && (fixnow || fixnext > MAXFIX - 100 || (gpszda > basetim && gpszda - basetim > interval) || fixtim > 30000))
                {
-                  if (fixdebug && fixnow)
-                     revk_info ("fix", "Fix forced");
-                  if (fixdebug && fixnext > MAXFIX - 100)
-                     revk_info ("fix", "Fix full %d", fixnext);
-                  if (fixdebug && (gpszda > basetim && gpszda - basetim > interval))
-                     revk_info ("fix", "Fix time %u", gpszda - basetim);
-                  fixsave = fixnext;    // Save
+                  if (fixdebug)
+                  {
+                     if (fixnow)
+                        revk_info ("fix", "Fix forced");
+                     if (fixnext > MAXFIX - 100)
+                        revk_info ("fix", "Fix full %d", fixnext);
+                     if ((gpszda > basetim && gpszda - basetim > interval))
+                        revk_info ("fix", "Fix time %u", gpszda - basetim);
+                     if (fixtim > 30000)
+                        revk_info ("fix", "Fix tim %u", fixtim);
+                  }
+                  fixsave = fixnext;    // Save the fixes we have so far (more may accumulate whilst saving)
                }
             }
          }
@@ -1418,28 +1426,32 @@ app_main ()
    while (1)
    {                            // main task
       sleep (1);
-      if (fixsave)
+      if (fixsave >= 0)
       {                         // Time to save a fix
          fixnow = 0;
          // Reduce fixes
          if (fixdebug)
             revk_info ("fix", "%u fixes recorded", fixsave);
-         unsigned int last = fixsave - 1;
-         unsigned int m = margincm;
-         while (m < 100000)
-         {
-            unsigned int dlost,
-              dkept;
-            last = rdp (last, m, &dlost, &dkept);
-            if (fixdebug && last < fixsave)
-               revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
-            if (last <= MAXSEND)
-               break;
-            m = dkept + retrycm;
+         unsigned int last = 0;
+         if (fixsave > 0)
+            last = fixsave - 1;
+         if (last >= 2)
+         {                      // Reduce fixes
+            unsigned int m = margincm;
+            while (m < 100000)
+            {
+               unsigned int dlost,
+                 dkept;
+               last = rdp (last, m, &dlost, &dkept);
+               if (fixdebug && last < fixsave)
+                  revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
+               if (last <= MAXSEND)
+                  break;
+               m = dkept + retrycm;
+            }
          }
          if (last <= MAXSEND)
-         {
-            // Make tracking packet
+         {                      // Make tracking packet
             xSemaphoreTake (track_mutex, portMAX_DELAY);
             if (tracki >= MAXTRACK && tracko < tracki + 1 - MAXTRACK)
                tracko = tracki + 1 - MAXTRACK;  // Lost as wrapped
@@ -1451,14 +1463,17 @@ app_main ()
             *p++ = revk_binid >> 16;
             *p++ = revk_binid >> 8;
             *p++ = revk_binid;
-            *p++ = basetim >> 24;
-            *p++ = basetim >> 16;
-            *p++ = basetim >> 8;
-            *p++ = basetim;
+            unsigned int when = basetim;
+            if (!last)
+               when = time (0) - 1;     // No fixes, use current time as reference
+            *p++ = when >> 24;
+            *p++ = when >> 16;
+            *p++ = when >> 8;
+            *p++ = when;
             uint8_t *e = p;
             p += 2;             // Length
-            *p++ = 0;           // Message type
-            *p++ = 0;           // TODO how the hell do I do change of type for oldest when signed and encrypted... Grrr
+            *p++ = 0;           // Message type 0 (changed when sent if not oldest)
+            *p++ = 0;
             int n;
             for (n = 1; n <= last; n++)
             {                   // Don't send first as it is duplicate of last from previous packet
@@ -1487,8 +1502,11 @@ app_main ()
             tracki++;
             xSemaphoreGive (track_mutex);
          }
-         fixmove = fixsave - 1; // move back for next block
-         fixsave = 0;
+         if (fixsave == 1)
+            fixdelete = 1;      // Delete the one entry and start with no fixes
+         else
+            fixdelete = last;
+         fixsave = -1;
       }
    }
 }

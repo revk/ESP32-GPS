@@ -121,7 +121,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       p += 2;
       if (!type || type == 1)
       {                         // Tracking
-         time_t last = sql_time_utc (sql_colz (res, "lastfix"));
+         time_t last = sql_time_utc (sql_col (res, "lastfix") ? : sql_colz (res, "lastupdate"));
          if (t > last && type == 1)
             resend = t;         // Missing data
          else
@@ -129,24 +129,29 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             resend = 0;
             unsigned short lastfix = 0;
             sql_transaction (sqlp);
-            while (p + 12 <= e)
-            {
-               unsigned short tim = (p[0] << 8) + p[1];
-               if (tim > lastfix)
-                  lastfix = tim;
-               short alt = (p[2] << 8) + p[3];
-               int lat = (p[4] << 24) + (p[5] << 16) + (p[6] << 8) + p[7];
-               int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
-               sql_safe_query_free (sqlp,
-                                    sql_printf
-                                    ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'." TPART
-                                     "'),`alt`=%d,`lat`=%.8lf,lon=%.8lf", sqltable, id, t + (tim / TSCALE), tim % TSCALE, alt,
-                                     (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE));
-               p += 12;
-            }
             sql_string_t s = { };
-            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T,`lastfix`=concat(%#U,'." TPART "')",
-                         sqldevice, t, t + (lastfix / TSCALE), lastfix % TSCALE);
+            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T", sqldevice, t);
+            if (p == e)
+               sql_sprintf (&s, ",`lastfix`=NULL", sqldevice, t);       // No fixes
+            else
+            {
+               while (p + 12 <= e)
+               {
+                  unsigned short tim = (p[0] << 8) + p[1];
+                  if (tim > lastfix)
+                     lastfix = tim;
+                  short alt = (p[2] << 8) + p[3];
+                  int lat = (p[4] << 24) + (p[5] << 16) + (p[6] << 8) + p[7];
+                  int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
+                  sql_safe_query_free (sqlp,
+                                       sql_printf
+                                       ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'." TPART
+                                        "'),`alt`=%d,`lat`=%.8lf,lon=%.8lf", sqltable, id, t + (tim / TSCALE), tim % TSCALE, alt,
+                                        (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE));
+                  p += 12;
+               }
+               sql_sprintf (&s, ",`lastfix`=concat(%#U,'." TPART "')", t + (lastfix / TSCALE), lastfix % TSCALE);
+            }
             if (addr)
                sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
             sql_sprintf (&s, " WHERE `device`=%#s", id);
