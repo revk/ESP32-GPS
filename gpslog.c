@@ -474,6 +474,17 @@ main (int argc, const char *argv[])
                if (l->version)
                   free (l->version);
                l->version = strdup (sql_colz (res, "version"));
+               if (*sql_colz (res, "upgrade") == 'Y')
+               {
+                  sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `upgrade`='N' WHERE `device`=%#s", sqldevice, tag));
+                  char *topic;
+                  if (asprintf (&topic, "setting/%s/%s/upgrade", mqttappname, tag) < 0)
+                     errx (1, "malloc");
+                  int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
+                  if (e)
+                     errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
+                  free (topic);
+               }
             } else
             {                   // New device, whooooa
                int r = open ("/dev/urandom", O_RDONLY);
