@@ -109,7 +109,7 @@ time_t gpszda = 0;              // Last ZDA
 
 #define	MAXFIX 6600
 #define MAXDATA 1450            // Size of packet
-#define	MAXSEND	((MAXDATA-8-2-4-28)/16*16/sizeof(fix_t))
+#define	MAXSEND	((MAXDATA-8-4-4-28)/16*16/sizeof(fix_t))
 volatile time_t fixbase = 0;    // Base time for fixtime
 volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
 typedef struct fix_s fix_t;
@@ -123,8 +123,8 @@ struct fix_s
 };
 fix_t fix[MAXFIX];
 unsigned int fixnext = 0;       // Next fix to store
-volatile int fixsave = 0;       // Time to save fixes (-1 means not, so we do a zero fix at start)
-volatile int fixdelete = 0;     // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
+volatile int fixsave = -1;      // Time to save fixes (-1 means not, so we do a zero fix at start)
+volatile int fixdelete = -1;    // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
 volatile char fixnow = 0;       // Force fix
 
 #ifdef CONFIG_ESP32_SPIRAM_SUPPORT
@@ -460,7 +460,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       if (len)
       {
          struct tm t = { };
-         strptime ((char *) value, "%F %T", &t);
+         strptime ((char *) value, "%Y-%m-%d %H:%M:%S", &t);
          trackreset (mktime (&t));
       } else
          trackreset (0);
@@ -479,21 +479,8 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       {
          timeforce = 1;
          struct tm t = { };
-         int y = 0,
-            m = 0,
-            d = 0,
-            H = 0,
-            M = 0,
-            S = 0;
-         char z = 0;
-         sscanf ((char *) value, "%d-%d-%d %d:%d:%d%c", &y, &m, &d, &H, &M, &S, &z);
-         t.tm_year = y - 1900;
-         t.tm_mon = m - 1;
-         t.tm_mday = d;
-         t.tm_hour = H;
-         t.tm_min = M;
-         t.tm_sec = S;
-         if (!z)
+         char *z = strptime ((char *) value, "%Y-%m-%d %H:%M:%S", &t);
+         if (!z || !*z)
             t.tm_isdst = -1;
          struct timeval v = { };
          v.tv_sec = mktime (&t);
@@ -579,18 +566,19 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
 static void
 fixcheck (unsigned int fixtim)
 {
-   if (fixsave < 0 && (fixnow || fixnext > MAXFIX - 100 || (gpszda > fixbase && gpszda - fixbase > interval) || fixtim > 30000))
+   time_t now = time (0);
+   if (gpszda && fixsave < 0 && fixdelete < 0 && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim > 30000))
    {
       if (fixdebug)
       {
          if (fixnow)
             revk_info ("fix", "Fix forced");
          if (fixnext > MAXFIX - 100)
-            revk_info ("fix", "Fix full %d", fixnext);
-         if ((gpszda > fixbase && gpszda - fixbase > interval))
-            revk_info ("fix", "Fix time %u", gpszda - fixbase);
+            revk_info ("fix", "Fix space full %d", fixnext);
+         if ((gpszda > fixbase && now - fixbase >= interval))
+            revk_info ("fix", "Fix time expired %u", now - fixbase);
          if (fixtim > 30000)
-            revk_info ("fix", "Fix tim %u", fixtim);
+            revk_info ("fix", "Fix tim too high %u", fixtim);
       }
       fixend = time (0);
       fixsave = fixnext;        // Save the fixes we have so far (more may accumulate whilst saving)
@@ -740,6 +728,8 @@ nmea (char *s)
             if (fixdebug)
                revk_info ("fix", "Set clock %s-%s-%s %s", f[4], f[3], f[2], f[1]);
             fixbase = v.tv_sec;
+            fixend = v.tv_sec;
+            fixsave = 0;        // Send a null fix
          }
          gpszda = v.tv_sec;
          settimeofday (&v, NULL);
@@ -944,6 +934,8 @@ void
 trackreset (time_t reference)
 {                               // Reset tracking
    xSemaphoreTake (track_mutex, portMAX_DELAY);
+   if (reference > fixbase)
+      reference = fixbase;      // safety net
    trackfirst = 1;
    trackbase = reference;
    if (tracki < MAXTRACK)
@@ -993,7 +985,11 @@ tracknext (uint8_t * buf)
                esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
                esp_aes_free (&ctx);
             } else
+            {
                len = 0;         // No message (too old)
+               if (fixdebug)
+                  revk_info ("fix", "Skip %u<%u", ts, trackbase);
+            }
          }
       }
       tracko++;                 // Next
@@ -1107,7 +1103,7 @@ at_task (void *X)
          while (1)
          {                      // Connected, send data as needed
             int len;
-            uint8_t buf[MAXDATA];
+            uint8_t buf[MAXDATA + 4 + 15];
             if (!trackmqtt && (len = tracknext (buf)))
             {
                char temp[30];
@@ -1150,7 +1146,7 @@ log_task (void *z)
    while (1)
    {
       unsigned int len;
-      uint8_t buf[MAXDATA];
+      uint8_t buf[MAXDATA + 4 + 16];
       if (trackmqtt && (len = tracknext (buf)))
          revk_raw ("info", "udp", len, buf, 0);
       else
@@ -1170,7 +1166,6 @@ nmea_task (void *z)
       if (l <= 0)
       {
          fixcheck (0);
-         sleep (1);
          continue;
       }
       uint8_t *e = p + l;
@@ -1312,7 +1307,7 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
    unsigned int i,
      o = 0;
    for (i = 0; i <= H; i++)
-      if (fix[i].tim)
+      if (fix[i].keep)
       {
          fix[o] = fix[i];
          fix[o].keep = 0;
@@ -1414,19 +1409,19 @@ app_main ()
    while (1)
    {                            // main task
       sleep (1);
-      if (fixsave >= 0)
+      if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
          fixnow = 0;
          // Reduce fixes
          if (fixdebug)
-            revk_info ("fix", "%u fixes recorded", fixsave);
-         unsigned int last = 0;
+            revk_info ("fix", "%u fixes recorded over %u seconds", fixsave, fixend - fixbase);
+         int last = 0;
          if (fixsave > 0)
             last = fixsave - 1;
          if (last >= 2)
          {                      // Reduce fixes
             unsigned int m = margincm;
-            while (m < 100000)
+            while (m < 1000)
             {
                unsigned int dlost,
                  dkept;
@@ -1451,15 +1446,12 @@ app_main ()
             *p++ = revk_binid >> 16;
             *p++ = revk_binid >> 8;
             *p++ = revk_binid;
-            unsigned int when = fixbase;
-            if (!last)
-               when = time (0) - 1;     // No fixes, use current time as reference
-            *p++ = when >> 24;
-            *p++ = when >> 16;
-            *p++ = when >> 8;
-            *p++ = when;
-            uint8_t *e = p;
-            p += 2;             // Length
+            *p++ = fixbase >> 24;
+            *p++ = fixbase >> 16;
+            *p++ = fixbase >> 8;
+            *p++ = fixbase;
+            uint8_t *lenp = p;
+            p += 2;             // Length filled in later
             *p++ = 0;           // Message type 0 (changed when sent if not oldest)
             *p++ = 0;
             *p++ = (fixend - fixbase) >> 8;     // time covered
@@ -1485,8 +1477,8 @@ app_main ()
                *p++ = v >> 8;
                *p++ = v;
             }
-            e[0] = (p - t - 10) >> 8;   // Poke length
-            e[1] = (p - t - 10);
+            lenp[0] = (p - t - 10) >> 8;        // Poke length
+            lenp[1] = (p - t - 10);
             xSemaphoreTake (track_mutex, portMAX_DELAY);
             tracklen[tracki % MAXTRACK] = p - t;
             tracki++;
@@ -1494,8 +1486,10 @@ app_main ()
          }
          if (fixsave == 1)
             fixdelete = 1;      // Delete the one entry and start with no fixes
+         else if (fixsave)
+            fixdelete = fixsave - 1;
          else
-            fixdelete = last;
+            fixdelete = 0;
          fixsave = -1;
       }
    }

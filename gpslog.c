@@ -114,6 +114,13 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          return "Decrypt error (update)";
       if (EVP_DecryptFinal_ex (ctx, data + 8 + n, &n) != 1)
          return "Decrypt error (final)";
+      if (debug)
+      {
+         fprintf (stderr, "%d:", len);
+         for (n = 0; n < len; n++)
+            fprintf (stderr, " %02X", data[n]);
+         fprintf (stderr, "\n");
+      }
       unsigned char *p = data + 10;
       unsigned char *e = p + (data[8] << 8) + data[9];
       if (e + 4 > data + len)
@@ -127,19 +134,22 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       unsigned int period = (p[0] << 8) + p[1];
       p += 2;
       if (debug)
-         fprintf (stderr, "Track from %u+%u", (unsigned int)t, period);
+         fprintf (stderr, "Track from %u -> %u (%u seconds)\n", (unsigned int) t, (int) t + period, period);
       if (!type || type == 1)
       {                         // Tracking
          time_t last = sql_time_utc (sql_colz (res, "lastupdate"));
-         if (t + period > last && type == 1)
+         if (t > last && type == 1)
+         {
+            if (debug)
+               fprintf (stderr, "Missing %u>%u\n", (unsigned int) t, (unsigned int) last);
             resend = last;      // Missing data
-         else
+         } else
          {
             resend = 0;
             sql_transaction (sqlp);
             sql_string_t s = { };
-            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T", sqldevice, t + period);
-            if (p > e)
+            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#U", sqldevice, t + period);
+            if (p < e)
             {                   // Fixes
                unsigned short lastfix = 0;
                while (p + 12 <= e)
@@ -152,12 +162,12 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
                   sql_safe_query_free (sqlp,
                                        sql_printf
-                                       ("REPLACE INTO `%#S` SET `device`=%#s,`utc`=concat(%#U,'." TPART
-                                        "'),`alt`=%d,`lat`=%.8lf,lon=%.8lf", sqltable, id, t + (tim / TSCALE), tim % TSCALE, alt,
-                                        (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE));
+                                       ("REPLACE INTO `%#S` SET `device`=%#s,`utc`='%U." TPART "',`alt`=%d,`lat`=%.8lf,lon=%.8lf",
+                                        sqltable, id, t + (tim / TSCALE), tim % TSCALE, alt, (double) lat / 60.0 / DSCALE,
+                                        (double) lon / 60.0 / DSCALE));
                   p += 12;
                }
-               sql_sprintf (&s, ",`lastfix`=concat(%#U,'." TPART "')", t + (lastfix / TSCALE), lastfix % TSCALE);
+               sql_sprintf (&s, ",`lastfix`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
             }
             if (addr)
                sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
@@ -166,7 +176,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             if (sql_commit (sqlp))
                return "Bad SQL commit";
             if (p < e)
-               return "Bad length";
+               return "Extra data";
          }
       } else
          return "Unknown message type";
