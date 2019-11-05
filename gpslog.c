@@ -135,6 +135,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       p += 2;
       unsigned int period = (p[0] << 8) + p[1];
       p += 2;
+      unsigned int margin = (p[0] << 8) + p[1];
+      p += 2;
       if (debug)
          fprintf (stderr, "Track from %u -> %u (%u seconds)\n", (unsigned int) t, (int) t + period, period);
       if (!type || type == 1)
@@ -144,7 +146,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          {
             if (debug)
                fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
-            resend = last;  // Missing data
+            resend = last;      // Missing data
          } else
          {
             resend = 0;
@@ -164,9 +166,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
                   sql_safe_query_free (sqlp,
                                        sql_printf
-                                       ("REPLACE INTO `%#S` SET `device`=%#s,`utc`='%U." TPART "',`alt`=%d,`lat`=%.8lf,lon=%.8lf",
-                                        sqltable, id, t + (tim / TSCALE), tim % TSCALE, alt, (double) lat / 60.0 / DSCALE,
-                                        (double) lon / 60.0 / DSCALE));
+                                       ("REPLACE INTO `%#S` SET `device`=%#s,`utc`='%U." TPART
+                                        "',`alt`=%d,`lat`=%.8lf,`lon`=%.8lf,`margin`=%u", sqltable, id, t + (tim / TSCALE),
+                                        tim % TSCALE, alt, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE, margin));
                   p += 12;
                }
                sql_sprintf (&s, ",`lastfix`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
@@ -292,7 +294,7 @@ udp_task (void)
          *p++ = now >> 8;
          *p++ = now;
          p += 2;                // Len
-         *p++ = 0x10;              // Message (resend=0x1000)
+         *p++ = 0x10;           // Message (resend=0x1000)
          *p++ = 0x00;
          *p++ = resend >> 24;   // resend reference
          *p++ = resend >> 16;
@@ -490,7 +492,7 @@ main (int argc, const char *argv[])
                {
                   sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `upgrade`='N' WHERE `device`=%#s", sqldevice, tag));
                   char *topic;
-                  if (asprintf (&topic, "setting/%s/%s/upgrade", mqttappname, tag) < 0)
+                  if (asprintf (&topic, "command/%s/%s/upgrade", mqttappname, tag) < 0)
                      errx (1, "malloc");
                   int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
                   if (e)

@@ -44,7 +44,7 @@ static const char TAG[] = "GPS";
 	u32(interval,600)\
 	u32(keepalive,0)\
 	u32(secondcm,10)\
-	u32(margincm,50)\
+	u32(margincm,10)\
 	u32(retrycm,10)\
 	u32(altscale,10)\
 	s(apn,"mobiledata")\
@@ -108,8 +108,8 @@ char imei[22] = { };
 time_t gpszda = 0;              // Last ZDA
 
 #define	MAXFIX 6600
-#define MAXDATA 1450            // Size of packet
-#define	MAXSEND	((MAXDATA-8-4-4-28)/16*16/sizeof(fix_t))
+#define MAXDATA 1440            // Size of UDP packet payload (allow for IP/UDP header, CRC and padding)
+#define	MAXSEND	((MAXDATA-8-6-4)/16*16/sizeof(fix_t)) // Number of packets we can send
 volatile time_t fixbase = 0;    // Base time for fixtime
 volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
 typedef struct fix_s fix_t;
@@ -1261,15 +1261,15 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
       }
       fix_t *a = &fix[l];
       fix_t *b = &fix[h];
-      // Centre for working out metres
+      // Centre - mainly to increase sig bits in floats by removing large fixed offset, but also for longitude metres base
       int clat = a->lat / 2 + b->lat / 2;
       int clon = a->lon / 2 + b->lon / 2;
       int calt = ((int) a->alt + (int) b->alt) / 2;
       int ctim = ((int) a->tim + (int) b->tim) / 2;
-      float slat = 111111.0 * cos (M_PI * clat / 60.0 / 180.0 / DSCALE);
+      float slon = 111111.0 * cos (M_PI * clat / 60.0 / 180.0 / DSCALE) / 60.0 / DSCALE;
       inline float x (fix_t * p)
       {
-         return (float) (p->lon - clon) * slat / 60.0 / DSCALE;
+         return (float) (p->lon - clon) * slon;
       }
       inline float y (fix_t * p)
       {
@@ -1281,7 +1281,7 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
       }
       inline float t (fix_t * p)
       {
-         return (float) (p->tim - ctim) * secondcm / 100.0 / TSCALE;
+         return (float) ((int) p->tim - ctim) * secondcm / 100.0 / TSCALE;
       }
       inline float distsq (float dx, float dy, float dz, float dt)
       {                         // Distance in 4D space
@@ -1443,13 +1443,13 @@ app_main ()
          int last = 0;
          if (fixsave > 0)
             last = fixsave - 1;
+         unsigned int dlost = 0,
+            dkept = 0;
          if (last >= 2)
          {                      // Reduce fixes
             unsigned int m = margincm;
             while (m < 1000)
             {
-               unsigned int dlost,
-                 dkept;
                last = rdp (last, m, &dlost, &dkept);
                if (fixdebug && last < fixsave)
                   revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
@@ -1481,6 +1481,8 @@ app_main ()
             *p++ = 0;
             *p++ = (fixend - fixbase) >> 8;     // time covered
             *p++ = (fixend - fixbase);
+            *p++ = dlost >> 8;  // Max distance of deleted points
+            *p++ = dlost;
             int n;
             for (n = 1; n <= last; n++)
             {                   // Don't send first as it is duplicate of last from previous packet
