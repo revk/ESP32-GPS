@@ -40,8 +40,9 @@ struct device_s
    int ptr;
    unsigned char *data;
 };
-device_t *logs = NULL;
+device_t *devices = NULL;
 
+int debug = 0;
 const char *sqlhostname = NULL;
 const char *sqldatabase = "gps";
 const char *sqlusername = NULL;
@@ -123,22 +124,24 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          return "CRC failure";
       unsigned int type = (p[0] << 8) + p[1];
       p += 2;
+      unsigned int period = (p[0] << 8) + p[1];
+      p += 2;
+      if (debug)
+         fprintf (stderr, "Track from %u+%u", (unsigned int)t, period);
       if (!type || type == 1)
       {                         // Tracking
-         time_t last = sql_time_utc (sql_col (res, "lastfix") ? : sql_colz (res, "lastupdate"));
-         if (t > last && type == 1)
-            resend = t;         // Missing data
+         time_t last = sql_time_utc (sql_colz (res, "lastupdate"));
+         if (t + period > last && type == 1)
+            resend = last;      // Missing data
          else
          {
             resend = 0;
-            unsigned short lastfix = 0;
             sql_transaction (sqlp);
             sql_string_t s = { };
-            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T", sqldevice, t);
-            if (p == e)
-               sql_sprintf (&s, ",`lastfix`=NULL", sqldevice, t);       // No fixes
-            else
-            {
+            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#T", sqldevice, t + period);
+            if (p > e)
+            {                   // Fixes
+               unsigned short lastfix = 0;
                while (p + 12 <= e)
                {
                   unsigned short tim = (p[0] << 8) + p[1];
@@ -298,7 +301,6 @@ main (int argc, const char *argv[])
    const char *mqttpassword = NULL;
    const char *mqttappname = "GPS";
    const char *mqttid = NULL;
-   int debug = 0;
    int save = 0;
    int resend = 0;
    int locus = 0;               // Flash log download
@@ -432,14 +434,14 @@ main (int argc, const char *argv[])
       memcpy (val, msg->payload, msg->payloadlen);
       val[msg->payloadlen] = 0;
       device_t *l;
-      for (l = logs; l && strcmp (l->tag, tag); l = l->next);
+      for (l = devices; l && strcmp (l->tag, tag); l = l->next);
       if (!l)
       {
          l = malloc (sizeof (*l));
          memset (l, 0, sizeof (*l));
          l->tag = strdup (tag);
-         l->next = logs;
-         logs = l;
+         l->next = devices;
+         devices = l;
          if (debug)
             warnx ("New device [%s]", tag);
       }

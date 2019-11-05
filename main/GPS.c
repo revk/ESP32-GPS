@@ -106,7 +106,12 @@ char imei[22] = { };
 
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
-time_t basetim = 0;             // Base time for fixtim
+
+#define	MAXFIX 6600
+#define MAXDATA 1450            // Size of packet
+#define	MAXSEND	((MAXDATA-8-2-4-28)/16*16/sizeof(fix_t))
+volatile time_t fixbase = 0;    // Base time for fixtime
+volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
 typedef struct fix_s fix_t;
 struct fix_s
 {                               // 12 byte fix data
@@ -116,9 +121,11 @@ struct fix_s
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
 };
-#define	MAXFIX 6600
-#define MAXDATA 1450            // Size of packet
-#define	MAXSEND	((MAXDATA-8-2-4-28)/16*16/sizeof(fix_t))
+fix_t fix[MAXFIX];
+unsigned int fixnext = 0;       // Next fix to store
+volatile int fixsave = 0;       // Time to save fixes (-1 means not, so we do a zero fix at start)
+volatile int fixdelete = 0;     // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
+volatile char fixnow = 0;       // Force fix
 
 #ifdef CONFIG_ESP32_SPIRAM_SUPPORT
 #define MAXTRACK 16
@@ -133,13 +140,10 @@ int tracklen[MAXTRACK] = { };
 volatile unsigned int tracki = 0,
    tracko = 0;
 volatile char trackmqtt = 0;
+volatile char trackfirst = 1;   // First track message send (since trackbase)
 volatile uint32_t trackbase = 0;        // Send tracking for records after this time
 SemaphoreHandle_t track_mutex = NULL;
-fix_t fix[MAXFIX];
-unsigned int fixnext = 0;       // Next fix to store
-volatile int fixsave = 0;       // Time to save fixes (-1 means not, so we do a zero fix at start)
-volatile int fixdelete = 0;     // Delete this many fixes from start on next fix
-volatile char fixnow = 0;       // Force fix
+void trackreset (time_t reference);
 
 SemaphoreHandle_t cmd_mutex = NULL;
 SemaphoreHandle_t at_mutex = NULL;
@@ -453,18 +457,13 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "resend"))
    {                            // Resend log data
-      xSemaphoreTake (track_mutex, portMAX_DELAY);
       if (len)
       {
          struct tm t = { };
          strptime ((char *) value, "%F %T", &t);
-         trackbase = mktime (&t);
-      }
-      if (tracki < MAXTRACK)
-         tracko = 0;
-      else
-         tracko = tracki - MAXTRACK;
-      xSemaphoreGive (track_mutex);
+         trackreset (mktime (&t));
+      } else
+         trackreset (0);
       return "";
    }
    if (!strcmp (tag, "fix") || !strcmp (tag, "upgrade") || !strcmp (tag, "restart"))
@@ -578,6 +577,27 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
 }
 
 static void
+fixcheck (unsigned int fixtim)
+{
+   if (fixsave < 0 && (fixnow || fixnext > MAXFIX - 100 || (gpszda > fixbase && gpszda - fixbase > interval) || fixtim > 30000))
+   {
+      if (fixdebug)
+      {
+         if (fixnow)
+            revk_info ("fix", "Fix forced");
+         if (fixnext > MAXFIX - 100)
+            revk_info ("fix", "Fix full %d", fixnext);
+         if ((gpszda > fixbase && gpszda - fixbase > interval))
+            revk_info ("fix", "Fix time %u", gpszda - fixbase);
+         if (fixtim > 30000)
+            revk_info ("fix", "Fix tim %u", fixtim);
+      }
+      fixend = time (0);
+      fixsave = fixnext;        // Save the fixes we have so far (more may accumulate whilst saving)
+   }
+}
+
+static void
 nmea (char *s)
 {
    if (gpsdebug)
@@ -615,7 +635,6 @@ nmea (char *s)
       return;
    if (!strncmp (f[0], "GPGGA", 5) && n >= 14)
    {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
-
       if (strlen (f[1]) >= 10 && strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
       {
          fixtype = atoi (f[6]);
@@ -666,9 +685,7 @@ nmea (char *s)
             }
             if (fixtim / TSCALE + 100 < (gpszda % 86400))
                fixtim += 86400 * TSCALE;        // Day wrap
-            if (!fixnext)
-               basetim = gpszda / 86400 * 86400 + fixtim / TSCALE;      // First fix base time
-            fixtim -= (basetim - gpszda / 86400 * 86400) * TSCALE;
+            fixtim -= (fixbase - gpszda / 86400 * 86400) * TSCALE;
             int fixalt = round (alt);
             if (fixnext < MAXFIX)
             {
@@ -680,41 +697,24 @@ nmea (char *s)
                if (fixdump)
                   revk_info ("fix", "fix:%u tim=%u lat=%d lon=%d alt=%d", fixnext, fixtim, fixlat, fixlon, fixalt);
                fixnext++;
-               if (fixdelete)
+               if (fixdelete >= 0)
                {                // Move back fixes
                   unsigned int n,
                     p = 0;
-                  int diff = 0;
-                  if (fixdelete + 1 < fixnext)
-                     diff = fix[fixdelete].tim / TSCALE * TSCALE;      // Adjust time of further fixes
-                  basetim += diff / TSCALE;
+                  int diff = fixend - fixbase;
                   if (fixdebug)
                      revk_info ("fix", "Fix deleted %d, adjust %d", fixdelete, diff);
-                  for (n = fixdelete + 1; n < fixnext; n++)
+                  for (n = fixdelete; n < fixnext; n++)
                   {
                      fix[p] = fix[n];
-                     fix[p].tim -= diff;
+                     fix[p].tim -= diff * TSCALE;
                      p++;
                   }
+                  fixbase = fixend;     // New base
                   fixnext = p;
-                  fixdelete = 0;
+                  fixdelete = -1;
                }
-               if (fixsave < 0
-                   && (fixnow || fixnext > MAXFIX - 100 || (gpszda > basetim && gpszda - basetim > interval) || fixtim > 30000))
-               {
-                  if (fixdebug)
-                  {
-                     if (fixnow)
-                        revk_info ("fix", "Fix forced");
-                     if (fixnext > MAXFIX - 100)
-                        revk_info ("fix", "Fix full %d", fixnext);
-                     if ((gpszda > basetim && gpszda - basetim > interval))
-                        revk_info ("fix", "Fix time %u", gpszda - basetim);
-                     if (fixtim > 30000)
-                        revk_info ("fix", "Fix tim %u", fixtim);
-                  }
-                  fixsave = fixnext;    // Save the fixes we have so far (more may accumulate whilst saving)
-               }
+               fixcheck (fixtim);
             }
          }
       }
@@ -733,13 +733,15 @@ nmea (char *s)
          t.tm_min = (f[1][2] - '0') * 10 + f[1][3] - '0';
          t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
          v.tv_usec = atoi (f[1] + 7) * 1000;
+         v.tv_sec = mktime (&t);
          if (!gpszda)
          {
             sntp_stop ();
             if (fixdebug)
                revk_info ("fix", "Set clock %s-%s-%s %s", f[4], f[3], f[2], f[1]);
+            fixbase = v.tv_sec;
          }
-         gpszda = v.tv_sec = mktime (&t);
+         gpszda = v.tv_sec;
          settimeofday (&v, NULL);
       }
       return;
@@ -938,33 +940,65 @@ display_task (void *p)
    }
 }
 
-unsigned int
-trackmsg (uint8_t * buf, unsigned trackn)
-{                               // Make a track message for sending
-   unsigned int len = tracklen[trackn % MAXTRACK];
-   uint8_t *src = track[trackn % MAXTRACK];
-   if (len < 8)
-      return len;
-   memcpy (buf, src, len);
-   if (!trackn || trackn == tracki - MAXTRACK)
-      buf[11] = 0;              // Oldest
+void
+trackreset (time_t reference)
+{                               // Reset tracking
+   xSemaphoreTake (track_mutex, portMAX_DELAY);
+   trackfirst = 1;
+   trackbase = reference;
+   if (tracki < MAXTRACK)
+      tracko = 0;
    else
-      buf[11] = 1;              // Not oldest
-   unsigned int crc = ~esp_crc32_le (0, buf, len);
-   buf[len++] = crc;
-   buf[len++] = crc >> 8;
-   buf[len++] = crc >> 16;
-   buf[len++] = crc >> 24;
-   while ((len - 8) & 15)
-      buf[len++] = 0;           // Padding
-   uint8_t iv[16];
-   memcpy (iv, buf, 8);
-   memcpy (iv + 8, buf, 8);
-   esp_aes_context ctx;
-   esp_aes_init (&ctx);
-   esp_aes_setkey (&ctx, aes, 128);
-   esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
-   esp_aes_free (&ctx);
+      tracko = tracki - MAXTRACK;
+   xSemaphoreGive (track_mutex);
+}
+
+int
+tracknext (uint8_t * buf)
+{                               // Check if tracking message to be sent, if so, pack and enccrypt in to bug and return length, else 0
+   if (tracko >= tracki)
+      return 0;                 // nothing to send
+   xSemaphoreTake (track_mutex, portMAX_DELAY);
+   int len = 0;
+   if (tracko < tracki)
+   {                            // Still something to send now we have semaphore
+      if (tracko + MAXTRACK >= tracki)
+      {                         // Not overrun (should not happen otherwise)
+         len = tracklen[tracko % MAXTRACK];
+         if (len)
+         {                      // Has data (should not happen otherwise)
+            uint8_t *src = track[tracko % MAXTRACK];
+            uint32_t ts = (src[4] << 24) + (src[5] << 16) + (src[6] << 8) + src[7];
+            if (ts >= trackbase)
+            {                   // Is after base requested
+               memcpy (buf, src, len);
+               if (!tracko || tracko == tracki - MAXTRACK || trackfirst)
+                  buf[11] = 0;  // Oldest
+               else
+                  buf[11] = 1;  // Not oldest
+               trackfirst = 0;
+               unsigned int crc = ~esp_crc32_le (0, buf, len);
+               buf[len++] = crc;
+               buf[len++] = crc >> 8;
+               buf[len++] = crc >> 16;
+               buf[len++] = crc >> 24;
+               while ((len - 8) & 15)
+                  buf[len++] = 0;       // Padding
+               uint8_t iv[16];
+               memcpy (iv, buf, 8);
+               memcpy (iv + 8, buf, 8);
+               esp_aes_context ctx;
+               esp_aes_init (&ctx);
+               esp_aes_setkey (&ctx, aes, 128);
+               esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
+               esp_aes_free (&ctx);
+            } else
+               len = 0;         // No message (too old)
+         }
+      }
+      tracko++;                 // Next
+   }
+   xSemaphoreGive (track_mutex);
    return len;
 }
 
@@ -1072,65 +1106,36 @@ at_task (void *X)
          revk_info (TAG, "Mobile connected");
          while (1)
          {                      // Connected, send data as needed
-            if (!trackmqtt && tracko < tracki)
-            {                   // Send data
-               if (fixdebug)
-                  revk_info ("fix", "at:tracko=%u", tracko);
-               xSemaphoreTake (track_mutex, portMAX_DELAY);
-               if (tracko < tracki)
-               {
-                  if (tracko + MAXTRACK >= tracki)
-                  {             // Not wrapped
-                     uint8_t buf[MAXDATA];
-                     unsigned int len = trackmsg (buf, tracko);
-                     if (len)
-                     {
-                        uint32_t ts = (buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7];
-                        if (ts > trackbase)
-                        {
-                           char temp[30];
-                           snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
-                           if (atcmd (temp, 1000, 0) < 0 || !strstr (atbuf, ">"))
-                           {
-                              xSemaphoreGive (track_mutex);
-                              break;
-                           }
-                           uart_write_bytes (atuart, (void *) buf, len);
-                           if (atcmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
-                           {
-                              xSemaphoreGive (track_mutex);
-                              break;
-                           }
-                        }
-                     }
-                  }             // else lost data
-                  tracko++;
-               }
-               xSemaphoreGive (track_mutex);
+            int len;
+            uint8_t buf[MAXDATA];
+            if (!trackmqtt && (len = tracknext (buf)))
+            {
+               char temp[30];
+               snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
+               if (atcmd (temp, 1000, 0) < 0 || !strstr (atbuf, ">"))
+                  break;        // Failed
+               uart_write_bytes (atuart, (void *) buf, len);
+               if (atcmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
+                  break;        // Failed
             }
-            int len = atcmd (NULL, 1000, 0);
+            len = atcmd (NULL, 1000, 0);
             if (len > 0)
                revk_info ("fix", "Got %d: %02X", len, *atbuf);
-            if (len >= 24 && *atbuf == VERSION)
+            if (len >= 24 && *atbuf == VERSION && (atbuf[1] << 16) + (atbuf[2] << 8) + atbuf[3] == revk_binid)
             {                   // Rx?
+               time_t now = time (0);
+               time_t ts = (atbuf[4] << 24) + (atbuf[5] << 16) + (atbuf[6] << 8) + atbuf[7];
+               if (ts <= now && ts > now - 60)
+               {
+                  // TODO bodge just to resend all for now
+                  trackreset (0);
 
-               // TODO bodge just to resend all for now
-               xSemaphoreTake (track_mutex, portMAX_DELAY);
-               trackbase = 0;
-               if (tracki < MAXTRACK)
-                  tracko = 0;
-               else
-                  tracko = tracki - MAXTRACK;
-               xSemaphoreGive (track_mutex);
+                  // Decrypt
 
-               // Check Chip ID
+                  // Check CRC
 
-               // Decrypt
-
-               // Check CRC
-
-               // Process message
-
+                  // Process message
+               }
             }
             // TODO keep alives
          }
@@ -1144,28 +1149,11 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      if (trackmqtt && tracko < tracki)
-      {                         // Send data
-         if (fixdebug)
-            revk_info ("fix", "mqtt:tracko=%u", tracko);
-         xSemaphoreTake (track_mutex, portMAX_DELAY);
-         if (tracko < tracki)
-         {
-            if (tracko + MAXTRACK >= tracki)
-            {
-               uint8_t buf[MAXDATA];
-               unsigned int len = trackmsg (buf, tracko);
-               if (len)
-               {
-                  uint32_t ts = (buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7];
-                  if (ts > trackbase)
-                     revk_raw ("info", "udp", len, buf, 0);
-               }
-            }                   // else lost data
-            tracko++;
-         }
-         xSemaphoreGive (track_mutex);
-      } else
+      unsigned int len;
+      uint8_t buf[MAXDATA];
+      if (trackmqtt && (len = tracknext (buf)))
+         revk_raw ("info", "udp", len, buf, 0);
+      else
          sleep (1);             // Wait for next message to send
    }
 }
@@ -1178,13 +1166,13 @@ nmea_task (void *z)
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
-      int l = uart_read_bytes (gpsuart, p,
-                               buf + sizeof (buf) - p,
-                               10 / portTICK_PERIOD_MS);
-      if (l < 0)
-         sleep (1);
+      int l = uart_read_bytes (gpsuart, p, buf + sizeof (buf) - p, 10 / portTICK_PERIOD_MS);
       if (l <= 0)
+      {
+         fixcheck (0);
+         sleep (1);
          continue;
+      }
       uint8_t *e = p + l;
       p = buf;
       while (p < e)
@@ -1463,7 +1451,7 @@ app_main ()
             *p++ = revk_binid >> 16;
             *p++ = revk_binid >> 8;
             *p++ = revk_binid;
-            unsigned int when = basetim;
+            unsigned int when = fixbase;
             if (!last)
                when = time (0) - 1;     // No fixes, use current time as reference
             *p++ = when >> 24;
@@ -1474,6 +1462,8 @@ app_main ()
             p += 2;             // Length
             *p++ = 0;           // Message type 0 (changed when sent if not oldest)
             *p++ = 0;
+            *p++ = (fixend - fixbase) >> 8;     // time covered
+            *p++ = (fixend - fixbase);
             int n;
             for (n = 1; n <= last; n++)
             {                   // Don't send first as it is duplicate of last from previous packet
