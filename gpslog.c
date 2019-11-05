@@ -25,18 +25,22 @@
 #include <math.h>
 #include <openssl/evp.h>
 
-typedef struct log_s log_t;
-struct log_s
+typedef struct device_s device_t;
+struct device_s
 {
-   log_t *next;
+   device_t *next;
    char *tag;
+   char *iccid;
+   char *imei;
+   char *version;
+   char online:1;
    int lines;
    int line;
    int len;
    int ptr;
    unsigned char *data;
 };
-log_t *logs = NULL;
+device_t *logs = NULL;
 
 const char *sqlhostname = NULL;
 const char *sqldatabase = "gps";
@@ -427,7 +431,7 @@ main (int argc, const char *argv[])
       char *val = malloc (msg->payloadlen + 1);
       memcpy (val, msg->payload, msg->payloadlen);
       val[msg->payloadlen] = 0;
-      log_t *l;
+      device_t *l;
       for (l = logs; l && strcmp (l->tag, tag); l = l->next);
       if (!l)
       {
@@ -443,7 +447,9 @@ main (int argc, const char *argv[])
       {
          if (!type && *val == '0')
          {                      // Off wifi/mqtt
-            sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `mqtt`=NULL WHERE `device`=%#s", sqldevice, tag));
+            if (l->online)
+               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `mqtt`=NULL WHERE `device`=%#s", sqldevice, tag));
+            l->online = 0;
          } else if (!type && *val == '1')
          {                      // device connected
             if (resend)
@@ -457,7 +463,18 @@ main (int argc, const char *argv[])
                free (topic);
             }
             SQL_RES *res = sql_safe_query_store_free (&sql, sql_printf ("SELECT * from `%#S` WHERE `device`=%#s", sqldevice, tag));
-            if (!sql_fetch_row (res))
+            if (sql_fetch_row (res))
+            {
+               if (l->iccid)
+                  free (l->iccid);
+               l->iccid = strdup (sql_colz (res, "iccid"));
+               if (l->imei)
+                  free (l->imei);
+               l->imei = strdup (sql_colz (res, "imei"));
+               if (l->version)
+                  free (l->version);
+               l->version = strdup (sql_colz (res, "version"));
+            } else
             {                   // New device, whooooa
                int r = open ("/dev/urandom", O_RDONLY);
                if (r >= 0)
@@ -497,8 +514,16 @@ main (int argc, const char *argv[])
             while (*e && *e != ' ')
                e++;
             *e = 0;
-            sql_safe_query_free (&sql,
-                                 sql_printf ("UPDATE `%#S` SET `mqtt`=NOW(),`version`=%#s WHERE `device`=%#s", sqldevice, v, tag));
+            if (strcmp (v, l->version))
+            {
+               free (l->version);
+               l->version = strdup (v);
+               sql_safe_query_free (&sql,
+                                    sql_printf ("UPDATE `%#S` SET `version`=%#s WHERE `device`=%#s", sqldevice, l->version, tag));
+            }
+            if (!l->online)
+               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `mqtt`=NOW() WHERE `device`=%#s", sqldevice, tag));
+            l->online = 1;
          }
       } else if (!strcmp (message, "info") && type)
       {
@@ -521,10 +546,20 @@ main (int argc, const char *argv[])
             }
          } else if (!strcmp (type, "iccid"))
          {
-            sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `iccid`=%#s WHERE `device`=%#s", sqldevice, val, tag));
+            if (strcmp (l->iccid, val))
+            {
+               free (l->iccid);
+               l->iccid = strdup (val);
+               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `iccid`=%#s WHERE `device`=%#s", sqldevice, l->iccid, tag));
+            }
          } else if (!strcmp (type, "imei"))
          {
-            sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `imei`=%#s WHERE `device`=%#s", sqldevice, val, tag));
+            if (strcmp (l->imei, val))
+            {
+               free (l->imei);
+               l->imei = strdup (val);
+               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `imei`=%#s WHERE `device`=%#s", sqldevice, l->imei, tag));
+            }
          } else if (!strcmp (type, "rx"))
          {
             char *f[100],
