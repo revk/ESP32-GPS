@@ -292,8 +292,8 @@ udp_task (void)
          *p++ = now >> 8;
          *p++ = now;
          p += 2;                // Len
-         *p++ = 0;              // Message (resend=0)
-         *p++ = 0;
+         *p++ = 0x10;              // Message (resend=0x1000)
+         *p++ = 0x00;
          *p++ = resend >> 24;   // resend reference
          *p++ = resend >> 16;
          *p++ = resend >> 8;

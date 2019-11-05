@@ -944,6 +944,8 @@ trackreset (time_t reference)
    else
       tracko = tracki - MAXTRACK;
    xSemaphoreGive (track_mutex);
+   if (fixdebug)
+      revk_info ("fix", "Resend from %u", (unsigned int) reference);
 }
 
 int
@@ -1158,10 +1160,10 @@ at_task (void *X)
                            if (t == 0x1001)
                               fixnow = 1;
                         }       // else revk_error ("fix", "Short %d", l);
-                     }          // else revk_error ("fix", "Bad CRC %d %08X %08X", l, ~esp_crc32_le (0, (void*)atbuf, l + 10), esp_crc32_le (0, (void*)atbuf, l + 14));
+                     }          // else revk_error ("fix", "Bad CRC %d %08X %08X", l, ~esp_crc32_le (0, (void *) atbuf, l + 10), esp_crc32_le (0, (void *) atbuf, l + 14));
                   }             // else revk_error ("fix", "Bad len %u>%u", l + 10, len);
                }                // else revk_error ("fix", "Bad time ts=%u / now=%u", ts, now);
-            }
+            }                   // else if(len>0) revk_error ("fix", "Bad header %d: %02X %02X %02X %02X", len, atbuf[0], atbuf[1], atbuf[2], atbuf[3]);
          }
          revk_info (TAG, "Mobile disconnected");
       }
