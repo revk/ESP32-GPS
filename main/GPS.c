@@ -42,7 +42,7 @@ static const char TAG[] = "GPS";
 	b(fixdebug,N)	\
 	b(battery,Y)	\
 	u32(interval,600)\
-	u32(keepalive,60)\
+	u32(keepalive,0)\
 	u32(secondcm,10)\
 	u32(margincm,50)\
 	u32(retrycm,10)\
@@ -567,7 +567,8 @@ static void
 fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
-   if (gpszda && fixsave < 0 && fixdelete < 0 && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim > 30000))
+   if (gpszda && fixsave < 0 && fixdelete < 0
+       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim > 30000))
    {
       if (fixdebug)
       {
@@ -985,11 +986,7 @@ tracknext (uint8_t * buf)
                esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
                esp_aes_free (&ctx);
             } else
-            {
                len = 0;         // No message (too old)
-               if (fixdebug)
-                  revk_info ("fix", "Skip %u<%u", ts, trackbase);
-            }
          }
       }
       tracko++;                 // Next
@@ -1073,7 +1070,7 @@ at_task (void *X)
             if (!strstr ((char *) atbuf, "OK"))
                continue;
          }
-         if (atcmd ("AT+CIICR", 10000, 0) < 0)
+         if (atcmd ("AT+CIICR", 30000, 0) < 0)
             continue;
          if (!strstr ((char *) atbuf, "OK"))
             continue;
@@ -1102,6 +1099,8 @@ at_task (void *X)
          revk_info (TAG, "Mobile connected");
          while (1)
          {                      // Connected, send data as needed
+            time_t now = time (0);
+            static time_t ka = 0;
             int len;
             uint8_t buf[MAXDATA + 4 + 15];
             if (!trackmqtt && (len = tracknext (buf)))
@@ -1113,27 +1112,56 @@ at_task (void *X)
                uart_write_bytes (atuart, (void *) buf, len);
                if (atcmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
                   break;        // Failed
+               ka = now + keepalive;
             }
+            if (!trackmqtt && keepalive && now > ka)
+            {                   // Keep alives
+               if (atcmd ("AT+CIPSEND=1", 1000, 0) < 0 || !strstr (atbuf, ">"))
+                  break;        // Failed
+               uint8_t v = VERSION;
+               uart_write_bytes (atuart, (void *) &v, 1);
+               if (atcmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
+                  break;        // Failed
+               ka = now + keepalive;
+            }
+            // Note, this causes 1 second delay between each message, which seems prudent
             len = atcmd (NULL, 1000, 0);
-            if (len > 0)
-               revk_info ("fix", "Got %d: %02X", len, *atbuf);
+            // Note, it seems to truncate by a byte, FFS
             if (len >= 24 && *atbuf == VERSION && (atbuf[1] << 16) + (atbuf[2] << 8) + atbuf[3] == revk_binid)
             {                   // Rx?
-               time_t now = time (0);
                time_t ts = (atbuf[4] << 24) + (atbuf[5] << 16) + (atbuf[6] << 8) + atbuf[7];
-               if (ts <= now && ts > now - 60)
+               if (ts <= now + 5 && ts > now - 60)
                {
-                  // TODO bodge just to resend all for now
-                  trackreset (0);
-
+                  len = 8 + (len - 8) / 16 * 16;        // AES block size
                   // Decrypt
-
-                  // Check CRC
-
-                  // Process message
-               }
+                  uint8_t iv[16];
+                  memcpy (iv, atbuf, 8);
+                  memcpy (iv + 8, atbuf, 8);
+                  esp_aes_context ctx;
+                  esp_aes_init (&ctx);
+                  esp_aes_setkey (&ctx, aes, 128);
+                  esp_aes_crypt_cbc (&ctx, ESP_AES_DECRYPT, len - 8, iv, (void *) atbuf + 8, (void *) atbuf + 8);
+                  esp_aes_free (&ctx);
+                  // Len
+                  unsigned int l = (atbuf[8] << 8) + atbuf[9];
+                  if (l + 10 <= len)
+                  {             // Len OK
+                     // Check CRC
+                     if (!~esp_crc32_le (0, (void *) atbuf, l + 14))
+                     {          // Process message
+                        if (l >= 2)
+                        {       // Message type exists
+                           int t = (atbuf[10] << 8) + atbuf[11];
+                           // Handle messages
+                           if ((t == 0x1000 || t == 0x1001) && l >= 6)
+                              trackreset ((atbuf[12] << 24) + (atbuf[13] << 16) + (atbuf[14] << 8) + atbuf[15]);
+                           if (t == 0x1001)
+                              fixnow = 1;
+                        }       // else revk_error ("fix", "Short %d", l);
+                     }          // else revk_error ("fix", "Bad CRC %d %08X %08X", l, ~esp_crc32_le (0, (void*)atbuf, l + 10), esp_crc32_le (0, (void*)atbuf, l + 14));
+                  }             // else revk_error ("fix", "Bad len %u>%u", l + 10, len);
+               }                // else revk_error ("fix", "Bad time ts=%u / now=%u", ts, now);
             }
-            // TODO keep alives
          }
          revk_info (TAG, "Mobile disconnected");
       }

@@ -74,12 +74,14 @@ time_t
 process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr, unsigned short port)
 {
    time_t resend = 0;
+   if (len == 1 && *data == VERSION)
+      return resend;            // keep alive
    if (len < 8 + 16)
    {
       warnx ("Bad UDP len %d", len);
       return resend;
    }
-   if (*data != 0x2A)
+   if (*data != VERSION)
    {
       warnx ("Bad version %02X", *data);
       return resend;
@@ -141,8 +143,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          if (t > last && type == 1)
          {
             if (debug)
-               fprintf (stderr, "Missing %u>%u\n", (unsigned int) t, (unsigned int) last);
-            resend = last;      // Missing data
+               fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
+            resend = last + 1;  // Missing data
          } else
          {
             resend = 0;
@@ -291,8 +293,6 @@ udp_task (void)
          *p++ = now;
          p += 2;                // Len
          *p++ = 0;              // Message (resend=0)
-         *p++ = 0;
-         *p++ = 0;
          *p++ = 0;
          *p++ = resend >> 24;   // resend reference
          *p++ = resend >> 16;
