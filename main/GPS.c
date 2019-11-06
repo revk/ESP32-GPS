@@ -2,10 +2,6 @@
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 static const char TAG[] = "GPS";
 
-#define	TSCALE	10              // Per second
-#define	DSCALE	100000          // Per angle minute
-#define	VERSION	0x2A
-
 #include "revk.h"
 #include <esp32/aes.h>
 #include <driver/i2c.h>
@@ -14,6 +10,7 @@ static const char TAG[] = "GPS";
 #include "oled.h"
 #include "esp_sntp.h"
 #include "esp_crc.h"
+#include "revkgps.h"
 
 #define settings	\
 	s8(oledsda,27)	\
@@ -63,6 +60,8 @@ static const char TAG[] = "GPS";
 	b(always,N)	\
 	b(backup,N)	\
 	b(mph, Y)	\
+	u8(datafix,0x01)\
+	b(datamargin,Y) \
 
 #define u32(n,d)	uint32_t n;
 #define s8(n,d)	int8_t n;
@@ -108,8 +107,8 @@ char imei[22] = { };
 time_t gpszda = 0;              // Last ZDA
 
 #define	MAXFIX 6600
-#define MAXDATA 1440            // Size of UDP packet payload (allow for IP/UDP header, CRC and padding)
-#define	MAXSEND	((MAXDATA-8-6-4)/16*16/sizeof(fix_t)) // Number of packets we can send
+#define MAXDATA (1492-28-8)
+
 volatile time_t fixbase = 0;    // Base time for fixtime
 volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
 typedef struct fix_s fix_t;
@@ -140,7 +139,6 @@ int tracklen[MAXTRACK] = { };
 volatile unsigned int tracki = 0,
    tracko = 0;
 volatile char trackmqtt = 0;
-volatile char trackfirst = 1;   // First track message send (since trackbase)
 volatile uint32_t trackbase = 0;        // Send tracking for records after this time
 SemaphoreHandle_t track_mutex = NULL;
 void trackreset (time_t reference);
@@ -932,7 +930,6 @@ trackreset (time_t reference)
    xSemaphoreTake (track_mutex, portMAX_DELAY);
    if (reference > fixbase)
       reference = fixbase;      // safety net
-   trackfirst = 1;
    trackbase = reference;
    if (tracki < MAXTRACK)
       tracko = 0;
@@ -943,13 +940,42 @@ trackreset (time_t reference)
       revk_info ("fix", "Resend from %u", (unsigned int) reference);
 }
 
-int
+unsigned int
+encode (uint8_t * buf, unsigned int len, time_t ref)
+{
+   buf[0] = VERSION;
+   buf[1] = revk_binid >> 16;
+   buf[2] = revk_binid >> 8;
+   buf[3] = revk_binid;
+   buf[4] = ref >> 24;
+   buf[5] = ref >> 16;
+   buf[6] = ref >> 8;
+   buf[7] = ref;
+   while ((len & 0xF) != 4)
+      buf[len++] = TAGF_PAD;    // Pad (8+multiple of 16-4 for CRC);
+   unsigned int crc = ~esp_crc32_le (0, buf, len);
+   buf[len++] = crc;
+   buf[len++] = crc >> 8;
+   buf[len++] = crc >> 16;
+   buf[len++] = crc >> 24;
+   uint8_t iv[16];
+   memcpy (iv, buf, 8);
+   memcpy (iv + 8, buf, 8);
+   esp_aes_context ctx;
+   esp_aes_init (&ctx);
+   esp_aes_setkey (&ctx, aes, 128);
+   esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
+   esp_aes_free (&ctx);
+   return len;
+}
+
+unsigned int
 tracknext (uint8_t * buf)
-{                               // Check if tracking message to be sent, if so, pack and enccrypt in to bug and return length, else 0
+{                               // Check if tracking message to be sent, if so, pack and encrypt in to bug and return length, else 0
    if (tracko >= tracki)
       return 0;                 // nothing to send
    xSemaphoreTake (track_mutex, portMAX_DELAY);
-   int len = 0;
+   unsigned int len = 0;
    if (tracko < tracki)
    {                            // Still something to send now we have semaphore
       if (tracko + MAXTRACK >= tracki)
@@ -959,29 +985,23 @@ tracknext (uint8_t * buf)
          {                      // Has data (should not happen otherwise)
             uint8_t *src = track[tracko % MAXTRACK];
             uint32_t ts = (src[4] << 24) + (src[5] << 16) + (src[6] << 8) + src[7];
-            if (ts >= trackbase)
+            if (ts > trackbase)
+            {                   // Send new trackbase
+               len = 8;
+               buf[len++] = 0;  // Period not applicable
+               buf[len++] = 0;
+               buf[len++] = TAGF_FIRST;
+               buf[len++] = ts >> 24;
+               buf[len++] = ts >> 16;
+               buf[len++] = ts >> 8;
+               buf[len++] = ts;
+               len = encode (buf, len, trackbase);
+               trackbase = ts;  // Next from start
+               tracko--;        // Resend
+            } else if (ts >= trackbase)
             {                   // Is after base requested
                memcpy (buf, src, len);
-               if (!tracko || tracko == tracki - MAXTRACK || trackfirst)
-                  buf[11] = 0;  // Oldest
-               else
-                  buf[11] = 1;  // Not oldest
-               trackfirst = 0;
-               unsigned int crc = ~esp_crc32_le (0, buf, len);
-               buf[len++] = crc;
-               buf[len++] = crc >> 8;
-               buf[len++] = crc >> 16;
-               buf[len++] = crc >> 24;
-               while ((len - 8) & 15)
-                  buf[len++] = 0;       // Padding
-               uint8_t iv[16];
-               memcpy (iv, buf, 8);
-               memcpy (iv + 8, buf, 8);
-               esp_aes_context ctx;
-               esp_aes_init (&ctx);
-               esp_aes_setkey (&ctx, aes, 128);
-               esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
-               esp_aes_free (&ctx);
+               trackbase = ts;
             } else
                len = 0;         // No message (too old)
          }
@@ -1099,7 +1119,7 @@ at_task (void *X)
             time_t now = time (0);
             static time_t ka = 0;
             int len;
-            uint8_t buf[MAXDATA + 4 + 15];
+            uint8_t buf[MAXDATA];
             if (!trackmqtt && (len = tracknext (buf)))
             {
                char temp[30];
@@ -1171,7 +1191,7 @@ log_task (void *z)
    while (1)
    {
       unsigned int len;
-      uint8_t buf[MAXDATA + 4 + 16];
+      uint8_t buf[MAXDATA];
       if (trackmqtt && (len = tracknext (buf)))
          revk_raw ("info", "udp", len, buf, 0);
       else
@@ -1277,6 +1297,8 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
       }
       inline float z (fix_t * p)
       {
+         if (!(datafix & TAGF_FIX_ALT))
+            return 0;           // Not considering alt
          return (float) (p->alt - calt) / (float) altscale;
       }
       inline float t (fix_t * p)
@@ -1445,6 +1467,25 @@ app_main ()
             last = fixsave - 1;
          unsigned int dlost = 0,
             dkept = 0;
+         xSemaphoreTake (track_mutex, portMAX_DELAY);
+         if (tracki >= MAXTRACK && tracko < tracki + 1 - MAXTRACK)
+            tracko = tracki + 1 - MAXTRACK;     // Lost as wrapped
+         tracklen[tracki % MAXTRACK] = 0;       // Ensure not sent until we have put in data
+         xSemaphoreGive (track_mutex);
+         uint8_t *t = track[tracki % MAXTRACK],
+            *p = t + 8;
+         *p++ = (fixend - fixbase) >> 8;        // time covered
+         *p++ = (fixend - fixbase);
+         uint8_t fixtag = TAGF_FIX | datafix;
+         unsigned int fixlen = 10;
+         for (int n = 0; n < sizeof (tagf_fix); n++)
+            if (fixtag & (1 << n))
+               fixlen += tagf_fix[n];
+         uint8_t *q = p;
+         if (datamargin)
+            q += 3;
+         q += 2;                // fix tag
+         unsigned int max = (MAXDATA - (q - t)) / fixlen;       // How many fixes we can fit...
          if (last >= 2)
          {                      // Reduce fixes
             unsigned int m = margincm;
@@ -1453,64 +1494,53 @@ app_main ()
                last = rdp (last, m, &dlost, &dkept);
                if (fixdebug && last < fixsave)
                   revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
-               if (last <= MAXSEND)
+               if (last <= max)
                   break;
                m = dkept + retrycm;
             }
          }
-         if (last <= MAXSEND)
-         {                      // Make tracking packet
-            xSemaphoreTake (track_mutex, portMAX_DELAY);
-            if (tracki >= MAXTRACK && tracko < tracki + 1 - MAXTRACK)
-               tracko = tracki + 1 - MAXTRACK;  // Lost as wrapped
-            tracklen[tracki % MAXTRACK] = 0;    // Ensure not sent until we have put in data
-            xSemaphoreGive (track_mutex);
-            uint8_t *t = track[tracki % MAXTRACK],
-               *p = t;
-            *p++ = VERSION;     // Version
-            *p++ = revk_binid >> 16;
-            *p++ = revk_binid >> 8;
-            *p++ = revk_binid;
-            *p++ = fixbase >> 24;
-            *p++ = fixbase >> 16;
-            *p++ = fixbase >> 8;
-            *p++ = fixbase;
-            uint8_t *lenp = p;
-            p += 2;             // Length filled in later
-            *p++ = 0;           // Message type 0 (changed when sent if not oldest)
-            *p++ = 0;
-            *p++ = (fixend - fixbase) >> 8;     // time covered
-            *p++ = (fixend - fixbase);
+         if (last > max)
+            last = max;         // truncate
+         if (datamargin)
+         {
+            *p++ = TAGF_MARGIN;
             *p++ = dlost >> 8;  // Max distance of deleted points
             *p++ = dlost;
-            int n;
-            for (n = 1; n <= last; n++)
-            {                   // Don't send first as it is duplicate of last from previous packet
-               fix_t *f = &fix[n];
-               unsigned int v = f->tim;
-               *p++ = v >> 8;
-               *p++ = v;
-               v = f->alt;
-               *p++ = v >> 8;
-               *p++ = v;
-               v = f->lat;
-               *p++ = v >> 24;
-               *p++ = v >> 16;
-               *p++ = v >> 8;
-               *p++ = v;
-               v = f->lon;
-               *p++ = v >> 24;
-               *p++ = v >> 16;
+         }
+         while (((p + 2 + last * fixlen - t) & 0xF) != 4)
+            *p++ = TAGF_PAD;    // Pre pad for fix
+         *p++ = fixtag;         // Tag for fixes
+         *p++ = fixlen;
+         for (int n = 1; n <= last; n++)
+         {                      // Don't send first as it is duplicate of last from previous packet
+            fix_t *f = &fix[n];
+            // Base fix data
+            unsigned int v = f->tim;    // Time
+            *p++ = v >> 8;
+            *p++ = v;
+            v = f->lat;         // Lat
+            *p++ = v >> 24;
+            *p++ = v >> 16;
+            *p++ = v >> 8;
+            *p++ = v;
+            v = f->lon;         // Lon
+            *p++ = v >> 24;
+            *p++ = v >> 16;
+            *p++ = v >> 8;
+            *p++ = v;
+            // Optional fix data
+            if (fixtag & TAGF_FIX_ALT)
+            {
+               v = f->alt;      // Alt
                *p++ = v >> 8;
                *p++ = v;
             }
-            lenp[0] = (p - t - 10) >> 8;        // Poke length
-            lenp[1] = (p - t - 10);
-            xSemaphoreTake (track_mutex, portMAX_DELAY);
-            tracklen[tracki % MAXTRACK] = p - t;
-            tracki++;
-            xSemaphoreGive (track_mutex);
          }
+         unsigned int len = encode (t, p - t, fixbase);
+         xSemaphoreTake (track_mutex, portMAX_DELAY);
+         tracklen[tracki % MAXTRACK] = len;
+         tracki++;
+         xSemaphoreGive (track_mutex);
          if (fixsave == 1)
             fixdelete = 1;      // Delete the one entry and start with no fixes
          else if (fixsave)

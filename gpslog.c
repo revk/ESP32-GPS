@@ -1,11 +1,6 @@
 // GPS dump - when a GPS unit reports it has log data, this initiates a dump and stored to database
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
-#define TSCALE  10              // Per second
-#define	TPART	"%01u"
-#define DSCALE  100000          // Per angle minute
-#define VERSION	0x2A
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -24,6 +19,7 @@
 #include <mosquitto.h>
 #include <math.h>
 #include <openssl/evp.h>
+#include "main/revkgps.h"
 
 typedef struct device_s device_t;
 struct device_s
@@ -81,6 +77,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       warnx ("Bad UDP len %d", len);
       return resend;
    }
+   len = 8 + (len - 8) / 16 * 16;       // AES len
    if (*data != VERSION)
    {
       warnx ("Bad version %02X", *data);
@@ -123,68 +120,99 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             fprintf (stderr, " %02X", data[n]);
          fprintf (stderr, "\n");
       }
-      unsigned char *p = data + 10;
-      unsigned char *e = p + (data[8] << 8) + data[9];
-      if (e + 4 > data + len)
-         return "Bad length";
+      unsigned char *p = data + 8;
+      unsigned char *e = data + len;
       // CRC
-      unsigned int crc = crc32 (e + 4 - data, data);
+      unsigned int crc = crc32 (len, data);
       if (crc)
          return "CRC failure";
-      unsigned int type = (p[0] << 8) + p[1];
-      p += 2;
+      e -= 4;
       unsigned int period = (p[0] << 8) + p[1];
-      p += 2;
-      unsigned int margin = (p[0] << 8) + p[1];
       p += 2;
       if (debug)
          fprintf (stderr, "Track from %u -> %u (%u seconds)\n", (unsigned int) t, (int) t + period, period);
-      if (!type || type == 1)
-      {                         // Tracking
-         time_t last = sql_time_utc (sql_colz (res, "lastupdate"));
-         if (t > last && type == 1)
-         {
-            if (debug)
-               fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
-            resend = last;      // Missing data
-         } else
-         {
-            resend = 0;
-            sql_transaction (sqlp);
+      time_t last = sql_time_utc (sql_colz (res, "lastupdate"));
+      if (t > last)
+      {
+         if (debug)
+            fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
+         resend = last;         // Missing data
+      } else
+      {
+         sql_transaction (sqlp);
+         resend = 0;
+         int margin = -1;
+         while (p < e && !(*p & TAGF_FIX))
+         {                      // Process tags
+            unsigned int dlen = 0;
+            if (*p < 0x20)
+               dlen = 0;
+            else if (*p < 0x40)
+               dlen = 1;
+            else if (*p < 0x60)
+               dlen = 2;
+            else if (*p < 0x7F)
+               dlen = 4;
+            else
+               dlen = 3 + (p[2] << 8) + p[3];
+            if (*p == TAGF_FIRST)
+            {                   // New first data
+               sql_safe_query_free (sqlp,
+                                    sql_printf ("UPDATE `%#S` SET `lastupdate`=%#T WHERE `device`=%#s", sqldevice,
+                                                (p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4], id));
+            } else if (*p == TAGF_MARGIN)
+            {
+               margin = (p[1] << 8) + p[2];
+            } else if (*p && debug)
+               fprintf (stderr, "Unknown tag %02X\n", *p);
+            p += 1 + dlen;
+         }
+         if (p + 2 <= e)
+         {                      // Process fixes
+            unsigned char fixtags = *p++;
+            unsigned char fixlen = *p++;
             sql_string_t s = { };
             sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#U", sqldevice, t + period);
-            if (p < e)
+            if (p < e && fixlen)
             {                   // Fixes
-               unsigned short lastfix = 0;
-               while (p + 12 <= e)
+               int lastfix = -1;
+               while (p + fixlen <= e)
                {
-                  unsigned short tim = (p[0] << 8) + p[1];
+                  unsigned char *q = p;
+                  unsigned short tim = (q[0] << 8) + q[1];
+                  q += 2;
                   if (tim > lastfix)
                      lastfix = tim;
-                  short alt = (p[2] << 8) + p[3];
-                  int lat = (p[4] << 24) + (p[5] << 16) + (p[6] << 8) + p[7];
-                  int lon = (p[8] << 24) + (p[9] << 16) + (p[10] << 8) + p[11];
-                  sql_safe_query_free (sqlp,
-                                       sql_printf
-                                       ("REPLACE INTO `%#S` SET `device`=%#s,`utc`='%U." TPART
-                                        "',`alt`=%d,`lat`=%.8lf,`lon`=%.8lf,`margin`=%u.%02u", sqltable, id, t + (tim / TSCALE),
-                                        tim % TSCALE, alt, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE, margin / 100,
-                                        margin % 100));
-                  p += 12;
+                  int lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
+                  q += 4;
+                  int lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
+                  q += 4;
+                  sql_string_t f = { };
+                  sql_sprintf (&f, "REPLACE INTO `%#S` SET `device`=%#s,`utc`='%U." TPART
+                               "',`lat`=%.8lf,`lon`=%.8lf", sqltable, id, t + (tim / TSCALE),
+                               tim % TSCALE, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE, margin / 100);
+                  if (fixtags & TAGF_FIX_ALT)
+                  {
+                     short alt = (q[0] << 8) + q[1];
+                     q += 2;
+                     sql_sprintf (&f, ",`alt`=%d", alt);
+                  }
+                  if (margin >= 0)
+                     sql_sprintf (&f, ",`margin`=%u.%02u", margin / 100, margin % 100);
+                  sql_safe_query_s (sqlp, &f);
+                  p += fixlen;
                }
-               sql_sprintf (&s, ",`lastfix`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
+               if (lastfix >= 0)
+                  sql_sprintf (&s, ",`lastfix`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
             }
             if (addr)
                sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
             sql_sprintf (&s, " WHERE `device`=%#s", id);
             sql_safe_query_s (sqlp, &s);
-            if (sql_commit (sqlp))
-               return "Bad SQL commit";
-            if (p < e)
-               return "Extra data";
          }
-      } else
-         return "Unknown message type";
+         if (sql_commit (sqlp))
+            return "Bad SQL commit";
+      }
       return NULL;
    }
    const char *e = process ();
@@ -197,16 +225,14 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
 unsigned int
 encode (SQL * sqlp, unsigned char *buf, unsigned int len)
 {
-   buf[8] = (len - 10) >> 8;
-   buf[9] = (len - 10);
+   while ((len & 0xF) != 4)
+      buf[len++] = 0;
    unsigned char *p = buf + len;
    unsigned int crc = crc32 (p - buf, buf);     // The CRC
    *p++ = crc;
    *p++ = crc >> 8;
    *p++ = crc >> 16;
    *p++ = crc >> 24;
-   while ((p - buf - 8) & 0xF)
-      *p++ = 0;                 // Padding
    char id[7];
    snprintf (id, sizeof (id), "%02X%02X%02X", buf[1], buf[2], buf[3]);
    SQL_RES *res = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * from `%#S` WHERE `device`=%#s", sqldevice, id));
@@ -294,9 +320,7 @@ udp_task (void)
          *p++ = now >> 16;
          *p++ = now >> 8;
          *p++ = now;
-         p += 2;                // Len
-         *p++ = 0x10;           // Message (resend=0x1000)
-         *p++ = 0x00;
+         *p++ = TAGT_RESEND;    // resend
          *p++ = resend >> 24;   // resend reference
          *p++ = resend >> 16;
          *p++ = resend >> 8;
