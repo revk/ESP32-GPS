@@ -112,10 +112,11 @@ time_t gpszda = 0;              // Last ZDA
 volatile time_t fixbase = 0;    // Base time for fixtime
 volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
 typedef struct fix_s fix_t;
+#define ALTBASE	400             // Making alt unsigned as stored by allowing for -400m
 struct fix_s
 {                               // 12 byte fix data
    unsigned short tim;          // secs*TSCALE
-   short alt:15;                // 1 metre
+   unsigned short alt:15;       // 1 metre
    unsigned char keep:1;        // Keep this point
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
@@ -667,7 +668,11 @@ nmea (char *s)
             if (fixtim / TSCALE + 100 < (gpszda % 86400))
                fixtim += 86400 * TSCALE;        // Day wrap
             fixtim -= (fixbase - gpszda / 86400 * 86400) * TSCALE;
-            int fixalt = round (alt);
+            int fixalt = round (alt) + ALTBASE; // Offset to store in 15 bits
+            if (fixalt < 0)
+               fixalt = 0;      // Range to 15 bits
+            else if (fixalt > 32767)
+               fixalt = 32767;
             if (fixnext < MAXFIX)
             {
                fix[fixnext].keep = 0;
@@ -1539,7 +1544,7 @@ app_main ()
                // Optional fix data
                if (fixtag & TAGF_FIX_ALT)
                {
-                  v = f->alt;   // Alt
+                  v = (int) f->alt - ALTBASE;   // Alt
                   *p++ = v >> 8;
                   *p++ = v;
                }
