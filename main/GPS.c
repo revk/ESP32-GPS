@@ -997,8 +997,7 @@ tracknext (uint8_t * buf)
                buf[len++] = ts;
                len = encode (buf, len, trackbase);
                trackbase = ts;  // Next from start
-               if (src[8] || src[9])
-                  tracko--;     // Resend (as a period is covered by next packet)
+               tracko--;     // Resend (as a period is covered by next packet)
             } else if (ts >= trackbase)
             {                   // Is after base requested
                memcpy (buf, src, len);
