@@ -997,7 +997,8 @@ tracknext (uint8_t * buf)
                buf[len++] = ts;
                len = encode (buf, len, trackbase);
                trackbase = ts;  // Next from start
-               tracko--;        // Resend
+               if (src[8] || src[9])
+                  tracko--;     // Resend (as a period is covered by next packet)
             } else if (ts >= trackbase)
             {                   // Is after base requested
                memcpy (buf, src, len);
@@ -1501,39 +1502,42 @@ app_main ()
          }
          if (last > max)
             last = max;         // truncate
-         if (datamargin)
+         if (last)
          {
-            *p++ = TAGF_MARGIN;
-            *p++ = dlost >> 8;  // Max distance of deleted points
-            *p++ = dlost;
-         }
-         while (((p + 2 + last * fixlen - t) & 0xF) != 4)
-            *p++ = TAGF_PAD;    // Pre pad for fix
-         *p++ = fixtag;         // Tag for fixes
-         *p++ = fixlen;
-         for (int n = 1; n <= last; n++)
-         {                      // Don't send first as it is duplicate of last from previous packet
-            fix_t *f = &fix[n];
-            // Base fix data
-            unsigned int v = f->tim;    // Time
-            *p++ = v >> 8;
-            *p++ = v;
-            v = f->lat;         // Lat
-            *p++ = v >> 24;
-            *p++ = v >> 16;
-            *p++ = v >> 8;
-            *p++ = v;
-            v = f->lon;         // Lon
-            *p++ = v >> 24;
-            *p++ = v >> 16;
-            *p++ = v >> 8;
-            *p++ = v;
-            // Optional fix data
-            if (fixtag & TAGF_FIX_ALT)
+            if (datamargin)
             {
-               v = f->alt;      // Alt
+               *p++ = TAGF_MARGIN;
+               *p++ = dlost >> 8;       // Max distance of deleted points
+               *p++ = dlost;
+            }
+            while (((p + 2 + last * fixlen - t) & 0xF) != 4)
+               *p++ = TAGF_PAD; // Pre pad for fix
+            *p++ = fixtag;      // Tag for fixes
+            *p++ = fixlen;
+            for (int n = 1; n <= last; n++)
+            {                   // Don't send first as it is duplicate of last from previous packet
+               fix_t *f = &fix[n];
+               // Base fix data
+               unsigned int v = f->tim; // Time
                *p++ = v >> 8;
                *p++ = v;
+               v = f->lat;      // Lat
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+               v = f->lon;      // Lon
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+               // Optional fix data
+               if (fixtag & TAGF_FIX_ALT)
+               {
+                  v = f->alt;   // Alt
+                  *p++ = v >> 8;
+                  *p++ = v;
+               }
             }
          }
          unsigned int len = encode (t, p - t, fixbase);
