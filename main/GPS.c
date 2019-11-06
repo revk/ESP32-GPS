@@ -107,7 +107,7 @@ char imei[22] = { };
 time_t gpszda = 0;              // Last ZDA
 
 #define	MAXFIX 6600
-#define MAXDATA (1492-28-8)
+#define MAXDATA (1492-28)
 
 volatile time_t fixbase = 0;    // Base time for fixtime
 volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
@@ -140,6 +140,7 @@ volatile unsigned int tracki = 0,
    tracko = 0;
 volatile char trackmqtt = 0;
 volatile uint32_t trackbase = 0;        // Send tracking for records after this time
+volatile char trackfirst = 0;
 SemaphoreHandle_t track_mutex = NULL;
 void trackreset (time_t reference);
 
@@ -931,6 +932,7 @@ trackreset (time_t reference)
    if (reference > fixbase)
       reference = fixbase;      // safety net
    trackbase = reference;
+   trackfirst = 1;
    if (tracki < MAXTRACK)
       tracko = 0;
    else
@@ -985,25 +987,25 @@ tracknext (uint8_t * buf)
          {                      // Has data (should not happen otherwise)
             uint8_t *src = track[tracko % MAXTRACK];
             uint32_t ts = (src[4] << 24) + (src[5] << 16) + (src[6] << 8) + src[7];
-            if (ts > trackbase)
-            {                   // Send new trackbase
-               len = 8;
-               buf[len++] = 0;  // Period not applicable
-               buf[len++] = 0;
-               buf[len++] = TAGF_FIRST;
-               buf[len++] = ts >> 24;
-               buf[len++] = ts >> 16;
-               buf[len++] = ts >> 8;
-               buf[len++] = ts;
-               len = encode (buf, len, trackbase);
-               trackbase = ts;  // Next from start
-               tracko--;     // Resend (as a period is covered by next packet)
-            } else if (ts >= trackbase)
-            {                   // Is after base requested
-               memcpy (buf, src, len);
-               trackbase = ts;
+            if (ts >= trackbase)
+            { // data to send
+               if (trackfirst)
+               {                // Send new trackbase
+                  trackfirst = 0;
+                  len = 8;
+                  buf[len++] = 0;       // Period not applicable
+                  buf[len++] = 0;
+                  buf[len++] = TAGF_FIRST;
+                  buf[len++] = ts >> 24;
+                  buf[len++] = ts >> 16;
+                  buf[len++] = ts >> 8;
+                  buf[len++] = ts;
+                  len = encode (buf, len, trackbase);
+                  tracko--;     // Resend (as a period is covered by next packet)
+               } else
+                  memcpy (buf, src, len); // Send message
             } else
-               len = 0;         // No message (too old)
+               len = 0;         // No message (too old, so skip)
          }
       }
       tracko++;                 // Next

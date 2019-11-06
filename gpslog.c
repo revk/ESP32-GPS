@@ -139,9 +139,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          resend = last;         // Missing data
       } else
       {
-         sql_transaction (sqlp);
          resend = 0;
+         unsigned int lastupdate = t + period;
          int margin = -1;
+         sql_transaction (sqlp);
          while (p < e && !(*p & TAGF_FIX))
          {                      // Process tags
             unsigned int dlen = 0;
@@ -157,9 +158,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                dlen = 3 + (p[2] << 8) + p[3];
             if (*p == TAGF_FIRST)
             {                   // New first data
-               sql_safe_query_free (sqlp,
-                                    sql_printf ("UPDATE `%#S` SET `lastupdate`=%#T WHERE `device`=%#s", sqldevice,
-                                                (p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4], id));
+               lastupdate = (p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4];   // New base
             } else if (*p == TAGF_MARGIN)
             {
                margin = (p[1] << 8) + p[2];
@@ -167,12 +166,12 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                fprintf (stderr, "Unknown tag %02X\n", *p);
             p += 1 + dlen;
          }
-         if (p + 2 <= e)
-         {                      // Process fixes
+         sql_string_t s = { };
+         sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#U", sqldevice, lastupdate);
+         if (p + 2 <= e && (*p & TAGF_FIX))
+         {                      // We have fixes
             unsigned char fixtags = *p++;
             unsigned char fixlen = *p++;
-            sql_string_t s = { };
-            sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#U", sqldevice, t + period);
             if (p < e && fixlen)
             {                   // Fixes
                int lastfix = -1;
@@ -205,11 +204,11 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                if (lastfix >= 0)
                   sql_sprintf (&s, ",`lastfix`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
             }
-            if (addr)
-               sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
-            sql_sprintf (&s, " WHERE `device`=%#s", id);
-            sql_safe_query_s (sqlp, &s);
          }
+         if (addr)
+            sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
+         sql_sprintf (&s, " WHERE `device`=%#s", id);
+         sql_safe_query_s (sqlp, &s);
          if (sql_commit (sqlp))
             return "Bad SQL commit";
       }
