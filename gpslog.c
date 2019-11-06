@@ -134,6 +134,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       time_t last = sql_time_utc (sql_colz (res, "lastupdate"));
       resend = 0;
       unsigned int lastupdate = t + period;
+      if (lastupdate < last)
+         lastupdate = last;
       int margin = -1;
       sql_transaction (sqlp);
       while (p < e && !(*p & TAGF_FIX))
@@ -151,9 +153,13 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             dlen = 3 + (p[2] << 8) + p[3];
          if (*p == TAGF_FIRST)
          {                      // New first data
-            last = lastupdate = (p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4];       // New base
-            if (debug)
-               fprintf (stderr, "Restarted from %u\n", (unsigned int)last);
+            unsigned int first = (p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4];      // New base
+            if (first > last)
+            {
+               last = lastupdate = first;
+               if (debug)
+                  fprintf (stderr, "Restarted from %u\n", (unsigned int) last);
+            }
          } else if (*p == TAGF_MARGIN)
          {
             margin = (p[1] << 8) + p[2];
