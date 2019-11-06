@@ -167,8 +167,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   sql_safe_query_free (sqlp,
                                        sql_printf
                                        ("REPLACE INTO `%#S` SET `device`=%#s,`utc`='%U." TPART
-                                        "',`alt`=%d,`lat`=%.8lf,`lon`=%.8lf,`margin`=%u", sqltable, id, t + (tim / TSCALE),
-                                        tim % TSCALE, alt, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE, margin));
+                                        "',`alt`=%d,`lat`=%.8lf,`lon`=%.8lf,`margin`=%u.%02u", sqltable, id, t + (tim / TSCALE),
+                                        tim % TSCALE, alt, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE, margin / 100,
+                                        margin % 100));
                   p += 12;
                }
                sql_sprintf (&s, ",`lastfix`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
