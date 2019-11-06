@@ -739,6 +739,7 @@ nmea (char *s)
          lograte (logfast);
       else if (speed < speedlow)
          lograte (logslow);
+      fixcheck (0);
       return;
    }
    if (!strncmp (f[0], "GPGSA", 5) && n >= 18)
@@ -1209,10 +1210,7 @@ nmea_task (void *z)
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes (gpsuart, p, buf + sizeof (buf) - p, 10 / portTICK_PERIOD_MS);
       if (l <= 0)
-      {
-         fixcheck (0);
          continue;
-      }
       uint8_t *e = p + l;
       p = buf;
       while (p < e)
