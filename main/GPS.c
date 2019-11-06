@@ -121,21 +121,15 @@ struct fix_s
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
 };
-fix_t fix[MAXFIX];
+fix_t *fix = NULL;
 unsigned int fixnext = 0;       // Next fix to store
 volatile int fixsave = -1;      // Time to save fixes (-1 means not, so we do a zero fix at start)
 volatile int fixdelete = -1;    // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
 volatile char fixnow = 0;       // Force fix
 
-#ifdef CONFIG_ESP32_SPIRAM_SUPPORT
-#define MAXTRACK 16
-EXT_RAM_ATTR uint8_t track[MAXTRACK][MAXDATA];  // TODO once ESP-IDF is fixed, allow much more storage
-#else
-#define MAXTRACK 16
-uint8_t track[MAXTRACK][MAXDATA];
-#endif
-
-int tracklen[MAXTRACK] = { };
+unsigned int MAXTRACK = 1024;
+uint8_t **track = NULL;
+int *tracklen = NULL;
 
 volatile unsigned int tracki = 0,
    tracko = 0;
@@ -1383,14 +1377,45 @@ app_main ()
 #define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s(n,d) revk_register(#n,0,0,&n,d,0);
-   settings
+   settings;
 #undef u32
 #undef s8
 #undef u8
 #undef b
 #undef h
 #undef s
-      if (oledsda >= 0 && oledscl >= 0)
+   // Memory
+   track = heap_caps_malloc (sizeof (*track) * MAXTRACK, MALLOC_CAP_SPIRAM);
+   if (!track)
+      track = malloc (sizeof (*track) * (MAXTRACK = 16));
+   if (!track)
+   {
+      revk_error ("malloc", "track failed");
+      return;
+   }
+   tracklen = heap_caps_malloc (sizeof (*tracklen) * MAXTRACK, MALLOC_CAP_SPIRAM) ? : malloc (sizeof (*tracklen) * MAXTRACK);
+   if (!tracklen)
+   {
+      revk_error ("malloc", "tracklen failed");
+      return;
+   }
+   memset(tracklen,0,sizeof (*tracklen) * MAXTRACK);
+   for (int n = 0; n < MAXTRACK; n++)
+   {
+      track[n] = heap_caps_malloc (MAXDATA, MALLOC_CAP_SPIRAM) ? : malloc (MAXDATA);
+      if (!track[n])
+      {
+         revk_error ("malloc", "track[%d] failed", n);
+         return;
+      }
+   }
+   fix = heap_caps_malloc (sizeof (*fix) * MAXFIX, MALLOC_CAP_SPIRAM) ? : malloc (sizeof (*fix) * MAXFIX);
+   if (!fix)
+   {
+      revk_error ("malloc", "fix failed");
+      return;
+   }
+   if (oledsda >= 0 && oledscl >= 0)
       oled_start (1, oledaddress, oledscl, oledsda, oledflip);
    oled_set_contrast (oledcontrast);
    for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
