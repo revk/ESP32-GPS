@@ -404,7 +404,6 @@ lograte (int rate)
 const char *
 app_command (const char *tag, unsigned int len, const unsigned char *value)
 {
-   static time_t wifilost = 0;
    if (!strcmp (tag, "test"))
    {
       trackmqtt = 0;            // Switch to mobile
@@ -426,7 +425,6 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       xSemaphoreTake (track_mutex, portMAX_DELAY);
       trackmqtt = 0;
       xSemaphoreGive (track_mutex);
-      wifilost = time (0);
       return "";
    }
    if (!strcmp (tag, "connect"))
@@ -441,7 +439,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       if (*imei)
          revk_info ("imei", "%s", imei);
       if (tracki && (attx < 0 || atrx < 0))
-         trackreset (wifilost); // Resend
+         fixnow = 1;
       return "";
    }
    if (!strcmp (tag, "status"))
