@@ -1399,7 +1399,7 @@ app_main ()
       revk_error ("malloc", "tracklen failed");
       return;
    }
-   memset(tracklen,0,sizeof (*tracklen) * MAXTRACK);
+   memset (tracklen, 0, sizeof (*tracklen) * MAXTRACK);
    for (int n = 0; n < MAXTRACK; n++)
    {
       track[n] = heap_caps_malloc (MAXDATA, MALLOC_CAP_SPIRAM) ? : malloc (MAXDATA);
