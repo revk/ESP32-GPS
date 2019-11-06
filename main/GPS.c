@@ -568,7 +568,7 @@ fixcheck (unsigned int fixtim)
             revk_info ("fix", "Fix forced");
          if (fixnext > MAXFIX - 100)
             revk_info ("fix", "Fix space full %d", fixnext);
-         if ((gpszda > fixbase && now - fixbase >= interval))
+         if (now - fixbase >= interval)
             revk_info ("fix", "Fix time expired %u", now - fixbase);
          if (fixtim > 30000)
             revk_info ("fix", "Fix tim too high %u", fixtim);
@@ -678,26 +678,26 @@ nmea (char *s)
                if (fixdump)
                   revk_info ("fix", "fix:%u tim=%u lat=%d lon=%d alt=%d", fixnext, fixtim, fixlat, fixlon, fixalt);
                fixnext++;
-               if (fixdelete >= 0)
-               {                // Move back fixes
-                  unsigned int n,
-                    p = 0;
-                  int diff = fixend - fixbase;
-                  if (fixdebug)
-                     revk_info ("fix", "Fix deleted %d, adjust %d", fixdelete, diff);
-                  for (n = fixdelete; n < fixnext; n++)
-                  {
-                     fix[p] = fix[n];
-                     fix[p].tim -= diff * TSCALE;
-                     p++;
-                  }
-                  fixbase = fixend;     // New base
-                  fixnext = p;
-                  fixdelete = -1;
-               }
                fixcheck (fixtim);
             }
          }
+      }
+      if (fixdelete >= 0)
+      {                         // Move back fixes
+         unsigned int n,
+           p = 0;
+         int diff = fixend - fixbase;
+         if (fixdebug)
+            revk_info ("fix", "Fix deleted %d, adjust %d", fixdelete, diff);
+         for (n = fixdelete; n < fixnext; n++)
+         {
+            fix[p] = fix[n];
+            fix[p].tim -= diff * TSCALE;
+            p++;
+         }
+         fixbase = fixend;      // New base
+         fixnext = p;
+         fixdelete = -1;
       }
       return;
    }
@@ -739,7 +739,6 @@ nmea (char *s)
          lograte (logfast);
       else if (speed < speedlow)
          lograte (logslow);
-      fixcheck (0);
       return;
    }
    if (!strncmp (f[0], "GPGSA", 5) && n >= 18)
@@ -1454,6 +1453,7 @@ app_main ()
    while (1)
    {                            // main task
       sleep (1);
+      fixcheck (0);
       if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
          fixnow = 0;
