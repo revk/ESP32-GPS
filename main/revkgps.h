@@ -1,9 +1,9 @@
-// RevKGPS
-//
-#define TSCALE  10              // Per second
-#define TPART   "%01u"
-#define DSCALE  100000          // Per angle minute
+// RevKGPS Protocol
+
 #define VERSION 0x2A
+#define TSCALE  100             // Per second
+#define TPART   "%02u"
+#define DSCALE  100000          // Per angle minute
 
 #define TAGF_PAD		0x00	// Padding
 #define	TAGF_MARGIN		0x40	// Defines maximum distance of discarded packets (cm)

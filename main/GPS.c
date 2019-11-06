@@ -114,9 +114,9 @@ volatile time_t fixend = 0;     // End time for period covered (set on fixsend s
 typedef struct fix_s fix_t;
 struct fix_s
 {                               // 12 byte fix data
+   unsigned short tim;          // secs*TSCALE
+   short alt:15;                // 1 metre
    unsigned char keep:1;        // Keep this point
-   short tim:15;                // secs*TSCALE
-   short alt;                   // 1 metre
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
 };
@@ -560,7 +560,7 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim > 30000))
+       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 60000))
    {
       if (fixdebug)
       {
