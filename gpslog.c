@@ -132,40 +132,42 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       if (debug)
          fprintf (stderr, "Track from %u -> %u (%u seconds)\n", (unsigned int) t, (int) t + period, period);
       time_t last = sql_time_utc (sql_colz (res, "lastupdate"));
+      resend = 0;
+      unsigned int lastupdate = t + period;
+      int margin = -1;
+      sql_transaction (sqlp);
+      while (p < e && !(*p & TAGF_FIX))
+      {                         // Process tags
+         unsigned int dlen = 0;
+         if (*p < 0x20)
+            dlen = 0;
+         else if (*p < 0x40)
+            dlen = 1;
+         else if (*p < 0x60)
+            dlen = 2;
+         else if (*p < 0x7F)
+            dlen = 4;
+         else
+            dlen = 3 + (p[2] << 8) + p[3];
+         if (*p == TAGF_FIRST)
+         {                      // New first data
+            last = lastupdate = (p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4];       // New base
+            if (debug)
+               fprintf (stderr, "Restarted from %u\n", (unsigned int)last);
+         } else if (*p == TAGF_MARGIN)
+         {
+            margin = (p[1] << 8) + p[2];
+         } else if (*p && debug)
+            fprintf (stderr, "Unknown tag %02X\n", *p);
+         p += 1 + dlen;
+      }
       if (t > last)
       {
          if (debug)
             fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
          resend = last;         // Missing data
       } else
-      {
-         resend = 0;
-         unsigned int lastupdate = t + period;
-         int margin = -1;
-         sql_transaction (sqlp);
-         while (p < e && !(*p & TAGF_FIX))
-         {                      // Process tags
-            unsigned int dlen = 0;
-            if (*p < 0x20)
-               dlen = 0;
-            else if (*p < 0x40)
-               dlen = 1;
-            else if (*p < 0x60)
-               dlen = 2;
-            else if (*p < 0x7F)
-               dlen = 4;
-            else
-               dlen = 3 + (p[2] << 8) + p[3];
-            if (*p == TAGF_FIRST)
-            {                   // New first data
-               lastupdate = (p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4];   // New base
-            } else if (*p == TAGF_MARGIN)
-            {
-               margin = (p[1] << 8) + p[2];
-            } else if (*p && debug)
-               fprintf (stderr, "Unknown tag %02X\n", *p);
-            p += 1 + dlen;
-         }
+      {                         // Process
          sql_string_t s = { };
          sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#U", sqldevice, lastupdate);
          if (p + 2 <= e && (*p & TAGF_FIX))

@@ -440,7 +440,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
          revk_info ("iccid", "%s", iccid);
       if (*imei)
          revk_info ("imei", "%s", imei);
-      if (attx < 0 || atrx < 0)
+      if (tracki && (attx < 0 || atrx < 0))
          trackreset (wifilost); // Resend
       return "";
    }
@@ -988,7 +988,7 @@ tracknext (uint8_t * buf)
             uint8_t *src = track[tracko % MAXTRACK];
             uint32_t ts = (src[4] << 24) + (src[5] << 16) + (src[6] << 8) + src[7];
             if (ts >= trackbase)
-            { // data to send
+            {                   // data to send
                if (trackfirst)
                {                // Send new trackbase
                   trackfirst = 0;
@@ -1003,7 +1003,7 @@ tracknext (uint8_t * buf)
                   len = encode (buf, len, trackbase);
                   tracko--;     // Resend (as a period is covered by next packet)
                } else
-                  memcpy (buf, src, len); // Send message
+                  memcpy (buf, src, len);       // Send message
             } else
                len = 0;         // No message (too old, so skip)
          }
@@ -1478,6 +1478,14 @@ app_main ()
             *p = t + 8;
          *p++ = (fixend - fixbase) >> 8;        // time covered
          *p++ = (fixend - fixbase);
+         if (!tracki)
+         {                      // First message
+            *p++ = TAGF_FIRST;
+            *p++ = fixbase >> 24;
+            *p++ = fixbase >> 16;
+            *p++ = fixbase >> 8;
+            *p++ = fixbase;
+         }
          uint8_t fixtag = TAGF_FIX | datafix;
          unsigned int fixlen = 10;
          for (int n = 0; n < sizeof (tagf_fix); n++)
