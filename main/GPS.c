@@ -648,7 +648,7 @@ nmea (char *s)
                fixlat = 0 - fixlat;
             s = DSCALE;
             p = f[4];
-            int fixlon = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 100 + (p[3] - '0') * 10 + p[4] - '0') * s;
+            int fixlon = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 60 + (p[3] - '0') * 10 + p[4] - '0') * s;
             p += 6;
             while (s > 1 && isdigit ((int) *p))
             {
