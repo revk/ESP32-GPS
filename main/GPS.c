@@ -62,6 +62,8 @@ static const char TAG[] = "GPS";
 	b(mph, Y)	\
 	u8(datafix,0x01)\
 	b(datamargin,Y) \
+	b(flight,N)	\
+	b(balloon,N)	\
 
 #define u32(n,d)	uint32_t n;
 #define s8(n,d)	int8_t n;
@@ -109,6 +111,7 @@ time_t gpszda = 0;              // Last ZDA
 #define	MAXFIX 6600
 #define MAXDATA (1492-28)
 
+float ascale = 1.0 / ASCALE;    // Alt scale default
 volatile time_t fixbase = 0;    // Base time for fixtime
 volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
 typedef struct fix_s fix_t;
@@ -555,7 +558,7 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 60000))
+       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 61000))
    {
       if (fixdebug)
       {
@@ -565,7 +568,7 @@ fixcheck (unsigned int fixtim)
             revk_info ("fix", "Fix space full %d", fixnext);
          if (now - fixbase >= interval)
             revk_info ("fix", "Fix time expired %u", now - fixbase);
-         if (fixtim > 30000)
+         if (fixtim > 61000)
             revk_info ("fix", "Fix tim too high %u", fixtim);
       }
       fixend = time (0);
@@ -662,7 +665,7 @@ nmea (char *s)
             if (fixtim / TSCALE + 100 < (gpszda % 86400))
                fixtim += 86400 * TSCALE;        // Day wrap
             fixtim -= (fixbase - gpszda / 86400 * 86400) * TSCALE;
-            int fixalt = round (alt) + ALTBASE; // Offset to store in 15 bits
+            int fixalt = round ((alt + ALTBASE) / ascale);      // Offset and scale to store in 15 bits
             if (fixalt < 0)
                fixalt = 0;      // Range to 15 bits
             else if (fixalt > 32767)
@@ -675,7 +678,7 @@ nmea (char *s)
                fix[fixnext].lat = fixlat;
                fix[fixnext].lon = fixlon;
                if (fixdump)
-                  revk_info ("fix", "fix:%u tim=%u lat=%d lon=%d alt=%d", fixnext, fixtim, fixlat, fixlon, fixalt);
+                  revk_info ("fix", "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE,fixlat, fixlon, fixalt,ascale);
                fixnext++;
                fixcheck (fixtim);
             }
@@ -1295,7 +1298,7 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
       {
          if (!(datafix & TAGF_FIX_ALT))
             return 0;           // Not considering alt
-         return (float) (p->alt - calt) / (float) altscale;
+         return (float) (p->alt - calt) * ascale / (float) altscale;
       }
       inline float t (fix_t * p)
       {
@@ -1366,6 +1369,10 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
 void
 app_main ()
 {
+   if (balloon)
+      ascale = ALT_BALLOON;
+   else if (flight)
+      ascale = ALT_FLIGHT;
    esp_err_t err;
    cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
    at_mutex = xSemaphoreCreateMutex (); // Shared command access
@@ -1504,6 +1511,10 @@ app_main ()
             *p = t + 8;
          *p++ = (fixend - fixbase) >> 8;        // time covered
          *p++ = (fixend - fixbase);
+         if (last && balloon)
+            *p++ = TAGF_BALLOON;        // Alt scale flags
+         else if (last && flight)
+            *p++ = TAGF_FLIGHT;
          if (!tracki)
          {                      // First message
             *p++ = TAGF_FIRST;
@@ -1569,7 +1580,7 @@ app_main ()
                // Optional fix data
                if (fixtag & TAGF_FIX_ALT)
                {
-                  v = (int) f->alt - ALTBASE;   // Alt
+                  v = (int) f->alt - (int) (ALTBASE / ascale);  // Alt
                   *p++ = v >> 8;
                   *p++ = v;
                }

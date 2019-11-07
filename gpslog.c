@@ -137,6 +137,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       if (lastupdate < last)
          lastupdate = last;
       int margin = -1;
+      float ascale = 1.0 / ASCALE;
       sql_transaction (sqlp);
       while (p < e && !(*p & TAGF_FIX))
       {                         // Process tags
@@ -160,7 +161,11 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                if (debug)
                   fprintf (stderr, "Restarted from %u\n", (unsigned int) last);
             }
-         } else if (*p == TAGF_MARGIN)
+         } else if (*p == TAGF_BALLOON)
+            ascale = ALT_BALLOON;
+         else if (*p == TAGF_FLIGHT)
+            ascale = ALT_FLIGHT;
+         else if (*p == TAGF_MARGIN)
          {
             margin = (p[1] << 8) + p[2];
          } else if (*p && debug)
@@ -201,8 +206,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   if (fixtags & TAGF_FIX_ALT)
                   {
                      short alt = (q[0] << 8) + q[1];
+                     float a = (float) alt * ascale;
                      q += 2;
-                     sql_sprintf (&f, ",`alt`=%d", alt);
+                     sql_sprintf (&f, ",`alt`=%.1f", a);
                   }
                   if (margin >= 0)
                      sql_sprintf (&f, ",`margin`=%u.%02u", margin / 100, margin % 100);
