@@ -11,7 +11,8 @@
 #define TAGF_PAD		0x00	// Padding
 #define	TAGF_BALLOON		0x01	// Alt is in balloon mode (ALT_BALLOON metres per unit)
 #define	TAGF_FLIGHT		0x02	// Alt is in flight mode (ALT_FLIGHT metres per unit)
-#define	TAGF_MARGIN		0x40	// Defines maximum distance of discarded packets (cm)
+#define	TAGF_PERIOD		0x40	// Period covered
+#define	TAGF_MARGIN		0x41	// Defines maximum distance of discarded packets (cm)
 #define	TAGF_FIRST		0x60	// defines first UTC reference available
 
 #define	TAGT_PAD		0x00	// Padding

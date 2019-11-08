@@ -9,8 +9,8 @@ static const char TAG[] = "GPS";
 #include <math.h>
 #include "oled.h"
 #include "esp_sntp.h"
-#include "esp_crc.h"
 #include "revkgps.h"
+extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * data, size_t data_len, uint8_t * mac);
 
 #define settings	\
 	s8(oledsda,27)	\
@@ -18,7 +18,6 @@ static const char TAG[] = "GPS";
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
 	b(oledflip,Y)	\
-	u32(gpsbaud,9600) \
 	b(gpsdebug,N)	\
 	s8(gpspps,34)	\
 	s8(gpsuart,1)	\
@@ -47,7 +46,7 @@ static const char TAG[] = "GPS";
 	s(apn,"mobiledata")\
 	s(loghost,"mqtt.revk.uk")\
 	u32(logport,6666)\
-	h(aes,16)	\
+	h(auth)		\
 	u8(sun,0)	\
 	u32(logslow,0)	\
 	u32(logfast,0)	\
@@ -69,7 +68,7 @@ static const char TAG[] = "GPS";
 #define s8(n,d)	int8_t n;
 #define u8(n,d)	uint8_t n;
 #define b(n,d) uint8_t n;
-#define h(n,b) uint8_t n[b];
+#define h(n) uint8_t *n;
 #define s(n,d) char * n;
 settings
 #undef u32
@@ -438,6 +437,8 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
          revk_info ("imei", "%s", imei);
       if (tracki && (attx < 0 || atrx < 0))
          fixnow = 1;
+      if (!auth || *auth <= 3 + 16)
+         revk_error ("auth", "Authentication not set");
       return "";
    }
    if (!strcmp (tag, "status"))
@@ -513,12 +514,6 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       gpscmd ("$PMTK184,1");    // Erase
       return "";
    }
-   if (!strcmp (tag, "fast"))
-   {
-      gpscmd ("$PMTK251,115200");       // Baud rate
-      revk_setting ("gpsbaud", 6, "115200");    // Set to 115200
-      return "";
-   }
    if (!strcmp (tag, "hot"))
    {
       gpscmd ("$PMTK101");      // Hot start
@@ -537,7 +532,6 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    if (!strcmp (tag, "reset"))
    {
       gpscmd ("$PMTK104");      // Full cold start (resets to default settings including Baud rate)
-      revk_setting ("gpsbaud", 4, "9600");      // Set to 9600
       return "";
    }
    if (!strcmp (tag, "sleep"))
@@ -678,7 +672,8 @@ nmea (char *s)
                fix[fixnext].lat = fixlat;
                fix[fixnext].lon = fixlon;
                if (fixdump)
-                  revk_info ("fix", "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE,fixlat, fixlon, fixalt,ascale);
+                  revk_info ("fix", "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
+                             fixalt, ascale);
                fixnext++;
                fixcheck (fixtim);
             }
@@ -945,29 +940,34 @@ trackreset (time_t reference)
 unsigned int
 encode (uint8_t * buf, unsigned int len, time_t ref)
 {
+   if (!auth || *auth <= 3 + 16)
+      return 0;
    buf[0] = VERSION;
-   buf[1] = revk_binid >> 16;
-   buf[2] = revk_binid >> 8;
-   buf[3] = revk_binid;
+   buf[1] = auth[1];
+   buf[2] = auth[2];
+   buf[3] = auth[3];
    buf[4] = ref >> 24;
    buf[5] = ref >> 16;
    buf[6] = ref >> 8;
    buf[7] = ref;
-   while ((len & 0xF) != 4)
-      buf[len++] = TAGF_PAD;    // Pad (8+multiple of 16-4 for CRC);
-   unsigned int crc = ~esp_crc32_le (0, buf, len);
-   buf[len++] = crc;
-   buf[len++] = crc >> 8;
-   buf[len++] = crc >> 16;
-   buf[len++] = crc >> 24;
-   uint8_t iv[16];
-   memcpy (iv, buf, 8);
-   memcpy (iv + 8, buf, 8);
-   esp_aes_context ctx;
-   esp_aes_init (&ctx);
-   esp_aes_setkey (&ctx, aes, 128);
-   esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
-   esp_aes_free (&ctx);
+   while ((len & 0xF) != 8)
+      buf[len++] = TAGF_PAD;
+   {                            // HMAC
+      uint8_t mac[32];
+      hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, buf, len, mac);
+      memcpy (buf + len, mac, 16);
+      len += 16;
+   }
+   {                            // Encrypt
+      uint8_t iv[16];
+      memcpy (iv, buf, 8);
+      memcpy (iv + 8, buf, 8);
+      esp_aes_context ctx;
+      esp_aes_init (&ctx);
+      esp_aes_setkey (&ctx, auth + 1 + 3, 128);
+      esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
+      esp_aes_free (&ctx);
+   }
    return len;
 }
 
@@ -1145,42 +1145,63 @@ at_task (void *X)
             }
             // Note, this causes 1 second delay between each message, which seems prudent
             len = atcmd (NULL, 1000, 0);
+            if (!auth || *auth <= 3 + 16)
+            {
+               revk_error (TAG, "No auth to send fix");
+               len = 0;         // No auth
+            }
             // Note, it seems to truncate by a byte, FFS
-            if (len >= 24 && *atbuf == VERSION && (atbuf[1] << 16) + (atbuf[2] << 8) + atbuf[3] == revk_binid)
+            if (len >= 40 && *atbuf == VERSION && (atbuf[1] << 16) + (atbuf[2] << 8) + atbuf[3] == revk_binid)
             {                   // Rx?
                time_t ts = (atbuf[4] << 24) + (atbuf[5] << 16) + (atbuf[6] << 8) + atbuf[7];
                if (ts <= now + 5 && ts > now - 60)
                {
                   len = 8 + (len - 8) / 16 * 16;        // AES block size
-                  // Decrypt
-                  uint8_t iv[16];
-                  memcpy (iv, atbuf, 8);
-                  memcpy (iv + 8, atbuf, 8);
-                  esp_aes_context ctx;
-                  esp_aes_init (&ctx);
-                  esp_aes_setkey (&ctx, aes, 128);
-                  esp_aes_crypt_cbc (&ctx, ESP_AES_DECRYPT, len - 8, iv, (void *) atbuf + 8, (void *) atbuf + 8);
-                  esp_aes_free (&ctx);
-                  // Len
-                  unsigned int l = (atbuf[8] << 8) + atbuf[9];
-                  if (l + 10 <= len)
-                  {             // Len OK
-                     // Check CRC
-                     if (!~esp_crc32_le (0, (void *) atbuf, l + 14))
-                     {          // Process message
-                        if (l >= 2)
-                        {       // Message type exists
-                           int t = (atbuf[10] << 8) + atbuf[11];
-                           // Handle messages
-                           if ((t == 0x1000 || t == 0x1001) && l >= 6)
-                              trackreset ((atbuf[12] << 24) + (atbuf[13] << 16) + (atbuf[14] << 8) + atbuf[15]);
-                           if (t == 0x1001)
-                              fixnow = 1;
-                        }       // else revk_error ("fix", "Short %d", l);
-                     }          // else revk_error ("fix", "Bad CRC %d %08X %08X", l, ~esp_crc32_le (0, (void *) atbuf, l + 10), esp_crc32_le (0, (void *) atbuf, l + 14));
-                  }             // else revk_error ("fix", "Bad len %u>%u", l + 10, len);
-               }                // else revk_error ("fix", "Bad time ts=%u / now=%u", ts, now);
-            }                   // else if(len>0) revk_error ("fix", "Bad header %d: %02X %02X %02X %02X", len, atbuf[0], atbuf[1], atbuf[2], atbuf[3]);
+                  {             // HMAC
+                     len -= 16;
+                     uint8_t mac[32];
+                     hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, (void *) atbuf, len, mac);
+                     if (memcmp (mac, atbuf + len, 16))
+                     {
+                        revk_error (TAG, "Bad HMAC (%u bytes)", len);
+                        len = 0;        // bad HMAC
+                     }
+                  }
+                  {             // Decrypt
+                     uint8_t iv[16];
+                     memcpy (iv, atbuf, 8);
+                     memcpy (iv + 8, atbuf, 8);
+                     esp_aes_context ctx;
+                     esp_aes_init (&ctx);
+                     esp_aes_setkey (&ctx, auth + 1 + 3, 128);
+                     esp_aes_crypt_cbc (&ctx, ESP_AES_DECRYPT, len - 8, iv, (void *) atbuf + 8, (void *) atbuf + 8);
+                     esp_aes_free (&ctx);
+                  }
+                  {             // Process
+                     uint8_t *p = (void *) atbuf + 8;
+                     uint8_t *e = (void *) atbuf + len;
+                     while (p < e)
+                     {          // Process tags
+                        unsigned int dlen = 0;
+                        if (*p < 0x20)
+                           dlen = 0;
+                        else if (*p < 0x40)
+                           dlen = 1;
+                        else if (*p < 0x60)
+                           dlen = 2;
+                        else if (*p < 0x7F)
+                           dlen = 4;
+                        else
+                           dlen = 3 + (p[2] << 8) + p[3];
+                        if (*p == TAGT_FIX)
+                           fixnow = 1;
+                        else if (*p == TAGT_RESEND)
+                           trackreset ((p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4]);
+                        p += 1 + dlen;
+                     }
+                  }
+               }
+            }
          }
          revk_info (TAG, "Mobile disconnected");
       }
@@ -1206,12 +1227,20 @@ nmea_task (void *z)
 {
    uint8_t buf[1000],
     *p = buf;
+   uint64_t timeout = esp_timer_get_time () + 10000000;
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes (gpsuart, p, buf + sizeof (buf) - p, 10 / portTICK_PERIOD_MS);
       if (l <= 0)
+      {
+         if (timeout && timeout < esp_timer_get_time ())
+         {
+            revk_restart ("GPS silent", 0);
+            timeout = 0;
+         }
          continue;
+      }
       uint8_t *e = p + l;
       p = buf;
       while (p < e)
@@ -1232,6 +1261,7 @@ nmea_task (void *z)
                revk_error (TAG, "[%.*s] (%02X)", l - p, p, c);
             else
             {                   // Process line
+               timeout = esp_timer_get_time () + 10000000;
                l[-3] = 0;
                if (p[1] == 'G')
                   nmea ((char *) p);
@@ -1379,7 +1409,7 @@ app_main ()
    track_mutex = xSemaphoreCreateMutex ();
    revk_init (&app_command);
 #define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
-#define h(n,b) revk_register(#n,0,sizeof(n),&n,NULL,SETTING_BINARY|SETTING_HEX);
+#define h(n) revk_register(#n,0,0,&n,NULL,SETTING_BINARY|SETTING_HEX);
 #define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
@@ -1448,19 +1478,34 @@ app_main ()
    }
    {
       // Init UART for GPS
-      uart_config_t uart_config = {
-         .baud_rate = gpsbaud,
-         .data_bits = UART_DATA_8_BITS,
-         .parity = UART_PARITY_DISABLE,
-         .stop_bits = UART_STOP_BITS_1,
-         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-      };
-      if ((err = uart_param_config (gpsuart, &uart_config)))
-         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-      else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
-         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-      else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
-         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+      void connect (unsigned int baud)
+      {
+         uart_config_t uart_config = {
+            .baud_rate = baud,
+            .data_bits = UART_DATA_8_BITS,
+            .parity = UART_PARITY_DISABLE,
+            .stop_bits = UART_STOP_BITS_1,
+            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+         };
+         if ((err = uart_param_config (gpsuart, &uart_config)))
+            revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
+         else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
+            revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
+         else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
+            revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+      }
+      connect (115200);
+      uint8_t temp;
+      if (uart_read_bytes (gpsuart, &temp, 1, 1000 / portTICK_PERIOD_MS) <= 0 || temp != '$')
+      {
+         uart_driver_delete (gpsuart);
+         connect (9600);
+         sleep (1);
+         gpscmd ("$PMTK251,115200");    // Baud rate
+         sleep (1);
+         uart_driver_delete (gpsuart);
+         connect (115200);
+      }
    }
    if (attx >= 0 && atrx >= 0 && atpwr >= 0)
    {
@@ -1509,7 +1554,8 @@ app_main ()
          xSemaphoreGive (track_mutex);
          uint8_t *t = track[tracki % MAXTRACK],
             *p = t + 8;
-         *p++ = (fixend - fixbase) >> 8;        // time covered
+         *p++ = TAGF_PERIOD;    // Time covered
+         *p++ = (fixend - fixbase) >> 8;
          *p++ = (fixend - fixbase);
          if (last && balloon)
             *p++ = TAGF_BALLOON;        // Alt scale flags
@@ -1587,10 +1633,13 @@ app_main ()
             }
          }
          unsigned int len = encode (t, p - t, fixbase);
-         xSemaphoreTake (track_mutex, portMAX_DELAY);
-         tracklen[tracki % MAXTRACK] = len;
-         tracki++;
-         xSemaphoreGive (track_mutex);
+         if (len)
+         {
+            xSemaphoreTake (track_mutex, portMAX_DELAY);
+            tracklen[tracki % MAXTRACK] = len;
+            tracki++;
+            xSemaphoreGive (track_mutex);
+         }
          if (fixsave == 1)
             fixdelete = 1;      // Delete the one entry and start with no fixes
          else if (fixsave)
