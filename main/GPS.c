@@ -18,14 +18,14 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
 	b(oledflip,Y)	\
-	b(gpsdebug,N)	\
+	bl(gpsdebug,N)	\
 	s8(gpspps,34)	\
 	s8(gpsuart,1)	\
 	s8(gpsrx,33)	\
 	s8(gpstx,32)	\
 	s8(gpsfix,25)	\
 	s8(gpsen,26)	\
-      	b(atdebug,N)    \
+      	bl(atdebug,N)    \
         s8(atuart,2)	\
         u32(atbaud,115200)	\
         s8(attx,27)	\
@@ -34,8 +34,8 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
         s8(atrst,5)	\
         s8(atpwr,-1)	\
 	u8(fixpersec,10)\
-	b(fixdump,N)	\
-	b(fixdebug,N)	\
+	bl(fixdump,N)	\
+	bl(fixdebug,N)	\
 	b(battery,Y)	\
 	u32(interval,600)\
 	u32(keepalive,0)\
@@ -68,12 +68,14 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 #define s8(n,d)	int8_t n;
 #define u8(n,d)	uint8_t n;
 #define b(n,d) uint8_t n;
+#define bl(n,d) uint8_t n;
 #define h(n) uint8_t *n;
 #define s(n,d) char * n;
 settings
 #undef u32
 #undef s8
 #undef u8
+#undef bl
 #undef b
 #undef h
 #undef s
@@ -1409,6 +1411,7 @@ app_main ()
    track_mutex = xSemaphoreCreateMutex ();
    revk_init (&app_command);
 #define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
+#define bl(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n) revk_register(#n,0,0,&n,NULL,SETTING_BINARY|SETTING_HEX);
 #define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
@@ -1418,6 +1421,7 @@ app_main ()
 #undef u32
 #undef s8
 #undef u8
+#undef bl
 #undef b
 #undef h
 #undef s
