@@ -190,7 +190,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          {                      // Security to ignore invalid message
             if (debug)
                fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
-            resend = last;      // Missing data
+            resend = (last ? : 1);      // Missing data
          }
       } else
       {                         // Process
