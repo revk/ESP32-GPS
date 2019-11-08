@@ -1,0 +1,96 @@
+-- MySQL dump 10.17  Distrib 10.3.17-MariaDB, for debian-linux-gnu (x86_64)
+--
+-- Host: localhost    Database: gps
+-- ------------------------------------------------------
+-- Server version	10.3.17-MariaDB-0+deb10u1
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `auth`
+--
+
+DROP TABLE IF EXISTS `auth`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `auth` (
+  `ID` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `replaces` int(10) unsigned DEFAULT NULL,
+  `issued` datetime NOT NULL,
+  `device` int(10) unsigned NOT NULL,
+  `aes` char(32) NOT NULL,
+  `auth` text NOT NULL,
+  PRIMARY KEY (`ID`),
+  KEY `device` (`device`),
+  KEY `auth_ibfk_1` (`replaces`),
+  CONSTRAINT `auth_ibfk_1` FOREIGN KEY (`replaces`) REFERENCES `auth` (`ID`) ON DELETE CASCADE,
+  CONSTRAINT `auth_ibfk_2` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `device`
+--
+
+DROP TABLE IF EXISTS `device`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `device` (
+  `ID` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `tag` varchar(6) DEFAULT NULL,
+  `lastupdate` datetime DEFAULT NULL,
+  `lastfix` datetime(2) DEFAULT NULL,
+  `ip` varchar(39) DEFAULT NULL,
+  `port` int(10) unsigned DEFAULT NULL,
+  `mqtt` datetime DEFAULT NULL,
+  `version` text DEFAULT NULL,
+  `iccid` text DEFAULT NULL,
+  `imei` text DEFAULT NULL,
+  `upgrade` enum('N','Y') NOT NULL DEFAULT 'N',
+  PRIMARY KEY (`ID`),
+  UNIQUE KEY `device` (`tag`)
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `gps`
+--
+
+DROP TABLE IF EXISTS `gps`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `gps` (
+  `ID` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `utc` datetime(2) NOT NULL,
+  `device` int(10) unsigned NOT NULL,
+  `lat` decimal(12,8) DEFAULT NULL,
+  `lon` decimal(13,8) DEFAULT NULL,
+  `alt` decimal(8,1) DEFAULT NULL,
+  `margin` decimal(8,2) DEFAULT NULL,
+  PRIMARY KEY (`ID`),
+  UNIQUE KEY `utc_2` (`utc`,`device`),
+  KEY `utc` (`utc`),
+  KEY `device` (`device`),
+  CONSTRAINT `gps_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
+) ENGINE=InnoDB AUTO_INCREMENT=206941 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2019-11-08 15:59:12
