@@ -952,12 +952,6 @@ encode (uint8_t * buf, unsigned int len, time_t ref)
    buf[7] = ref;
    while ((len & 0xF) != 8)
       buf[len++] = TAGF_PAD;
-   {                            // HMAC
-      uint8_t mac[32];
-      hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, buf, len, mac);
-      memcpy (buf + len, mac, 16);
-      len += 16;
-   }
    {                            // Encrypt
       uint8_t iv[16];
       memcpy (iv, buf, 8);
@@ -967,6 +961,12 @@ encode (uint8_t * buf, unsigned int len, time_t ref)
       esp_aes_setkey (&ctx, auth + 1 + 3, 128);
       esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
       esp_aes_free (&ctx);
+   }
+   {                            // HMAC
+      uint8_t mac[32];
+      hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, buf, len, mac);
+      memcpy (buf + len, mac, 16);
+      len += 16;
    }
    return len;
 }
