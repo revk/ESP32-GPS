@@ -19,6 +19,7 @@
 #include <mosquitto.h>
 #include <math.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 #include "main/revkgps.h"
 
 typedef struct device_s device_t;
@@ -46,25 +47,7 @@ const char *sqlpassword = NULL;
 const char *sqlconffile = NULL;
 const char *sqltable = "gps";
 const char *sqldevice = "device";
-
-unsigned int
-crc32 (unsigned int len, const unsigned char *data)
-{
-   unsigned int poly = 0xEDB88320;
-   unsigned int crc = 0xFFFFFFFF;
-   int n,
-     b;
-   for (n = 0; n < len; n++)
-   {
-      crc ^= data[n];
-      for (b = 0; b < 8; b++)
-         if (crc & 1)
-            crc = (crc >> 1) ^ poly;
-         else
-            crc >>= 1;
-   }
-   return crc;
-}
+const char *sqlauth = "auth";
 
 time_t
 process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr, unsigned short port)
@@ -83,19 +66,54 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       warnx ("Bad version %02X", *data);
       return resend;
    }
-   char id[7];
-   sprintf (id, "%02X%02X%02X", data[1], data[2], data[3]);
+   unsigned int id = (data[1] << 24) + (data[2] << 16) + data[3];
    time_t t = (data[4] << 24) + (data[5] << 16) + (data[6] << 8) + (data[7]);
-   SQL_RES *res = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * from `%#S` WHERE `device`=%#s", sqldevice, id));
+   SQL_RES *auth = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * from `%#S` WHERE `id`=%u", sqlauth, id));
+   SQL_RES *device = NULL;
+   unsigned int devid = 0;
    const char *process (void)
    {                            // Simplify error checking and ensure free
-      if (!sql_fetch_row (res))
-         return "Unknown device";
-      char *aes = sql_colz (res, "aes");
+      if (!sql_fetch_row (auth))
+         return "Unknown auth";
+      devid = atoi (sql_colz (auth, "device"));
+      if (!devid)
+         return "Missing device";
+      if (sql_col (auth, "replaces"))
+      {                         // New key in use, delete old
+         sql_transaction (sqlp);
+         sql_safe_query_free (sqlp, sql_printf ("UPDATE `%#S` SET `replaces`=NULL WHERE `ID`=%u", sqlauth, id));
+         sql_safe_query_free (sqlp, sql_printf ("DELETE FROM `%#S` WHERE `ID`=%#s", sqlauth, sql_col (auth, "replaces")));
+         if (sql_commit (sqlp))
+            warnx ("Commit error");
+      }
+      device = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * FROM `%#S` WHERE `ID`=%u", sqldevice, devid));
+      if (!sql_fetch_row (device))
+         return "Missing device record";
+
+      char *login = sql_col (auth, "auth");
+      if (!login)
+         return "No auth in database";
+      len = 8 + ((len - 8) / 16 * 16);  // Lose trailing padding
+      {                         // HMAC
+         len -= 16;             // Remove HMAC
+         int keylen = strlen (login) / 2;
+         char key[keylen];
+         for (int n = 0; n < keylen; n++)
+            key[n] =
+               (((isalpha (login[n * 2]) ? 9 : 0) + (login[n * 2] & 0xF)) << 4) + (isalpha (login[n * 2 + 1]) ? 9 : 0) +
+               (login[n * 2 + 1] & 0xF);
+         unsigned char mac[32] = { };
+         if (!HMAC (EVP_sha256 (), key, keylen, data, len, mac, NULL))
+            return "MAC calc fail";
+         if (memcmp (mac, data + len, 16))
+            return "Bad MAC";
+      }
+      // Decrypt
+      char *aes = sql_colz (auth, "aes");
       if (strlen (aes) < 32)
          return "Bad AES in database";
       unsigned char key[16],
-        iv[16];;
+        iv[16];
       int n;
       for (n = 0; n < sizeof (key); n++)
          key[n] =
@@ -122,20 +140,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       }
       unsigned char *p = data + 8;
       unsigned char *e = data + len;
-      // CRC
-      unsigned int crc = crc32 (len, data);
-      if (crc)
-         return "CRC failure";
-      e -= 4;
-      unsigned int period = (p[0] << 8) + p[1];
-      p += 2;
-      if (debug)
-         fprintf (stderr, "Track from %u -> %u (%u seconds)\n", (unsigned int) t, (int) t + period, period);
-      time_t last = sql_time_utc (sql_colz (res, "lastupdate"));
+      unsigned int period = 0;
+      time_t last = sql_time_utc (sql_colz (device, "lastupdate"));
       resend = 0;
-      unsigned int lastupdate = t + period;
-      if (lastupdate < last)
-         lastupdate = last;
+      unsigned int lastupdate = 0;
       int margin = -1;
       float ascale = 1.0 / ASCALE;
       sql_transaction (sqlp);
@@ -161,7 +169,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                if (debug)
                   fprintf (stderr, "Restarted from %u\n", (unsigned int) last);
             }
-         } else if (*p == TAGF_BALLOON)
+         } else if (*p == TAGF_PERIOD)
+            period = (p[1] << 8) + p[2];
+         else if (*p == TAGF_BALLOON)
             ascale = ALT_BALLOON;
          else if (*p == TAGF_FLIGHT)
             ascale = ALT_FLIGHT;
@@ -172,9 +182,11 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             fprintf (stderr, "Unknown tag %02X\n", *p);
          p += 1 + dlen;
       }
+      if (debug)
+         fprintf (stderr, "Track %u->%u (%u)\n", (unsigned int) t, (unsigned int) t + period, period);
       if (t > last)
       {
-         if (t + period < time (0) + 10)
+         if (period && t + period < time (0) + 10)
          {                      // Security to ignore invalid message
             if (debug)
                fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
@@ -183,6 +195,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       } else
       {                         // Process
          sql_string_t s = { };
+         if (!lastupdate)
+            lastupdate = t + period;
+         if (lastupdate < last)
+            lastupdate = last;
          sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#U", sqldevice, lastupdate);
          if (p + 2 <= e && (*p & TAGF_FIX))
          {                      // We have fixes
@@ -203,8 +219,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   int lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
                   q += 4;
                   sql_string_t f = { };
-                  sql_sprintf (&f, "REPLACE INTO `%#S` SET `device`=%#s,`utc`='%U." TPART
-                               "',`lat`=%.8lf,`lon`=%.8lf", sqltable, id, t + (tim / TSCALE),
+                  sql_sprintf (&f, "REPLACE INTO `%#S` SET `device`=%u,`utc`='%U." TPART
+                               "',`lat`=%.8lf,`lon`=%.8lf", sqltable, devid, t + (tim / TSCALE),
                                tim % TSCALE, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE, margin / 100);
                   if (fixtags & TAGF_FIX_ALT)
                   {
@@ -224,7 +240,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          }
          if (addr)
             sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
-         sql_sprintf (&s, " WHERE `device`=%#s", id);
+         sql_sprintf (&s, " WHERE `ID`=%u", devid);
          sql_safe_query_s (sqlp, &s);
          if (sql_commit (sqlp))
             return "Bad SQL commit";
@@ -233,27 +249,23 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
    }
    const char *e = process ();
    if (e)
-      warnx ("%s: %s", id, e);  // Error
-   sql_free_result (res);
+      warnx ("%u: %s", id, e);  // Error
+   if (device)
+      sql_free_result (device);
+   sql_free_result (auth);
    return resend;
 }
 
 unsigned int
 encode (SQL * sqlp, unsigned char *buf, unsigned int len)
 {
-   while ((len & 0xF) != 4)
-      buf[len++] = 0;
-   unsigned char *p = buf + len;
-   unsigned int crc = crc32 (p - buf, buf);     // The CRC
-   *p++ = crc;
-   *p++ = crc >> 8;
-   *p++ = crc >> 16;
-   *p++ = crc >> 24;
-   char id[7];
-   snprintf (id, sizeof (id), "%02X%02X%02X", buf[1], buf[2], buf[3]);
-   SQL_RES *res = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * from `%#S` WHERE `device`=%#s", sqldevice, id));
+   while ((len & 0xF) != 8)
+      buf[len++] = 0;           // Pad
+   unsigned int authid = (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   SQL_RES *res = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * from `%#S` WHERE `ID`=%u", sqlauth, authid));
    if (sql_fetch_row (res))
    {
+      // Encryption
       char *aes = sql_colz (res, "aes");
       if (strlen (aes) >= 32)
       {
@@ -269,13 +281,28 @@ encode (SQL * sqlp, unsigned char *buf, unsigned int len)
          EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new ();
          EVP_EncryptInit_ex (ctx, EVP_aes_128_cbc (), NULL, key, iv);
          EVP_CIPHER_CTX_set_padding (ctx, 0);
-         EVP_EncryptUpdate (ctx, buf + 8, &n, buf + 8, (p - buf) - 8);
+         EVP_EncryptUpdate (ctx, buf + 8, &n, buf + 8, len - 8);
          EVP_EncryptFinal_ex (ctx, buf + 8 + n, &n);
+      }
+      // HMAC
+      char *login = sql_col (res, "auth");
+      if (login && *login)
+      {
+         int keylen = strlen (login) / 2;
+         char key[keylen];
+         for (int n = 0; n < keylen; n++)
+            key[n] =
+               (((isalpha (login[n * 2]) ? 9 : 0) + (login[n * 2] & 0xF)) << 4) + (isalpha (login[n * 2 + 1]) ? 9 : 0) +
+               (login[n * 2 + 1] & 0xF);
+         unsigned char mac[32] = { };
+         HMAC (EVP_sha256 (), key, keylen, buf, len, mac, NULL);
+         memcpy (buf + len, mac, 16);
+         len += 16;
       }
    }
    sql_free_result (res);
-   *p++ = VERSION;              // Yes, WTF, the SIM800 truncates
-   return p - buf;
+   buf[len++] = VERSION;        // SIM800 truncates
+   return len;
 }
 
 const char *bindhost = NULL;
@@ -381,13 +408,10 @@ main (int argc, const char *argv[])
          {"debug", 'V', POPT_ARG_NONE, &debug, 0, "Debug"},
          POPT_AUTOHELP {}
       };
-
       optCon = poptGetContext (NULL, argc, argv, optionsTable, 0);
-
       int c;
       if ((c = poptGetNextOpt (optCon)) < -1)
          errx (1, "%s: %s\n", poptBadOption (optCon, POPT_BADOPTION_NOALIAS), poptStrerror (c));
-
       if (poptPeekArg (optCon))
       {
          poptPrintUsage (optCon, stderr, 0);
@@ -503,7 +527,7 @@ main (int argc, const char *argv[])
          if (!type && *val == '0')
          {                      // Off wifi/mqtt
             if (l->online)
-               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `mqtt`=NULL WHERE `device`=%#s", sqldevice, tag));
+               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `mqtt`=NULL WHERE `tag`=%#s", sqldevice, tag));
             l->online = 0;
          } else if (!type && *val == '1')
          {                      // device connected
@@ -517,21 +541,23 @@ main (int argc, const char *argv[])
                   errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                free (topic);
             }
-            SQL_RES *res = sql_safe_query_store_free (&sql, sql_printf ("SELECT * from `%#S` WHERE `device`=%#s", sqldevice, tag));
-            if (sql_fetch_row (res))
+            unsigned int devid = 0;
+            SQL_RES *device = sql_safe_query_store_free (&sql, sql_printf ("SELECT * from `%#S` WHERE `tag`=%#s", sqldevice, tag));
+            if (sql_fetch_row (device))
             {
+               devid = atoi (sql_colz (device, "ID"));
                if (l->iccid)
                   free (l->iccid);
-               l->iccid = strdup (sql_colz (res, "iccid"));
+               l->iccid = strdup (sql_colz (device, "iccid"));
                if (l->imei)
                   free (l->imei);
-               l->imei = strdup (sql_colz (res, "imei"));
+               l->imei = strdup (sql_colz (device, "imei"));
                if (l->version)
                   free (l->version);
-               l->version = strdup (sql_colz (res, "version"));
-               if (*sql_colz (res, "upgrade") == 'Y')
+               l->version = strdup (sql_colz (device, "version"));
+               if (*sql_colz (device, "upgrade") == 'Y')
                {
-                  sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `upgrade`='N' WHERE `device`=%#s", sqldevice, tag));
+                  sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `upgrade`='N' WHERE `tag`=%#s", sqldevice, tag));
                   char *topic;
                   if (asprintf (&topic, "command/%s/%s/upgrade", mqttappname, tag) < 0)
                      errx (1, "malloc");
@@ -540,33 +566,73 @@ main (int argc, const char *argv[])
                      errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                   free (topic);
                }
-            } else
-            {                   // New device, whooooa
+            }
+            unsigned int authid = 0,
+               old = 0,
+               new = 0;
+            SQL_RES *auth = sql_safe_query_store_free (&sql,
+                                                       sql_printf
+                                                       ("SELECT * from `%#S` WHERE `device`=%#S ORDER BY `ID` DESC LIMIT 1",
+                                                        sqlauth,
+                                                        sql_col (device, "ID")));
+            if (sql_fetch_row (auth))
+            {
+               authid = atoi (sql_colz (auth, "ID"));
+               if (sql_col (auth, "replaces"))
+                  new = 1;
+               if (!new && sql_time (sql_colz (auth, "issued")) < time (0) - 86400)
+                  old = 1;
+            }
+            if (!authid || old)
+            {                   // Allocate authentication
                int r = open ("/dev/urandom", O_RDONLY);
                if (r >= 0)
                {
-                  char aes[16];
-                  if (read (r, aes, 16) == 16)
+                  char auth[3 + 16 + 16];
+                  if (read (r, auth, sizeof (auth)) == sizeof (auth))
                   {
-                     char hex[33];
-                     int n;
-                     for (n = 0; n < 16; n++)
-                        sprintf (hex + n * 2, "%02X", aes[n]);
-                     char *topic;
-                     if (asprintf (&topic, "setting/%s/%s/aes", mqttappname, tag) < 0)
-                        errx (1, "malloc");
-                     int e = mosquitto_publish (mqtt, NULL, topic, 32, hex, 1, 0);
-                     if (e)
-                        errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
-                     free (topic);
-                     sql_safe_query_free (&sql, sql_printf ("INSERT INTO `%#S` SET `device`=%#s,`aes`=%#s", sqldevice, tag, hex));
-                     if (debug)
-                        warnx ("New device created and allocated new AES key [%s]", tag);
+                     char hex[sizeof (auth) * 2 + 1];
+                     for (int n = 0; n < sizeof (auth); n++)
+                        sprintf (hex + n * 2, "%02X", auth[n]);
+                     sql_transaction (&sql);
+                     sql_string_t s = { };
+                     sql_sprintf (&s, "INSERT INTO `%#S` SET `issued`=NOW(),`device`=%u,`aes`=%#.32s,`auth`=%#.32s", sqlauth, devid,
+                                  hex + 6, hex + 6 + 32);
+                     if (authid)
+                        sql_sprintf (&s, ",`replaces`=%u", authid);
+                     sql_safe_query_s (&sql, &s);
+                     authid = sql_insert_id (&sql);
+                     new = 1;
+                     if (sql_commit (&sql))
+                        warnx ("%s commit failed", tag);
+
                   }
                   close (r);
                }
             }
-            sql_free_result (res);
+            sql_free_result (auth);
+            sql_free_result (device);
+            if (new)
+            {                   // Does device need new key?
+               auth = sql_safe_query_store_free (&sql, sql_printf ("SELECT * FROM `%#S` WHERE `ID`=%u", sqlauth, authid));
+               if (sql_fetch_row (auth))
+               {
+                  char *topic;
+                  if (asprintf (&topic, "setting/%s/%s/auth", mqttappname, tag) < 0)
+                     errx (1, "malloc");
+                  char *value;
+                  if (asprintf (&value, "%06X%s%s", atoi (sql_colz (auth, "ID")), sql_colz (auth, "aes"), sql_colz (auth, "auth")) <
+                      0)
+                     errx (1, "malloc");
+                  int e = mosquitto_publish (mqtt, NULL, topic, strlen (value), value, 1, 0);
+                  if (e)
+                     errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
+                  free (topic);
+                  free (value);
+               }
+               sql_free_result (auth);
+            }
+
             char *v = val;
             while (*v && *v != ' ')
                v++;
@@ -585,10 +651,10 @@ main (int argc, const char *argv[])
                free (l->version);
                l->version = strdup (v);
                sql_safe_query_free (&sql,
-                                    sql_printf ("UPDATE `%#S` SET `version`=%#s WHERE `device`=%#s", sqldevice, l->version, tag));
+                                    sql_printf ("UPDATE `%#S` SET `version`=%#s WHERE `ID`=%u", sqldevice, l->version, devid));
             }
             if (!l->online)
-               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `mqtt`=NOW() WHERE `device`=%#s", sqldevice, tag));
+               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `mqtt`=NOW() WHERE `ID`=%u", sqldevice, devid));
             l->online = 1;
          }
       } else if (!strcmp (message, "info") && type)
@@ -708,7 +774,6 @@ main (int argc, const char *argv[])
                   {             // Save
                      if (debug)
                         warnx ("%s Downloaded %d lines", tag, l->lines);
-
                      // There looks to be a header and then records
                      // 16-byte LOCUS buffer format
                      // 0-3 = UTC (in UNIX ticks format)
