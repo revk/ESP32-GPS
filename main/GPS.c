@@ -1153,7 +1153,7 @@ at_task (void *X)
                len = 0;         // No auth
             }
             // Note, it seems to truncate by a byte, FFS
-            if (len >= 40 && *atbuf == VERSION && (atbuf[1] << 16) + (atbuf[2] << 8) + atbuf[3] == revk_binid)
+            if (len >= 40 && *atbuf == VERSION && atbuf[1] == auth[1] && atbuf[2] == auth[2] && atbuf[3] == auth[3])
             {                   // Rx?
                time_t ts = (atbuf[4] << 24) + (atbuf[5] << 16) + (atbuf[6] << 8) + atbuf[7];
                if (ts <= now + 5 && ts > now - 60)

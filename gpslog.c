@@ -66,7 +66,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       warnx ("Bad version %02X", *data);
       return resend;
    }
-   unsigned int id = (data[1] << 24) + (data[2] << 16) + data[3];
+   unsigned int id = (data[1] << 16) + (data[2] << 8) + data[3];
    time_t t = (data[4] << 24) + (data[5] << 16) + (data[6] << 8) + (data[7]);
    SQL_RES *auth = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * from `%#S` WHERE `id`=%u", sqlauth, id));
    SQL_RES *device = NULL;
@@ -270,7 +270,7 @@ encode (SQL * sqlp, unsigned char *buf, unsigned int len)
       if (strlen (aes) >= 32)
       {
          unsigned char key[16],
-           iv[16];;
+           iv[16];
          int n;
          for (n = 0; n < sizeof (key); n++)
             key[n] =
