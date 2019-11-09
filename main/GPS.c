@@ -1558,9 +1558,12 @@ app_main ()
          xSemaphoreGive (track_mutex);
          uint8_t *t = track[tracki % MAXTRACK],
             *p = t + 8;
-         *p++ = TAGF_PERIOD;    // Time covered
-         *p++ = (fixend - fixbase) >> 8;
-         *p++ = (fixend - fixbase);
+         if (fixend > fixbase)
+         {
+            *p++ = TAGF_PERIOD; // Time covered
+            *p++ = (fixend - fixbase) >> 8;
+            *p++ = (fixend - fixbase);
+         }
          if (last && balloon)
             *p++ = TAGF_BALLOON;        // Alt scale flags
          else if (last && flight)
