@@ -120,7 +120,7 @@ typedef struct fix_s fix_t;
 struct fix_s
 {                               // 12 byte fix data
    unsigned short tim;          // secs*TSCALE
-   unsigned short alt:15;       // 1 metre
+   unsigned short alt:15;       // alt at ascale
    unsigned char keep:1;        // Keep this point
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
@@ -1582,7 +1582,7 @@ app_main ()
          if (datamargin)
             q += 3;
          q += 2;                // fix tag to be added once we know it
-         unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;       // How many fixes we can fit...
+         unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;  // How many fixes we can fit...
          if (last >= 2)
          {                      // Reduce fixes
             unsigned int m = margincm;
