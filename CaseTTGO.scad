@@ -3,7 +3,7 @@
 
 use <PCBCase/case.scad>
 
-width=29;
+width=29.21;
 height=75;
 
 // Box thickness reference to component cube
