@@ -45,7 +45,7 @@ const char *sqldatabase = "gps";
 const char *sqlusername = NULL;
 const char *sqlpassword = NULL;
 const char *sqlconffile = NULL;
-const char *sqltable = "gps";
+const char *sqlgps = "gps";
 const char *sqldevice = "device";
 const char *sqlauth = "auth";
 
@@ -235,7 +235,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   q += 4;
                   sql_string_t f = { };
                   sql_sprintf (&f, "REPLACE INTO `%#S` SET `device`=%u,`utc`='%U." TPART
-                               "',`lat`=%.8lf,`lon`=%.8lf", sqltable, devid, t + (tim / TSCALE),
+                               "',`lat`=%.8lf,`lon`=%.8lf", sqlgps, devid, t + (tim / TSCALE),
                                tim % TSCALE, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE, margin / 100);
                   if (fixtags & TAGF_FIX_ALT)
                   {
@@ -407,7 +407,7 @@ main (int argc, const char *argv[])
          {"sql-database", 'd', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldatabase, 0, "SQL database", "db"},
          {"sql-username", 'U', POPT_ARG_STRING, &sqlusername, 0, "SQL username", "name"},
          {"sql-password", 'P', POPT_ARG_STRING, &sqlpassword, 0, "SQL password", "pass"},
-         {"sql-table", 't', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqltable, 0, "SQL log table", "table"},
+         {"sql-table", 't', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqlgps, 0, "SQL log table", "table"},
          {"sql-device", 0, POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldevice, 0, "SQL device table", "table"},
          {"sql-debug", 'v', POPT_ARG_NONE, &sqldebug, 0, "SQL Debug"},
          {"mqtt-hostname", 'h', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &mqtthostname, 0, "MQTT hostname", "hostname"},
@@ -581,6 +581,10 @@ main (int argc, const char *argv[])
                      errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                   free (topic);
                }
+            } else
+            {                   // No device
+               sql_safe_query_free (&sql, sql_printf ("INSERT INTO `%#S` SET `tag`=%#s", sqldevice, tag));
+               devid = sql_insert_id (&sql);
             }
             unsigned int authid = 0,
                old = 0,
@@ -647,7 +651,6 @@ main (int argc, const char *argv[])
                }
                sql_free_result (auth);
             }
-
             char *v = val;
             while (*v && *v != ' ')
                v++;
@@ -842,7 +845,7 @@ main (int argc, const char *argv[])
                               sql_safe_query_free (&sql,
                                                    sql_printf
                                                    ("INSERT IGNORE INTO `%#S` SET `device`=%#s,`utc`=%#U,`fix`=%d,`lat`=%lf,`lon`=%lf,height=%d",
-                                                    sqltable, tag, ts, fix, lat, lon, height));
+                                                    sqlgps, tag, ts, fix, lat, lon, height));
                         }
                         p += 16;
                      }
