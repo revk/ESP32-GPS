@@ -1581,8 +1581,8 @@ app_main ()
          uint8_t *q = p;
          if (datamargin)
             q += 3;
-         q += 2;                // fix tag
-         unsigned int max = (MAXDATA - (q - t)) / fixlen;       // How many fixes we can fit...
+         q += 2;                // fix tag to be added once we know it
+         unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;       // How many fixes we can fit...
          if (last >= 2)
          {                      // Reduce fixes
             unsigned int m = margincm;

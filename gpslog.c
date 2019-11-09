@@ -106,7 +106,22 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          if (!HMAC (EVP_sha256 (), key, keylen, data, len, mac, NULL))
             return "MAC calc fail";
          if (memcmp (mac, data + len, 16))
+         {
+            if (debug)
+            {
+               fprintf (stderr, "Data:");
+               for (int n = 0; n < len; n++)
+                  fprintf (stderr, " %02X", data[n]);
+               fprintf (stderr, "\nMAC:");
+               for (int n = 0; n < 16; n++)
+                  fprintf (stderr, " %02X", mac[n]);
+               fprintf (stderr, "\nMAC:");
+               for (int n = 0; n < 16; n++)
+                  fprintf (stderr, " %02X", data[len + n]);
+               fprintf (stderr, "\n");
+            }
             return "Bad MAC";
+         }
       }
       // Decrypt
       char *aes = sql_colz (auth, "aes");
