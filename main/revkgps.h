@@ -22,4 +22,5 @@
 #define	TAGF_FIX		0x80	// Base fix
 #define	TAGF_FIX_ALT		0x01	// Alt included
 const uint8_t tagf_fix[7]={2,0,0,0,0,0,0};	// length of tag fix bits
+// TODO other stuff in GPGGA such as HDOP and sats and fix type
 

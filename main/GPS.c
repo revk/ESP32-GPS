@@ -797,18 +797,18 @@ display_task (void *p)
       else
          oled_text (1, 0, y, "%16s", "");
       if (fixmode > 1)
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", hdop);
+         oled_text (1, CONFIG_OLED_WIDTH - 4 * 6 - 2, y, "%5.1f", hdop);
       else
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
+         oled_text (1, CONFIG_OLED_WIDTH - 4 * 6 - 2, y, "   \002 ");
       y -= 8;
       if (fixmode >= 3)
          oled_text (1, 0, y, "Alt: %6.1fm", alt);
       else
          oled_text (1, 0, y, "%16s", "");
       if (fixmode >= 3)
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", vdop);
+         oled_text (1, CONFIG_OLED_WIDTH - 4 * 6 - 2, y, "%5.1f", vdop);
       else
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
+         oled_text (1, CONFIG_OLED_WIDTH - 4 * 6 - 2, y, "   \002 ");
       y -= 3;                   // Line
       if (gotfix)
       {
