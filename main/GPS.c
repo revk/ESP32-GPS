@@ -1360,8 +1360,7 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
       float DT = t (b) - t (a);
       float LSQ = distsq (DX, DY, DZ, DT);
       int bestn = -1;
-      float best = 0,
-         bestq = 0;
+      float best = 0;
       int n;
       for (n = l + 1; n < h; n++)
       {
@@ -1376,27 +1375,25 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
                float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
                d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
             }
-            float q = d;
             if (testhdop && p->hdop)
                d = d * HSCALE / p->hdop;
             if (bestn >= 0 && d <= best)
                continue;
             bestn = n;          // New furthest
             best = d;
-            bestq = q;
          }
       }
       if (best < marginsq)
       {                         // All points are within margin - so all to be pruned
-         if (bestq > dlost)
-            dlost = bestq;
+         if (best > dlost)
+            dlost = best;
          for (n = l + 1; n < h; n++)
             fix[n].tim = 0;
          l = h;                 // Next block
          continue;
       }
       if (!dkept || best < dkept)
-         dkept = bestq;
+         dkept = best;
       fix[bestn].keep = 1;      // keep this middle point
       h = bestn;                // First half recursive
    }
@@ -1606,6 +1603,7 @@ app_main ()
       revk_error ("malloc", "fix failed");
       return;
    }
+   revk_error(TAG,"fix=%d",sizeof(*fix));
    if (oledsda >= 0 && oledscl >= 0)
       oled_start (1, oledaddress, oledscl, oledsda, oledflip);
    oled_set_contrast (oledcontrast);
