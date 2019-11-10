@@ -1083,7 +1083,7 @@ at_task (void *X)
          if (!strstr ((char *) atbuf, "SHUT OK"))
             continue;
          char roam = 0;
-         while (1)
+         while (!--try)
          {
             sleep (1);
             if (atcmd ("AT+CREG?", 1000, 1000) < 0)
