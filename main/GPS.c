@@ -59,7 +59,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(always,N)	\
 	b(backup,N)	\
 	b(mph, Y)	\
-	u8(datafix,0x01)\
+	u8(datafix,0x07)\
 	b(datamargin,Y) \
 	b(flight,N)	\
 	b(balloon,N)	\
@@ -109,7 +109,8 @@ char imei[22] = { };
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
 
-#define	MAXFIX 6600
+unsigned int MAXFIX = 10000;
+#define MAXFIXLOW	5000
 #define MAXDATA (1492-28)
 
 float ascale = 1.0 / ASCALE;    // Alt scale default
@@ -119,11 +120,14 @@ typedef struct fix_s fix_t;
 #define ALTBASE	400             // Making alt unsigned as stored by allowing for -400m
 struct fix_s
 {                               // 12 byte fix data
-   unsigned short tim;          // secs*TSCALE
-   unsigned short alt:15;       // alt at ascale
-   unsigned char keep:1;        // Keep this point
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
+   uint16_t tim;                // Time (TSCALE)
+   int16_t alt;                 // Alt (ascale)
+   uint8_t sats:6;              // Number of sats
+   uint8_t dgps:1;              // DGPS
+   uint8_t keep:1;              // Keep (RDP algorithm)
+   uint8_t hdop;                // HSCALE
 };
 fix_t *fix = NULL;
 unsigned int fixnext = 0;       // Next fix to store
@@ -132,6 +136,7 @@ volatile int fixdelete = -1;    // Delete this many fixes from start on next fix
 volatile char fixnow = 0;       // Force fix
 
 unsigned int MAXTRACK = 1024;
+#define	MAXTRACKLOW	16
 uint8_t **track = NULL;
 int *tracklen = NULL;
 
@@ -554,7 +559,7 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 61000))
+       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= MAXFIX - 300))
    {
       if (fixdebug)
       {
@@ -623,6 +628,8 @@ nmea (char *s)
             lon =
                ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtof (f[4] + 3, NULL) / 60) * (f[5][0] ==
                                                                                                                 'E' ? 1 : -1);
+         if (!hdopforce)
+            hdop = strtof (f[8], NULL);
          gotfix = 1;
          if (gpszda)
          {                      // Store fix data
@@ -673,6 +680,9 @@ nmea (char *s)
                fix[fixnext].alt = fixalt;
                fix[fixnext].lat = fixlat;
                fix[fixnext].lon = fixlon;
+               fix[fixnext].sats = sats;
+               fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
+               fix[fixnext].hdop = round (hdop * HSCALE);
                if (fixdump)
                   revk_info ("fix", "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
                              fixalt, ascale);
@@ -745,8 +755,6 @@ nmea (char *s)
       fixmode = atoi (f[2]);
       if (!pdopforce)
          pdop = strtof (f[15], NULL);
-      if (!hdopforce)
-         hdop = strtof (f[16], NULL);
       if (!vdopforce)
          vdop = strtof (f[17], NULL);
       return;
@@ -1060,19 +1068,21 @@ at_task (void *X)
             revk_info ("iccid", "%s", iccid);
       }
       atcmd ("AT+CBC", 0, 0);
-      int delay = 1;
+      time_t next = 0;
       try = 10;
       while (1)
       {
          if (!--try)
             break;              // Power cycle
-         while (delay--)
+         do
             atcmd (NULL, 1000, 0);
-         delay = 1;
+         while (time (0) < next);
+         next = time (0) + 10;  // retry time
          if (atcmd ("AT+CIPSHUT", 2000, 0) < 0)
             continue;
          if (!strstr ((char *) atbuf, "SHUT OK"))
             continue;
+         char roam = 0;
          while (1)
          {
             sleep (1);
@@ -1080,7 +1090,12 @@ at_task (void *X)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
-            if (strstr ((char *) atbuf, "+CREG: 0,1") || strstr ((char *) atbuf, "+CREG: 0,5"))
+            if (strstr ((char *) atbuf, "+CREG: 0,5"))
+            {
+               roam = 1;
+               break;
+            }
+            if (strstr ((char *) atbuf, "+CREG: 0,1"))
                break;
          }
          {
@@ -1091,21 +1106,15 @@ at_task (void *X)
             if (!strstr ((char *) atbuf, "OK"))
                continue;
          }
-         if (atcmd ("AT+CIICR", 30000, 0) < 0)
+         if (atcmd ("AT+CIICR", 60000, 0) < 0)
             continue;
          if (!strstr ((char *) atbuf, "OK"))
             continue;
-         delay = 600;           // We established a connection so don't immediately close and re-establish as that is rude
+         next = time (0) + 300; // Don't hammer mobile data connections
          if (atcmd ("AT+CIFSR", 20000, 0) < 0)
             continue;
          if (!strstr ((char *) atbuf, "."))
             continue;           // Yeh, not an OK after the IP!!! How fucking stupid
-#if 0
-         if (atcmd ("AT+CIPMUX=0", 1000) < 0)
-            continue;
-         if (!strstr ((char *) atbuf, "OK"))
-            continue;
-#endif
          {
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+CIPSTART=\"UDP\",\"%s\",%d", loghost, logport);
@@ -1117,7 +1126,7 @@ at_task (void *X)
          if (!strstr ((char *) atbuf, "CONNECT OK"))
             continue;
          try = 10;
-         revk_info (TAG, "Mobile connected");
+         revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
          while (1)
          {                      // Connected, send data as needed
             time_t now = time (0);
@@ -1399,143 +1408,8 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
 }
 
 void
-app_main ()
+gps_task (void *z)
 {
-   if (balloon)
-      ascale = ALT_BALLOON;
-   else if (flight)
-      ascale = ALT_FLIGHT;
-   esp_err_t err;
-   cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
-   at_mutex = xSemaphoreCreateMutex (); // Shared command access
-   track_mutex = xSemaphoreCreateMutex ();
-   revk_init (&app_command);
-#define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
-#define bl(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
-#define h(n) revk_register(#n,0,0,&n,NULL,SETTING_BINARY|SETTING_HEX);
-#define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
-#define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s(n,d) revk_register(#n,0,0,&n,d,0);
-   settings;
-#undef u32
-#undef s8
-#undef u8
-#undef bl
-#undef b
-#undef h
-#undef s
-   // Memory
-   track = heap_caps_malloc (sizeof (*track) * MAXTRACK, MALLOC_CAP_SPIRAM);
-   if (!track)
-      track = malloc (sizeof (*track) * (MAXTRACK = 16));
-   if (!track)
-   {
-      revk_error ("malloc", "track failed");
-      return;
-   }
-   tracklen = heap_caps_malloc (sizeof (*tracklen) * MAXTRACK, MALLOC_CAP_SPIRAM) ? : malloc (sizeof (*tracklen) * MAXTRACK);
-   if (!tracklen)
-   {
-      revk_error ("malloc", "tracklen failed");
-      return;
-   }
-   memset (tracklen, 0, sizeof (*tracklen) * MAXTRACK);
-   for (int n = 0; n < MAXTRACK; n++)
-   {
-      track[n] = heap_caps_malloc (MAXDATA, MALLOC_CAP_SPIRAM) ? : malloc (MAXDATA);
-      if (!track[n])
-      {
-         revk_error ("malloc", "track[%d] failed", n);
-         return;
-      }
-   }
-   fix = heap_caps_malloc (sizeof (*fix) * MAXFIX, MALLOC_CAP_SPIRAM) ? : malloc (sizeof (*fix) * MAXFIX);
-   if (!fix)
-   {
-      revk_error ("malloc", "fix failed");
-      return;
-   }
-   if (oledsda >= 0 && oledscl >= 0)
-      oled_start (1, oledaddress, oledscl, oledsda, oledflip);
-   oled_set_contrast (oledcontrast);
-   for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
-   {
-      oled_set (x, CONFIG_OLED_HEIGHT - 12, 4);
-      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
-      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
-      oled_set (x, 8, 4);
-   }
-   if (oledsda >= 0 && oledscl >= 0)
-      revk_task ("Display", display_task, NULL);
-   // Main task...
-   if (gpspps >= 0)
-      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
-   if (gpsfix >= 0)
-      gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
-   if (gpspps >= 0)
-      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
-   if (gpsen >= 0)
-   {                            // Enable
-      gpio_set_level (gpsen, 1);
-      gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
-   }
-   {
-      // Init UART for GPS
-      void connect (unsigned int baud)
-      {
-         uart_config_t uart_config = {
-            .baud_rate = baud,
-            .data_bits = UART_DATA_8_BITS,
-            .parity = UART_PARITY_DISABLE,
-            .stop_bits = UART_STOP_BITS_1,
-            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-         };
-         if ((err = uart_param_config (gpsuart, &uart_config)))
-            revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-         else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
-            revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-         else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
-            revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
-      }
-      connect (115200);
-      uint8_t temp;
-      if (uart_read_bytes (gpsuart, &temp, 1, 1000 / portTICK_PERIOD_MS) <= 0 || temp != '$')
-      {
-         uart_driver_delete (gpsuart);
-         connect (9600);
-         sleep (1);
-         gpscmd ("$PMTK251,115200");    // Baud rate
-         sleep (1);
-         uart_driver_delete (gpsuart);
-         connect (115200);
-      }
-   }
-   if (attx >= 0 && atrx >= 0 && atpwr >= 0)
-   {
-      // Init UART for Mobile
-      uart_config_t uart_config = {
-         .baud_rate = atbaud,
-         .data_bits = UART_DATA_8_BITS,
-         .parity = UART_PARITY_DISABLE,
-         .stop_bits = UART_STOP_BITS_1,
-         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-      };
-      if ((err = uart_param_config (atuart, &uart_config)))
-         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-      else if ((err = uart_set_pin (atuart, attx, atrx, -1, -1)))
-         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-      else if ((err = uart_driver_install (atuart, 256, 0, 0, NULL, 0)))
-         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
-      if (atkey >= 0)
-         gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
-      if (atrst >= 0)
-         gpio_set_direction (atrst, GPIO_MODE_OUTPUT);
-      gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
-      revk_task ("Mobile", at_task, NULL);
-   }
-   revk_task ("NMEA", nmea_task, NULL);
-   revk_task ("Log", log_task, NULL);
    while (1)
    {                            // main task
       sleep (1);
@@ -1637,6 +1511,10 @@ app_main ()
                   *p++ = v >> 8;
                   *p++ = v;
                }
+               if (fixtag & TAGF_FIX_SATS)
+                  *p++ = f->sats + (f->dgps ? 0x80 : 0);
+               if (fixtag & TAGF_FIX_HDOP)
+                  *p++ = f->hdop;
             }
          }
          unsigned int len = encode (t, p - t, fixbase);
@@ -1656,4 +1534,147 @@ app_main ()
          fixsave = -1;
       }
    }
+}
+
+void
+app_main ()
+{
+   if (balloon)
+      ascale = ALT_BALLOON;
+   else if (flight)
+      ascale = ALT_FLIGHT;
+   esp_err_t err;
+   cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
+   at_mutex = xSemaphoreCreateMutex (); // Shared command access
+   track_mutex = xSemaphoreCreateMutex ();
+   revk_init (&app_command);
+#define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
+#define bl(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
+#define h(n) revk_register(#n,0,0,&n,NULL,SETTING_BINARY|SETTING_HEX);
+#define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
+#define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define s(n,d) revk_register(#n,0,0,&n,d,0);
+   settings;
+#undef u32
+#undef s8
+#undef u8
+#undef bl
+#undef b
+#undef h
+#undef s
+   // Memory
+   track = heap_caps_malloc (sizeof (*track) * MAXTRACK, MALLOC_CAP_SPIRAM);
+   if (!track)
+      track = malloc (sizeof (*track) * (MAXTRACK = MAXTRACKLOW));
+   if (!track)
+   {
+      revk_error ("malloc", "track failed");
+      return;
+   }
+   tracklen = heap_caps_malloc (sizeof (*tracklen) * MAXTRACK, MALLOC_CAP_SPIRAM) ? : malloc (sizeof (*tracklen) * MAXTRACK);
+   if (!tracklen)
+   {
+      revk_error ("malloc", "tracklen failed");
+      return;
+   }
+   memset (tracklen, 0, sizeof (*tracklen) * MAXTRACK);
+   for (int n = 0; n < MAXTRACK; n++)
+   {
+      track[n] = heap_caps_malloc (MAXDATA, MALLOC_CAP_SPIRAM) ? : malloc (MAXDATA);
+      if (!track[n])
+      {
+         revk_error ("malloc", "track[%d] failed", n);
+         return;
+      }
+   }
+   fix = heap_caps_malloc (sizeof (*fix) * MAXFIX, MALLOC_CAP_SPIRAM);
+   if (!fix)
+      fix = malloc (sizeof (*fix) * (MAXFIX = MAXFIXLOW));
+   if (!fix)
+   {
+      revk_error ("malloc", "fix failed");
+      return;
+   }
+   if (oledsda >= 0 && oledscl >= 0)
+      oled_start (1, oledaddress, oledscl, oledsda, oledflip);
+   oled_set_contrast (oledcontrast);
+   for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
+   {
+      oled_set (x, CONFIG_OLED_HEIGHT - 12, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
+      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
+      oled_set (x, 8, 4);
+   }
+   if (oledsda >= 0 && oledscl >= 0)
+      revk_task ("Display", display_task, NULL);
+   // Main task...
+   if (gpspps >= 0)
+      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
+   if (gpsfix >= 0)
+      gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
+   if (gpspps >= 0)
+      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
+   if (gpsen >= 0)
+   {                            // Enable
+      gpio_set_level (gpsen, 1);
+      gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
+   }
+   {
+      // Init UART for GPS
+      void connect (unsigned int baud)
+      {
+         uart_config_t uart_config = {
+            .baud_rate = baud,
+            .data_bits = UART_DATA_8_BITS,
+            .parity = UART_PARITY_DISABLE,
+            .stop_bits = UART_STOP_BITS_1,
+            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+         };
+         if ((err = uart_param_config (gpsuart, &uart_config)))
+            revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
+         else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
+            revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
+         else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
+            revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+      }
+      connect (115200);
+      uint8_t temp;
+      if (uart_read_bytes (gpsuart, &temp, 1, 1000 / portTICK_PERIOD_MS) <= 0 || temp != '$')
+      {
+         uart_driver_delete (gpsuart);
+         connect (9600);
+         sleep (1);
+         gpscmd ("$PMTK251,115200");    // Baud rate
+         sleep (1);
+         uart_driver_delete (gpsuart);
+         connect (115200);
+      }
+   }
+   if (attx >= 0 && atrx >= 0 && atpwr >= 0)
+   {
+      // Init UART for Mobile
+      uart_config_t uart_config = {
+         .baud_rate = atbaud,
+         .data_bits = UART_DATA_8_BITS,
+         .parity = UART_PARITY_DISABLE,
+         .stop_bits = UART_STOP_BITS_1,
+         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+      };
+      if ((err = uart_param_config (atuart, &uart_config)))
+         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
+      else if ((err = uart_set_pin (atuart, attx, atrx, -1, -1)))
+         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
+      else if ((err = uart_driver_install (atuart, 256, 0, 0, NULL, 0)))
+         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+      if (atkey >= 0)
+         gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
+      if (atrst >= 0)
+         gpio_set_direction (atrst, GPIO_MODE_OUTPUT);
+      gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
+      revk_task ("Mobile", at_task, NULL);
+   }
+   revk_task ("NMEA", nmea_task, NULL);
+   revk_task ("Log", log_task, NULL);
+   revk_task ("GPS", gps_task, NULL);
 }

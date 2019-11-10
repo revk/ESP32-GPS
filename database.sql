@@ -34,7 +34,7 @@ CREATE TABLE `auth` (
   KEY `auth_ibfk_1` (`replaces`),
   CONSTRAINT `auth_ibfk_1` FOREIGN KEY (`replaces`) REFERENCES `auth` (`ID`) ON DELETE CASCADE,
   CONSTRAINT `auth_ibfk_2` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=49 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -58,7 +58,7 @@ CREATE TABLE `device` (
   `upgrade` enum('N','Y') NOT NULL DEFAULT 'N',
   PRIMARY KEY (`ID`),
   UNIQUE KEY `device` (`tag`)
-) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -75,13 +75,15 @@ CREATE TABLE `gps` (
   `lat` decimal(12,8) DEFAULT NULL,
   `lon` decimal(13,8) DEFAULT NULL,
   `alt` decimal(8,1) DEFAULT NULL,
+  `sats` int(2) DEFAULT NULL,
+  `hdop` decimal(5,1) DEFAULT NULL,
   `margin` decimal(8,2) DEFAULT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `utc_2` (`utc`,`device`),
   KEY `utc` (`utc`),
   KEY `device` (`device`),
   CONSTRAINT `gps_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=206941 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=217892 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -93,4 +95,4 @@ CREATE TABLE `gps` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-11-08 15:59:12
+-- Dump completed on 2019-11-09 16:49:09
