@@ -256,11 +256,11 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   }
                   if (fixtags & TAGF_FIX_HDOP)
                   {
-                     sql_sprintf (&f, ",`hdop`=%u.%u", *q / 10, *q % 10);
+                     sql_sprintf (&f, ",`hdop`=%u." HPART, *q / HSCALE, *q % HSCALE);
                      q++;
                   }
                   if (margin >= 0)
-                     sql_sprintf (&f, ",`margin`=%u.%02u", margin / 100, margin % 100);
+                     sql_sprintf (&f, ",`margin`=%u." MPART, margin / MSCALE, margin % MSCALE);
                   sql_safe_query_s (sqlp, &f);
                   p += fixlen;
                   fixes++;

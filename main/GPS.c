@@ -108,9 +108,9 @@ char imei[22] = { };
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
 
-unsigned int MAXFIX = 10000;	// Large memory max fix
-#define MAXFIXLOW	5000	// Small memory max fix
-#define	FIXALLOW	1000	// Yes, can take over 80 seconds for RDP if all the same
+unsigned int MAXFIX = 10000;    // Large memory max fix
+#define MAXFIXLOW	5000    // Small memory max fix
+#define	FIXALLOW	 500    // Allow time to process fixes
 #define MAXDATA (1492-28)
 
 float ascale = 1.0 / ASCALE;    // Alt scale default
@@ -123,7 +123,7 @@ struct fix_s
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
    uint16_t tim;                // Time (TSCALE)
-   uint16_t dist;               // RDP distance
+   uint16_t dist;               // RDP distance (MSCALE)
    int16_t alt;                 // Alt (ascale)
    uint8_t sats:6;              // Number of sats
    uint8_t dgps:1;              // DGPS
@@ -136,8 +136,8 @@ volatile int fixsave = -1;      // Time to save fixes (-1 means not, so we do a 
 volatile int fixdelete = -1;    // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
 volatile char fixnow = 0;       // Force fix
 
-unsigned int MAXTRACK = 1024;	// Large memory history
-#define	MAXTRACKLOW	16	// Small memory history
+unsigned int MAXTRACK = 1024;   // Large memory history
+#define	MAXTRACKLOW	16      // Small memory history
 uint8_t **track = NULL;
 int *tracklen = NULL;
 
@@ -674,6 +674,22 @@ nmea (char *s)
                fixalt = 0;      // Range to 15 bits
             else if (fixalt > 32767)
                fixalt = 32767;
+            int fixdiff (fix_t * a, fix_t * b)
+            {                   // Different (except for time)
+               if (a->lat != b->lat)
+                  return 1;
+               if (a->lon != b->lon)
+                  return 2;
+               if (a->alt != b->alt)
+                  return 3;
+               if (a->sats != b->sats)
+                  return 4;
+               if (a->hdop != b->hdop)
+                  return 5;
+               if (a->dgps != b->dgps)
+                  return 6;
+               return 0;
+            }
             if (fixnext < MAXFIX)
             {
                fix[fixnext].keep = 0;
@@ -685,10 +701,16 @@ nmea (char *s)
                fix[fixnext].sats = sats;
                fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
                fix[fixnext].hdop = round (hdop * HSCALE);
-               if (fixdump)
-                  revk_info ("fix", "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
-                             fixalt, ascale);
-               fixnext++;
+               if (fixnext > 1 && fixnext > fixsave + 1 && !fixdiff (&fix[fixnext - 1], &fix[fixnext])
+                   && !fixdiff (&fix[fixnext - 2], &fix[fixnext - 1]))
+                  fix[fixnext - 1].tim = fixtim;        // Skip intermediate fix
+               else
+               {                // Save
+                  if (fixdump)
+                     revk_info ("fix", "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
+                                fixalt, ascale);
+                  fixnext++;
+               }
                fixcheck (fixtim);
             }
          }
@@ -1401,7 +1423,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
             best = d;
          }
       }
-      unsigned int dist = ceil (sqrt (best) * 100);
+      unsigned int dist = ceil (sqrt (best) * MSCALE);
       if (dist > 65535)
          dist = 65535;
       fix[bestn].dist = dist;
@@ -1488,8 +1510,9 @@ gps_task (void *z)
          unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;  // How many fixes we can fit...
          last = rdp (last, max, &dlost, &dkept);
          if (fixdebug)
-            revk_info ("fix", "Logging %u/%u from %u fixes at %ucm/%ucm/%ucm covering %u seconds", last, max, fixsave,
-                       fix[1].dist, dkept, dlost, fixend - fixbase);
+            revk_info ("fix", "Logging %u/%u from %u fixes at %u." MPART "/%u." MPART "/%u." MPART " covering %u seconds", last,
+                       max, fixsave, fix[1].dist / MSCALE, fix[1].dist % MSCALE, dkept / MSCALE, dkept % MSCALE, dlost / MSCALE,
+                       dlost % MSCALE, fixend - fixbase);
          if (last > max)
             last = max;         // truncate
          if (last)

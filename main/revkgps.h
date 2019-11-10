@@ -3,9 +3,12 @@
 #define VERSION 0x2A
 #define TSCALE  100             // Per second
 #define TPART   "%02u"
-#define DSCALE  100000          // Per angle minute
+#define	DSCALE	100000		// Per degree
 #define	ASCALE	10		// Per metre
 #define	HSCALE	10		// HDOP scale
+#define	HPART	"%01u"
+#define	MSCALE	1000		// Margin scale
+#define	MPART	"%03u"
 #define	ALT_BALLOON	2.5	// m per unit in balloon mode
 #define	ALT_FLIGHT	1.0	// m per unit in flight mode
 
