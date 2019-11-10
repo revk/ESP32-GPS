@@ -631,7 +631,7 @@ nmea (char *s)
          if (!hdopforce)
             hdop = strtof (f[8], NULL);
          gotfix = 1;
-         if (gpszda)
+         if (gpszda && fixtype)
          {                      // Store fix data
             char *p = f[2];
             int s = DSCALE;
