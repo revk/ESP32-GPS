@@ -59,7 +59,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(always,N)	\
 	b(backup,N)	\
 	b(mph, Y)	\
-	u8(datafix,0x01)\
+	u8(datafix,0x07)\
 	b(datamargin,Y) \
 	b(flight,N)	\
 	b(balloon,N)	\
@@ -109,7 +109,8 @@ char imei[22] = { };
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
 
-#define	MAXFIX 6600
+unsigned int MAXFIX = 10000;
+#define MAXFIXLOW	5000
 #define MAXDATA (1492-28)
 
 float ascale = 1.0 / ASCALE;    // Alt scale default
@@ -119,11 +120,14 @@ typedef struct fix_s fix_t;
 #define ALTBASE	400             // Making alt unsigned as stored by allowing for -400m
 struct fix_s
 {                               // 12 byte fix data
-   unsigned short tim;          // secs*TSCALE
-   unsigned short alt:15;       // alt at ascale
-   unsigned char keep:1;        // Keep this point
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
+   uint16_t tim;                // Time (TSCALE)
+   int16_t alt;                 // Alt (ascale)
+   uint8_t sats:6;              // Number of sats
+   uint8_t dgps:1;              // DGPS
+   uint8_t keep:1;              // Keep (RDP algorithm)
+   uint8_t hdop;                // HSCALE
 };
 fix_t *fix = NULL;
 unsigned int fixnext = 0;       // Next fix to store
@@ -132,6 +136,7 @@ volatile int fixdelete = -1;    // Delete this many fixes from start on next fix
 volatile char fixnow = 0;       // Force fix
 
 unsigned int MAXTRACK = 1024;
+#define	MAXTRACKLOW	16
 uint8_t **track = NULL;
 int *tracklen = NULL;
 
@@ -554,7 +559,7 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 61000))
+       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= MAXFIX - 300))
    {
       if (fixdebug)
       {
@@ -623,6 +628,8 @@ nmea (char *s)
             lon =
                ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtof (f[4] + 3, NULL) / 60) * (f[5][0] ==
                                                                                                                 'E' ? 1 : -1);
+         if (!hdopforce)
+            hdop = strtof (f[8], NULL);
          gotfix = 1;
          if (gpszda)
          {                      // Store fix data
@@ -673,6 +680,9 @@ nmea (char *s)
                fix[fixnext].alt = fixalt;
                fix[fixnext].lat = fixlat;
                fix[fixnext].lon = fixlon;
+               fix[fixnext].sats = sats;
+               fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
+               fix[fixnext].hdop = round (hdop * HSCALE);
                if (fixdump)
                   revk_info ("fix", "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
                              fixalt, ascale);
@@ -745,8 +755,6 @@ nmea (char *s)
       fixmode = atoi (f[2]);
       if (!pdopforce)
          pdop = strtof (f[15], NULL);
-      if (!hdopforce)
-         hdop = strtof (f[16], NULL);
       if (!vdopforce)
          vdop = strtof (f[17], NULL);
       return;
@@ -1073,6 +1081,7 @@ at_task (void *X)
             continue;
          if (!strstr ((char *) atbuf, "SHUT OK"))
             continue;
+         char roam = 0;
          while (1)
          {
             sleep (1);
@@ -1080,9 +1089,15 @@ at_task (void *X)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
-            if (strstr ((char *) atbuf, "+CREG: 0,1") || strstr ((char *) atbuf, "+CREG: 0,5"))
+            if (strstr ((char *) atbuf, "+CREG: 0,5"))
+            {
+               roam = 1;
+               break;
+            }
+            if (strstr ((char *) atbuf, "+CREG: 0,1"))
                break;
          }
+         if (*apn)
          {
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+CSTT=\"%s\"", apn);
@@ -1091,8 +1106,9 @@ at_task (void *X)
             if (!strstr ((char *) atbuf, "OK"))
                continue;
          }
-         if (atcmd ("AT+CIICR", 30000, 0) < 0)
+         if (atcmd ("AT+CIICR", 60000, 0) < 0)
             continue;
+         while (strstr ((char *) atbuf, "Ready") && atcmd (NULL, 60000, 0) > 0);       // Call Ready, SMS Ready
          if (!strstr ((char *) atbuf, "OK"))
             continue;
          delay = 600;           // We established a connection so don't immediately close and re-establish as that is rude
@@ -1117,7 +1133,7 @@ at_task (void *X)
          if (!strstr ((char *) atbuf, "CONNECT OK"))
             continue;
          try = 10;
-         revk_info (TAG, "Mobile connected");
+         revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
          while (1)
          {                      // Connected, send data as needed
             time_t now = time (0);
@@ -1428,7 +1444,7 @@ app_main ()
    // Memory
    track = heap_caps_malloc (sizeof (*track) * MAXTRACK, MALLOC_CAP_SPIRAM);
    if (!track)
-      track = malloc (sizeof (*track) * (MAXTRACK = 16));
+      track = malloc (sizeof (*track) * (MAXTRACK = MAXTRACKLOW));
    if (!track)
    {
       revk_error ("malloc", "track failed");
@@ -1450,7 +1466,9 @@ app_main ()
          return;
       }
    }
-   fix = heap_caps_malloc (sizeof (*fix) * MAXFIX, MALLOC_CAP_SPIRAM) ? : malloc (sizeof (*fix) * MAXFIX);
+   fix = heap_caps_malloc (sizeof (*fix) * MAXFIX, MALLOC_CAP_SPIRAM);
+   if (!fix)
+      fix = malloc (sizeof (*fix) * (MAXFIX = MAXFIXLOW));
    if (!fix)
    {
       revk_error ("malloc", "fix failed");
@@ -1637,6 +1655,10 @@ app_main ()
                   *p++ = v >> 8;
                   *p++ = v;
                }
+               if (fixtag & TAGF_FIX_SATS)
+                  *p++ = f->sats + (f->dgps ? 0x80 : 0);
+               if (fixtag & TAGF_FIX_HDOP)
+                  *p++ = f->hdop;
             }
          }
          unsigned int len = encode (t, p - t, fixbase);

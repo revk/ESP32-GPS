@@ -5,6 +5,7 @@
 #define TPART   "%02u"
 #define DSCALE  100000          // Per angle minute
 #define	ASCALE	10		// Per metre
+#define	HSCALE	10		// HDOP scale
 #define	ALT_BALLOON	2.5	// m per unit in balloon mode
 #define	ALT_FLIGHT	1.0	// m per unit in flight mode
 
@@ -21,6 +22,7 @@
 
 #define	TAGF_FIX		0x80	// Base fix
 #define	TAGF_FIX_ALT		0x01	// Alt included
-const uint8_t tagf_fix[7]={2,0,0,0,0,0,0};	// length of tag fix bits
-// TODO other stuff in GPGGA such as HDOP and sats and fix type
+#define	TAGF_FIX_SATS		0x02	// Sats and DGPS status (top bit)
+#define	TAGF_FIX_HDOP		0x04	// HDOP (HSCALE)
+const uint8_t tagf_fix[7]={2,1,1,0,0,0,0};	// length of tag fix bits
 

@@ -244,6 +244,16 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      q += 2;
                      sql_sprintf (&f, ",`alt`=%.1f", a);
                   }
+                  if (fixtags & TAGF_FIX_SATS)
+                  {
+                     sql_sprintf (&f, ",`sats`=%u", *q & 0x7F);
+                     q++;
+                  }
+                  if (fixtags & TAGF_FIX_HDOP)
+                  {
+                     sql_sprintf (&f, ",`hdop`=%u.%u", *q / 10, *q % 10);
+                     q++;
+                  }
                   if (margin >= 0)
                      sql_sprintf (&f, ",`margin`=%u.%02u", margin / 100, margin % 100);
                   sql_safe_query_s (sqlp, &f);
