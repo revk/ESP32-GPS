@@ -710,7 +710,7 @@ main (int argc, const char *argv[])
             {
                free (l->iccid);
                l->iccid = strdup (val);
-               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `iccid`=%#s WHERE `device`=%#s", sqldevice, l->iccid, tag));
+               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `iccid`=%#s WHERE `tag`=%#s", sqldevice, l->iccid, tag));
             }
          } else if (!strcmp (type, "imei"))
          {
@@ -718,7 +718,7 @@ main (int argc, const char *argv[])
             {
                free (l->imei);
                l->imei = strdup (val);
-               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `imei`=%#s WHERE `device`=%#s", sqldevice, l->imei, tag));
+               sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `imei`=%#s WHERE `tag`=%#s", sqldevice, l->imei, tag));
             }
          } else if (!strcmp (type, "rx"))
          {

@@ -1068,15 +1068,16 @@ at_task (void *X)
             revk_info ("iccid", "%s", iccid);
       }
       atcmd ("AT+CBC", 0, 0);
-      int delay = 1;
+      time_t next = 0;
       try = 10;
       while (1)
       {
          if (!--try)
             break;              // Power cycle
-         while (delay--)
+         do
             atcmd (NULL, 1000, 0);
-         delay = 1;
+         while (time (0) < next);
+         next = time (0) + 10;  // retry time
          if (atcmd ("AT+CIPSHUT", 2000, 0) < 0)
             continue;
          if (!strstr ((char *) atbuf, "SHUT OK"))
@@ -1097,7 +1098,6 @@ at_task (void *X)
             if (strstr ((char *) atbuf, "+CREG: 0,1"))
                break;
          }
-         if (*apn)
          {
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+CSTT=\"%s\"", apn);
@@ -1108,20 +1108,13 @@ at_task (void *X)
          }
          if (atcmd ("AT+CIICR", 60000, 0) < 0)
             continue;
-         while (strstr ((char *) atbuf, "Ready") && atcmd (NULL, 60000, 0) > 0);       // Call Ready, SMS Ready
          if (!strstr ((char *) atbuf, "OK"))
             continue;
-         delay = 600;           // We established a connection so don't immediately close and re-establish as that is rude
+         next = time (0) + 300; // Don't hammer mobile data connections
          if (atcmd ("AT+CIFSR", 20000, 0) < 0)
             continue;
          if (!strstr ((char *) atbuf, "."))
             continue;           // Yeh, not an OK after the IP!!! How fucking stupid
-#if 0
-         if (atcmd ("AT+CIPMUX=0", 1000) < 0)
-            continue;
-         if (!strstr ((char *) atbuf, "OK"))
-            continue;
-#endif
          {
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+CIPSTART=\"UDP\",\"%s\",%d", loghost, logport);
@@ -1415,6 +1408,135 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
 }
 
 void
+gps_task (void *z)
+{
+   while (1)
+   {                            // main task
+      sleep (1);
+      fixcheck (0);
+      if (gpszda && fixsave >= 0)
+      {                         // Time to save a fix
+         fixnow = 0;
+         // Reduce fixes
+         if (fixdebug)
+            revk_info ("fix", "%u fixes recorded over %u seconds", fixsave, fixend - fixbase);
+         int last = 0;
+         if (fixsave > 0)
+            last = fixsave - 1;
+         unsigned int dlost = 0,
+            dkept = 0;
+         xSemaphoreTake (track_mutex, portMAX_DELAY);
+         if (tracki >= MAXTRACK && tracko < tracki + 1 - MAXTRACK)
+            tracko = tracki + 1 - MAXTRACK;     // Lost as wrapped
+         tracklen[tracki % MAXTRACK] = 0;       // Ensure not sent until we have put in data
+         xSemaphoreGive (track_mutex);
+         uint8_t *t = track[tracki % MAXTRACK],
+            *p = t + 8;
+         if (fixend > fixbase)
+         {
+            *p++ = TAGF_PERIOD; // Time covered
+            *p++ = (fixend - fixbase) >> 8;
+            *p++ = (fixend - fixbase);
+         }
+         if (last && balloon)
+            *p++ = TAGF_BALLOON;        // Alt scale flags
+         else if (last && flight)
+            *p++ = TAGF_FLIGHT;
+         if (!tracki)
+         {                      // First message
+            *p++ = TAGF_FIRST;
+            *p++ = fixbase >> 24;
+            *p++ = fixbase >> 16;
+            *p++ = fixbase >> 8;
+            *p++ = fixbase;
+         }
+         uint8_t fixtag = TAGF_FIX | datafix;
+         unsigned int fixlen = 10;
+         for (int n = 0; n < sizeof (tagf_fix); n++)
+            if (fixtag & (1 << n))
+               fixlen += tagf_fix[n];
+         uint8_t *q = p;
+         if (datamargin)
+            q += 3;
+         q += 2;                // fix tag to be added once we know it
+         unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;  // How many fixes we can fit...
+         if (last >= 2)
+         {                      // Reduce fixes
+            unsigned int m = margincm;
+            while (m < 1000)
+            {
+               last = rdp (last, m, &dlost, &dkept);
+               if (fixdebug && last < fixsave)
+                  revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
+               if (last <= max)
+                  break;
+               m = dkept + retrycm;
+            }
+         }
+         if (last > max)
+            last = max;         // truncate
+         if (last)
+         {
+            if (datamargin)
+            {
+               *p++ = TAGF_MARGIN;
+               *p++ = dlost >> 8;       // Max distance of deleted points
+               *p++ = dlost;
+            }
+            while (((p + 2 + last * fixlen - t) & 0xF) != 4)
+               *p++ = TAGF_PAD; // Pre pad for fix
+            *p++ = fixtag;      // Tag for fixes
+            *p++ = fixlen;
+            for (int n = 1; n <= last; n++)
+            {                   // Don't send first as it is duplicate of last from previous packet
+               fix_t *f = &fix[n];
+               // Base fix data
+               unsigned int v = f->tim; // Time
+               *p++ = v >> 8;
+               *p++ = v;
+               v = f->lat;      // Lat
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+               v = f->lon;      // Lon
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+               // Optional fix data
+               if (fixtag & TAGF_FIX_ALT)
+               {
+                  v = (int) f->alt - (int) (ALTBASE / ascale);  // Alt
+                  *p++ = v >> 8;
+                  *p++ = v;
+               }
+               if (fixtag & TAGF_FIX_SATS)
+                  *p++ = f->sats + (f->dgps ? 0x80 : 0);
+               if (fixtag & TAGF_FIX_HDOP)
+                  *p++ = f->hdop;
+            }
+         }
+         unsigned int len = encode (t, p - t, fixbase);
+         if (len)
+         {
+            xSemaphoreTake (track_mutex, portMAX_DELAY);
+            tracklen[tracki % MAXTRACK] = len;
+            tracki++;
+            xSemaphoreGive (track_mutex);
+         }
+         if (fixsave == 1)
+            fixdelete = 1;      // Delete the one entry and start with no fixes
+         else if (fixsave)
+            fixdelete = fixsave - 1;
+         else
+            fixdelete = 0;
+         fixsave = -1;
+      }
+   }
+}
+
+void
 app_main ()
 {
    if (balloon)
@@ -1554,128 +1676,5 @@ app_main ()
    }
    revk_task ("NMEA", nmea_task, NULL);
    revk_task ("Log", log_task, NULL);
-   while (1)
-   {                            // main task
-      sleep (1);
-      fixcheck (0);
-      if (gpszda && fixsave >= 0)
-      {                         // Time to save a fix
-         fixnow = 0;
-         // Reduce fixes
-         if (fixdebug)
-            revk_info ("fix", "%u fixes recorded over %u seconds", fixsave, fixend - fixbase);
-         int last = 0;
-         if (fixsave > 0)
-            last = fixsave - 1;
-         unsigned int dlost = 0,
-            dkept = 0;
-         xSemaphoreTake (track_mutex, portMAX_DELAY);
-         if (tracki >= MAXTRACK && tracko < tracki + 1 - MAXTRACK)
-            tracko = tracki + 1 - MAXTRACK;     // Lost as wrapped
-         tracklen[tracki % MAXTRACK] = 0;       // Ensure not sent until we have put in data
-         xSemaphoreGive (track_mutex);
-         uint8_t *t = track[tracki % MAXTRACK],
-            *p = t + 8;
-         if (fixend > fixbase)
-         {
-            *p++ = TAGF_PERIOD; // Time covered
-            *p++ = (fixend - fixbase) >> 8;
-            *p++ = (fixend - fixbase);
-         }
-         if (last && balloon)
-            *p++ = TAGF_BALLOON;        // Alt scale flags
-         else if (last && flight)
-            *p++ = TAGF_FLIGHT;
-         if (!tracki)
-         {                      // First message
-            *p++ = TAGF_FIRST;
-            *p++ = fixbase >> 24;
-            *p++ = fixbase >> 16;
-            *p++ = fixbase >> 8;
-            *p++ = fixbase;
-         }
-         uint8_t fixtag = TAGF_FIX | datafix;
-         unsigned int fixlen = 10;
-         for (int n = 0; n < sizeof (tagf_fix); n++)
-            if (fixtag & (1 << n))
-               fixlen += tagf_fix[n];
-         uint8_t *q = p;
-         if (datamargin)
-            q += 3;
-         q += 2;                // fix tag to be added once we know it
-         unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;  // How many fixes we can fit...
-         if (last >= 2)
-         {                      // Reduce fixes
-            unsigned int m = margincm;
-            while (m < 1000)
-            {
-               last = rdp (last, m, &dlost, &dkept);
-               if (fixdebug && last < fixsave)
-                  revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
-               if (last <= max)
-                  break;
-               m = dkept + retrycm;
-            }
-         }
-         if (last > max)
-            last = max;         // truncate
-         if (last)
-         {
-            if (datamargin)
-            {
-               *p++ = TAGF_MARGIN;
-               *p++ = dlost >> 8;       // Max distance of deleted points
-               *p++ = dlost;
-            }
-            while (((p + 2 + last * fixlen - t) & 0xF) != 4)
-               *p++ = TAGF_PAD; // Pre pad for fix
-            *p++ = fixtag;      // Tag for fixes
-            *p++ = fixlen;
-            for (int n = 1; n <= last; n++)
-            {                   // Don't send first as it is duplicate of last from previous packet
-               fix_t *f = &fix[n];
-               // Base fix data
-               unsigned int v = f->tim; // Time
-               *p++ = v >> 8;
-               *p++ = v;
-               v = f->lat;      // Lat
-               *p++ = v >> 24;
-               *p++ = v >> 16;
-               *p++ = v >> 8;
-               *p++ = v;
-               v = f->lon;      // Lon
-               *p++ = v >> 24;
-               *p++ = v >> 16;
-               *p++ = v >> 8;
-               *p++ = v;
-               // Optional fix data
-               if (fixtag & TAGF_FIX_ALT)
-               {
-                  v = (int) f->alt - (int) (ALTBASE / ascale);  // Alt
-                  *p++ = v >> 8;
-                  *p++ = v;
-               }
-               if (fixtag & TAGF_FIX_SATS)
-                  *p++ = f->sats + (f->dgps ? 0x80 : 0);
-               if (fixtag & TAGF_FIX_HDOP)
-                  *p++ = f->hdop;
-            }
-         }
-         unsigned int len = encode (t, p - t, fixbase);
-         if (len)
-         {
-            xSemaphoreTake (track_mutex, portMAX_DELAY);
-            tracklen[tracki % MAXTRACK] = len;
-            tracki++;
-            xSemaphoreGive (track_mutex);
-         }
-         if (fixsave == 1)
-            fixdelete = 1;      // Delete the one entry and start with no fixes
-         else if (fixsave)
-            fixdelete = fixsave - 1;
-         else
-            fixdelete = 0;
-         fixsave = -1;
-      }
-   }
+   revk_task ("GPS", gps_task, NULL);
 }
