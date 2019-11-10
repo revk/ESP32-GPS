@@ -93,7 +93,6 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       device = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * FROM `%#S` WHERE `ID`=%u", sqldevice, devid));
       if (!sql_fetch_row (device))
          return "Missing device record";
-
       char *login = sql_col (auth, "auth");
       if (!login)
          return "No auth in database";
@@ -160,7 +159,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       unsigned char *p = data + 8;
       unsigned char *e = data + len;
       unsigned int period = 0;
-      time_t last = sql_time_utc (sql_colz (device, "lastupdate"));
+      time_t last = sql_time_utc (sql_colz (device, "lastupdateutc"));
       resend = 0;
       unsigned int lastupdate = 0;
       int margin = -1;
@@ -218,7 +217,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             lastupdate = t + period;
          if (lastupdate < last)
             lastupdate = last;
-         sql_sprintf (&s, "UPDATE `%#S` SET `lastupdate`=%#U", sqldevice, lastupdate);
+         sql_sprintf (&s, "UPDATE `%#S` SET `lastupdateutc`=%#U", sqldevice, lastupdate);
          if (p + 2 <= e && (*p & TAGF_FIX))
          {                      // We have fixes
             unsigned char fixtags = *p++;
@@ -264,11 +263,13 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   p += fixlen;
                }
                if (lastfix >= 0)
-                  sql_sprintf (&s, ",`lastfix`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
+                  sql_sprintf (&s, ",`lastfixutc`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
             }
          }
          if (addr)
             sql_sprintf (&s, ",`ip`=%#s,`port`=%u,`lastip`=now()", addr, port);
+         else if (sql_time (sql_colz (device, "lastip")) < time (0) - 3600)
+            sql_sprintf (&s, ",`ip`=NULL,`port`=NULL,`lastip`=NULL");
          sql_sprintf (&s, " WHERE `ID`=%u", devid);
          sql_safe_query_s (sqlp, &s);
          if (sql_commit (sqlp))
