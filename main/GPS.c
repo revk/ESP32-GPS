@@ -1004,13 +1004,13 @@ encode (uint8_t * buf, unsigned int len, time_t ref)
    return len;
 }
 
-unsigned int
+int
 tracknext (uint8_t * buf)
-{                               // Check if tracking message to be sent, if so, pack and encrypt in to bug and return length, else 0
+{                               // Check if tracking message to be sent, if so, pack and encrypt in to bug and return length, else 0. -1 if try again
    if (tracko >= tracki)
       return 0;                 // nothing to send
    xSemaphoreTake (track_mutex, portMAX_DELAY);
-   unsigned int len = 0;
+   int len = 0;
    if (tracko < tracki)
    {                            // Still something to send now we have semaphore
       if (tracko + MAXTRACK >= tracki)
@@ -1038,7 +1038,7 @@ tracknext (uint8_t * buf)
                } else
                   memcpy (buf, src, len);       // Send message
             } else
-               len = 0;         // No message (too old, so skip)
+               len = -1;        // Try again as we have not caught up
          }
       }
       tracko++;                 // Next
@@ -1154,9 +1154,9 @@ at_task (void *X)
          {                      // Connected, send data as needed
             time_t now = time (0);
             static time_t ka = 0;
-            int len;
+            int len = 0;
             uint8_t buf[MAXDATA];
-            if (!trackmqtt && (len = tracknext (buf)))
+            if (!trackmqtt && (len = tracknext (buf)) > 0)
             {
                char temp[30];
                snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
@@ -1177,8 +1177,8 @@ at_task (void *X)
                   break;        // Failed
                ka = now + keepalive;
             }
-            // Note, this causes 1 second delay between each message, which seems prudent
-            len = atcmd (NULL, 1000, 0);
+            if (len >= 0)
+               len = atcmd (NULL, 1000, 0);     // Note, this causes 1 second delay between each message, which seems prudent
             if (len <= 0)
                continue;
             if (strstr (atbuf, "+PDP: DEACT"))
@@ -1251,11 +1251,11 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      unsigned int len;
+      int len = 0;
       uint8_t buf[MAXDATA];
-      if (trackmqtt && (len = tracknext (buf)))
+      if (trackmqtt && (len = tracknext (buf)) > 0)
          revk_raw ("info", "udp", len, buf, 0);
-      else
+      else if (len >= 0)
          sleep (1);             // Wait for next message to send
    }
 }
