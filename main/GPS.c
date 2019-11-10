@@ -1331,6 +1331,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       h = H;                    // Progress
    fix[0].keep = 1;
    fix[H].keep = 1;
+   uint64_t start = esp_timer_get_time ();
    while (l < H)
    {
       if (l == h)
@@ -1406,6 +1407,8 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       fix[bestn].keep = 1;      // keep this middle point (used to find the next block to process)
       h = bestn;                // First half recursive
    }
+   if (fixdebug)
+      revk_info ("fix", "RDP completed in %uus", (unsigned int) (esp_timer_get_time () - start));
    // Sort
    unsigned int lost = 0,
       kept = 0;
