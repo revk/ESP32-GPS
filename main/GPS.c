@@ -1416,7 +1416,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
                d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
             }
             if (testhdop && p->hdop > HSCALE)
-               d = d * HSCALE / p->hdop;
+               d = d * HSCALE * HSCALE / p->hdop / p->hdop;
             if (bestn >= 0 && d <= best)
                continue;
             bestn = n;          // New furthest
