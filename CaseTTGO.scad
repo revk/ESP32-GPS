@@ -8,7 +8,7 @@ height=75;
 
 // Box thickness reference to component cube
 base=11.4;
-top=4.4;
+top=5;
 
 $fn=48;
 
@@ -17,7 +17,7 @@ module pcb(s=0)
     if(!s)
     {
         cube([width,height,3.2]);  // Crude top components
-        translate([0,6,-1.6-4])cube([width,height-6,4]); // Crude bottom
+        translate([0,6,-1.6-5])cube([width,height-6,5]); // Crude bottom
         translate([0,6,-1.6-11])cube([width,42,11]);
     }
     translate([-1,-1,0])
