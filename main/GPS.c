@@ -1037,9 +1037,9 @@ at_task (void *X)
       sleep (1);
       gpio_set_level (atrst, 1);
       int try = 60;
-      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && strncmp (atbuf, "OK", 2))) && --try)
+      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && strncmp (atbuf, "OK", 2))) && --try > 0)
          sleep (1);
-      if (!try)
+      if (try <= 0)
          continue;              // Cause power cycle and try again
       atcmd ("ATE0", 0, 0);
       atcmd (NULL, 0, 0);
@@ -1072,7 +1072,7 @@ at_task (void *X)
       try = 10;
       while (1)
       {
-         if (!--try)
+         if (--try <= 0)
             break;              // Power cycle
          do
             atcmd (NULL, 1000, 0);
@@ -1083,7 +1083,7 @@ at_task (void *X)
          if (!strstr ((char *) atbuf, "SHUT OK"))
             continue;
          char roam = 0;
-         while (!--try)
+         while (--try > 0)
          {
             sleep (1);
             if (atcmd ("AT+CREG?", 1000, 1000) < 0)
