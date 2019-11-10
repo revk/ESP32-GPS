@@ -111,7 +111,7 @@ time_t gpszda = 0;              // Last ZDA
 unsigned int MAXFIX = 10000;    // Large memory max fix
 #define MAXFIXLOW	5000    // Small memory max fix
 #define	FIXALLOW	 500    // Allow time to process fixes
-#define MAXDATA (1492-28)
+#define MAXDATA (1488-28)	// SIM800 says 1472 allowed but only 1460 works FFS
 
 float ascale = 1.0 / ASCALE;    // Alt scale default
 volatile time_t fixbase = 0;    // Base time for fixtime
@@ -1167,6 +1167,8 @@ at_task (void *X)
                   break;        // Failed
                ka = now + keepalive;
             }
+            if (len < 0)
+               continue;        // try again
             if (!trackmqtt && keepalive && now > ka)
             {                   // Keep alives
                if (atcmd ("AT+CIPSEND=1", 1000, 0) < 0 || !strstr (atbuf, ">"))
@@ -1177,8 +1179,7 @@ at_task (void *X)
                   break;        // Failed
                ka = now + keepalive;
             }
-            if (len >= 0)
-               len = atcmd (NULL, 1000, 0);     // Note, this causes 1 second delay between each message, which seems prudent
+            len = atcmd (NULL, 1000, 0);        // Note, this causes 1 second delay between each message, which seems prudent
             if (len <= 0)
                continue;
             if (strstr (atbuf, "+PDP: DEACT"))
