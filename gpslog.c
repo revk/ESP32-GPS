@@ -215,7 +215,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                fprintf (stderr, "Missing %u seconds, resend\n", (unsigned int) (t - last));
             resend = (last ? : 1);      // Missing data
          }
-      } else if (t < last)
+      } else
       {                         // Process
          sql_string_t s = { };
          if (!lastupdate)
@@ -278,13 +278,16 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             sql_sprintf (&s, ",`ip`=NULL,`port`=NULL,`lastip`=NULL");
          sql_sprintf (&s, " WHERE `ID`=%u", devid);
          sql_safe_query_s (sqlp, &s);
-         sql_sprintf (&s, "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`period`=%u,`received`=NOW(),`fixes`=%u", sqllog, devid, t,
-                      period, fixes);
-         if (addr)
-            sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
-         sql_safe_query_s (sqlp, &s);
-         if (sql_commit (sqlp))
-            return "Bad SQL commit";
+         if (t < last)
+         {
+            sql_sprintf (&s, "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`period`=%u,`received`=NOW(),`fixes`=%u", sqllog, devid,
+                         t, period, fixes);
+            if (addr)
+               sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
+            sql_safe_query_s (sqlp, &s);
+            if (sql_commit (sqlp))
+               return "Bad SQL commit";
+         }
       }
       return NULL;
    }
