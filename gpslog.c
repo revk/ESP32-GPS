@@ -264,7 +264,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             }
          }
          if (addr)
-            sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
+            sql_sprintf (&s, ",`ip`=%#s,`port`=%u,`lastip`=now()", addr, port);
          sql_sprintf (&s, " WHERE `ID`=%u", devid);
          sql_safe_query_s (sqlp, &s);
          if (sql_commit (sqlp))
