@@ -54,7 +54,11 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
 {
    time_t resend = 0;
    if (len == 1 && *data == VERSION)
+   {
+      if (addr)
+         sql_safe_query_free (sqlp, sql_printf ("UPDATE `%#S` SET `lastip`=now() WHERE `ip`=%#s AND `port`=%u", addr, port));
       return resend;            // keep alive
+   }
    if (len < 8 + 16)
    {
       warnx ("Bad UDP len %d", len);
