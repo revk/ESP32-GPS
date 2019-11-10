@@ -559,18 +559,18 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 60000))
+       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 65000))
    {
       if (fixdebug)
       {
          if (fixnow)
-            revk_info ("fix", "Fix forced");
-         if (fixnext > MAXFIX - 100)
-            revk_info ("fix", "Fix space full %d", fixnext);
-         if (now - fixbase >= interval)
-            revk_info ("fix", "Fix time expired %u", (unsigned int) (now - fixbase));
-         if (fixtim >= 60000)
-            revk_info ("fix", "Fix tim too high %u", fixtim);
+            revk_info ("fix", "Fix forced (%u)", fixnext);
+         else if (fixnext > MAXFIX - 100)
+            revk_info ("fix", "Fix space full (%u)", fixnext);
+         else if (now - fixbase >= interval)
+            revk_info ("fix", "Fix time expired %u (%u)", (unsigned int) (now - fixbase), fixnext);
+         else if (fixtim >= 65000)
+            revk_info ("fix", "Fix tim too high %u (%u)", fixtim, fixnext);
       }
       fixend = time (0);
       fixsave = fixnext;        // Save the fixes we have so far (more may accumulate whilst saving)
@@ -1391,7 +1391,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
                float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
                d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
             }
-            if (testhdop && p->hdop)
+            if (testhdop && p->hdop > HSCALE)
                d = d * HSCALE / p->hdop;
             if (bestn >= 0 && d <= best)
                continue;
