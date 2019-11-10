@@ -241,7 +241,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   sql_string_t f = { };
                   sql_sprintf (&f, "REPLACE INTO `%#S` SET `device`=%u,`utc`='%U." TPART
                                "',`lat`=%.8lf,`lon`=%.8lf", sqlgps, devid, t + (tim / TSCALE),
-                               tim % TSCALE, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE, margin / 100);
+                               tim % TSCALE, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
                   if (fixtags & TAGF_FIX_ALT)
                   {
                      short alt = (q[0] << 8) + q[1];
@@ -254,12 +254,12 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      sql_sprintf (&f, ",`sats`=%u", *q & 0x7F);
                      q++;
                   }
-                  if (fixtags & TAGF_FIX_HDOP)
+                  if ((fixtags & TAGF_FIX_HDOP) && *q)
                   {
                      sql_sprintf (&f, ",`hdop`=%u." HPART, *q / HSCALE, *q % HSCALE);
                      q++;
                   }
-                  if (margin >= 0)
+                  if (margin >= 0 && margin < 65536)
                      sql_sprintf (&f, ",`margin`=%u." MPART, margin / MSCALE, margin % MSCALE);
                   sql_safe_query_s (sqlp, &f);
                   p += fixlen;
