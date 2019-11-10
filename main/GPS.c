@@ -1156,9 +1156,13 @@ at_task (void *X)
             }
             // Note, this causes 1 second delay between each message, which seems prudent
             len = atcmd (NULL, 1000, 0);
+            if (len <= 0)
+               continue;
+            if (strstr (atbuf, "+PDP: DEACT"))
+               break;
             if (!auth || *auth <= 3 + 16)
             {
-               revk_error (TAG, "No auth to send fix");
+               revk_error (TAG, "No auth to decode message");
                len = 0;         // No auth
             }
             // Note, it seems to truncate by a byte, FFS
