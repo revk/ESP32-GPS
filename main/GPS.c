@@ -568,7 +568,7 @@ fixcheck (unsigned int fixtim)
          if (fixnext > MAXFIX - 100)
             revk_info ("fix", "Fix space full %d", fixnext);
          if (now - fixbase >= interval)
-            revk_info ("fix", "Fix time expired %u", now - fixbase);
+            revk_info ("fix", "Fix time expired %u", (unsigned int) (now - fixbase));
          if (fixtim > 60000)
             revk_info ("fix", "Fix tim too high %u", fixtim);
       }
