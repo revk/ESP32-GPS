@@ -85,7 +85,7 @@ CREATE TABLE `gps` (
   KEY `utc` (`utc`),
   KEY `device` (`device`),
   CONSTRAINT `gps_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=251082 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=252587 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -107,7 +107,7 @@ CREATE TABLE `log` (
   PRIMARY KEY (`ID`),
   KEY `device` (`device`),
   CONSTRAINT `log_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=43 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -119,4 +119,4 @@ CREATE TABLE `log` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-11-10 15:12:06
+-- Dump completed on 2019-11-10 15:23:19
