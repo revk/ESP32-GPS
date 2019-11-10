@@ -22,7 +22,7 @@ module pcb(s=0)
     }
     translate([-1,-1,0])
     { // 1mm ref edge of PCB vs SVG design
-        usbc(s,0,60,-90);
+        usbc(s,0,62,-90);
         translate([20,64,0])
         {
             if(!s)cube([20,3,4]);
