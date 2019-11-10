@@ -47,6 +47,7 @@ const char *sqlpassword = NULL;
 const char *sqlconffile = NULL;
 const char *sqlgps = "gps";
 const char *sqldevice = "device";
+const char *sqllog = "log";
 const char *sqlauth = "auth";
 
 time_t
@@ -163,6 +164,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       resend = 0;
       unsigned int lastupdate = 0;
       int margin = -1;
+      unsigned int fixes = 0;
       float ascale = 1.0 / ASCALE;
       sql_transaction (sqlp);
       while (p < e && !(*p & TAGF_FIX))
@@ -261,6 +263,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      sql_sprintf (&f, ",`margin`=%u.%02u", margin / 100, margin % 100);
                   sql_safe_query_s (sqlp, &f);
                   p += fixlen;
+                  fixes++;
                }
                if (lastfix >= 0)
                   sql_sprintf (&s, ",`lastfixutc`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
@@ -271,6 +274,11 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          else if (sql_time (sql_colz (device, "lastip")) < time (0) - 3600)
             sql_sprintf (&s, ",`ip`=NULL,`port`=NULL,`lastip`=NULL");
          sql_sprintf (&s, " WHERE `ID`=%u", devid);
+         sql_safe_query_s (sqlp, &s);
+         sql_sprintf (&s, "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`period`=%u,`received`=NOW(),`fixes`=%u", sqllog, devid, t,
+                      period, fixes);
+         if (addr)
+            sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
          sql_safe_query_s (sqlp, &s);
          if (sql_commit (sqlp))
             return "Bad SQL commit";

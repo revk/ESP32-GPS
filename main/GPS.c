@@ -40,8 +40,6 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u32(interval,600)\
 	u32(keepalive,0)\
 	u32(secondcm,10)\
-	u32(margincm,10)\
-	u32(retrycm,10)\
 	u32(altscale,10)\
 	s(apn,"mobiledata")\
 	s(loghost,"mqtt.revk.uk")\
@@ -124,6 +122,7 @@ struct fix_s
    int lat;                     // min*DSCALE
    int lon;                     // min*DSCALE
    uint16_t tim;                // Time (TSCALE)
+   uint16_t dist;               // RDP distance
    int16_t alt;                 // Alt (ascale)
    uint8_t sats:6;              // Number of sats
    uint8_t dgps:1;              // DGPS
@@ -560,7 +559,7 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= MAXFIX - 300))
+       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 60000))
    {
       if (fixdebug)
       {
@@ -570,7 +569,7 @@ fixcheck (unsigned int fixtim)
             revk_info ("fix", "Fix space full %d", fixnext);
          if (now - fixbase >= interval)
             revk_info ("fix", "Fix time expired %u", now - fixbase);
-         if (fixtim > MAXFIX - 300)
+         if (fixtim > 60000)
             revk_info ("fix", "Fix tim too high %u", fixtim);
       }
       fixend = time (0);
@@ -677,6 +676,7 @@ nmea (char *s)
             if (fixnext < MAXFIX)
             {
                fix[fixnext].keep = 0;
+               fix[fixnext].dist = 0;
                fix[fixnext].tim = fixtim;
                fix[fixnext].alt = fixalt;
                fix[fixnext].lat = fixlat;
@@ -697,8 +697,7 @@ nmea (char *s)
          unsigned int n,
            p = 0;
          int diff = fixend - fixbase;
-         if (fixdebug)
-            revk_info ("fix", "Fix deleted %d, adjust %d", fixdelete, diff);
+         //if (fixdebug) revk_info ("fix", "Fix deleted %d, adjust %d", fixdelete, diff);
          for (n = fixdelete; n < fixnext; n++)
          {
             fix[p] = fix[n];
@@ -1305,16 +1304,33 @@ nmea_task (void *z)
    }
 }
 
+int
+fixdistcmp (const void *a, const void *b)
+{
+   if (((fix_t *) a)->dist < ((fix_t *) b)->dist)
+      return 1;
+   if (((fix_t *) a)->dist > ((fix_t *) b)->dist)
+      return -1;
+   return 0;
+}
+
+int
+fixtimcmp (const void *a, const void *b)
+{
+   if (((fix_t *) a)->tim < ((fix_t *) b)->tim)
+      return -1;
+   if (((fix_t *) a)->tim > ((fix_t *) b)->tim)
+      return 1;
+   return 0;
+}
+
 unsigned int
-rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *dkeptp)
+rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkeptp)
 {                               // Reduce, non recursive
-   float dlost = 0,
-      dkept = 0;
    unsigned int l = 0,
       h = H;                    // Progress
    fix[0].keep = 1;
    fix[H].keep = 1;
-   float marginsq = (float) margincm * (float) margincm / 10000.0;
    while (l < H)
    {
       if (l == h)
@@ -1383,35 +1399,36 @@ rdp (unsigned int H, unsigned int margincm, unsigned int *dlostp, unsigned int *
             best = d;
          }
       }
-      if (best < marginsq)
-      {                         // All points are within margin - so all to be pruned
-         if (best > dlost)
-            dlost = best;
-         for (n = l + 1; n < h; n++)
-            fix[n].tim = 0;
-         l = h;                 // Next block
-         continue;
-      }
-      if (!dkept || best < dkept)
-         dkept = best;
-      fix[bestn].keep = 1;      // keep this middle point
+      unsigned int dist = ceil (sqrt (best) * 100);
+      if (dist > 65535)
+         dist = 65535;
+      fix[bestn].dist = dist;
+      fix[bestn].keep = 1;      // keep this middle point (used to find the next block to process)
       h = bestn;                // First half recursive
    }
-   // Pack
-   unsigned int i,
-     o = 0;
-   for (i = 0; i <= H; i++)
-      if (fix[i].keep)
-      {
-         fix[o] = fix[i];
-         fix[o].keep = 0;
-         o++;
-      }
+   // Sort
+   unsigned int lost = 0,
+      kept = 0;
+   if (H > 2)
+   {
+      qsort (fix + 1, H - 1, sizeof (*fix), fixdistcmp);
+      int n = H - 1;
+      if (n > max)
+         n = max;
+      lost = fix[n].dist;       // Largest lost
+      while (n > 1 && fix[n - 1].dist == lost)
+         n--;                   // Same as largest lost, remove..
+      kept = fix[n - 1].dist;   // Smallest kept
+      if (n < H)
+         fix[n] = fix[H];
+      H = n;
+      qsort (fix + 1, H - 1, sizeof (*fix), fixtimcmp);
+   }
    if (dlostp)
-      *dlostp = ceil (sqrt (dlost) * 100.0);
+      *dlostp = lost;
    if (dkeptp)
-      *dkeptp = floor (sqrt (dkept) * 100.0);
-   return o - 1;
+      *dkeptp = kept;
+   return H;
 }
 
 void
@@ -1425,8 +1442,6 @@ gps_task (void *z)
       {                         // Time to save a fix
          fixnow = 0;
          // Reduce fixes
-         if (fixdebug)
-            revk_info ("fix", "%u fixes recorded over %u seconds", fixsave, fixend - fixbase);
          int last = 0;
          if (fixsave > 0)
             last = fixsave - 1;
@@ -1467,19 +1482,10 @@ gps_task (void *z)
             q += 3;
          q += 2;                // fix tag to be added once we know it
          unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;  // How many fixes we can fit...
-         if (last >= 2)
-         {                      // Reduce fixes
-            unsigned int m = margincm;
-            while (m < 1000)
-            {
-               last = rdp (last, m, &dlost, &dkept);
-               if (fixdebug && last < fixsave)
-                  revk_info ("fix", "Reduced to %u fixes at %ucm", last, dlost);
-               if (last <= max)
-                  break;
-               m = dkept + retrycm;
-            }
-         }
+         last = rdp (last, max, &dlost, &dkept);
+         if (fixdebug)
+            revk_info ("fix", "Logging %u/%u from %u fixes at %ucm/%ucm/%ucm covering %u seconds", last, max, fixsave,
+                       fix[1].dist, dkept, dlost, fixend - fixbase);
          if (last > max)
             last = max;         // truncate
          if (last)
@@ -1603,7 +1609,6 @@ app_main ()
       revk_error ("malloc", "fix failed");
       return;
    }
-   revk_error(TAG,"fix=%d",sizeof(*fix));
    if (oledsda >= 0 && oledscl >= 0)
       oled_start (1, oledaddress, oledscl, oledsda, oledflip);
    oled_set_contrast (oledcontrast);

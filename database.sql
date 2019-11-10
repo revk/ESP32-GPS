@@ -85,7 +85,29 @@ CREATE TABLE `gps` (
   KEY `utc` (`utc`),
   KEY `device` (`device`),
   CONSTRAINT `gps_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=238274 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=251082 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `log`
+--
+
+DROP TABLE IF EXISTS `log`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `log` (
+  `ID` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `device` int(10) unsigned NOT NULL,
+  `received` datetime NOT NULL,
+  `utc` datetime NOT NULL,
+  `period` int(10) unsigned DEFAULT NULL,
+  `fixes` int(10) unsigned DEFAULT NULL,
+  `ip` varchar(39) DEFAULT NULL,
+  `port` int(5) DEFAULT NULL,
+  PRIMARY KEY (`ID`),
+  KEY `device` (`device`),
+  CONSTRAINT `log_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -97,4 +119,4 @@ CREATE TABLE `gps` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-11-10 12:18:10
+-- Dump completed on 2019-11-10 15:12:06
