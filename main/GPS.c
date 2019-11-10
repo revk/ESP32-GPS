@@ -1523,7 +1523,7 @@ gps_task (void *z)
                *p++ = dlost >> 8;       // Max distance of deleted points
                *p++ = dlost;
             }
-            while (((p + 2 + last * fixlen - t) & 0xF) != 4)
+            while (((p + 2 + last * fixlen - t) & 0xF) != 8)
                *p++ = TAGF_PAD; // Pre pad for fix
             *p++ = fixtag;      // Tag for fixes
             *p++ = fixlen;

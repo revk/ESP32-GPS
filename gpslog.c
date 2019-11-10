@@ -98,6 +98,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       if (!login)
          return "No auth in database";
       len = 8 + ((len - 8) / 16 * 16);  // Lose trailing padding
+      char badmac = 0;
       {                         // HMAC
          len -= 16;             // Remove HMAC
          int keylen = strlen (login) / 2;
@@ -113,8 +114,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          {
             if (debug)
             {
-               fprintf (stderr, "Data:");
-               for (int n = 0; n < len; n++)
+               fprintf (stderr, "Data(%u):", len + 16);
+               for (int n = 0; n < len + 16; n++)
                   fprintf (stderr, " %02X", data[n]);
                fprintf (stderr, "\nMAC:");
                for (int n = 0; n < 16; n++)
@@ -124,7 +125,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   fprintf (stderr, " %02X", data[len + n]);
                fprintf (stderr, "\n");
             }
-            return "Bad MAC";
+            badmac = 1;
          }
       }
       // Decrypt
@@ -157,6 +158,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             fprintf (stderr, " %02X", data[n]);
          fprintf (stderr, "\n");
       }
+      if (badmac)
+         return "Bad MAC";
       unsigned char *p = data + 8;
       unsigned char *e = data + len;
       unsigned int period = 0;
@@ -368,7 +371,7 @@ udp_task (void)
    sql_real_connect (&sql, sqlhostname, sqlusername, sqlpassword, sqldatabase, 0, NULL, 0, 1, sqlconffile);
    while (1)
    {
-      unsigned char rx[1500];
+      unsigned char rx[2000];
       struct sockaddr_in6 from;
       socklen_t fromlen = sizeof (from);
       size_t len = recvfrom (s, rx, sizeof (rx) - 1, 0, (struct sockaddr *) &from, &fromlen);
