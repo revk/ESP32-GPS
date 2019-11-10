@@ -1069,7 +1069,7 @@ at_task (void *X)
       }
       atcmd ("AT+CBC", 0, 0);
       time_t next = 0;
-      try = 10;
+      try = 50;
       while (1)
       {
          if (--try <= 0)
@@ -1125,7 +1125,7 @@ at_task (void *X)
          }
          if (!strstr ((char *) atbuf, "CONNECT OK"))
             continue;
-         try = 10;
+         try = 50;
          revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
          while (1)
          {                      // Connected, send data as needed
