@@ -108,8 +108,9 @@ char imei[22] = { };
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
 
-unsigned int MAXFIX = 10000;
-#define MAXFIXLOW	5000
+unsigned int MAXFIX = 10000;	// Large memory max fix
+#define MAXFIXLOW	5000	// Small memory max fix
+#define	FIXALLOW	1000	// Yes, can take over 80 seconds for RDP if all the same
 #define MAXDATA (1492-28)
 
 float ascale = 1.0 / ASCALE;    // Alt scale default
@@ -135,8 +136,8 @@ volatile int fixsave = -1;      // Time to save fixes (-1 means not, so we do a 
 volatile int fixdelete = -1;    // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
 volatile char fixnow = 0;       // Force fix
 
-unsigned int MAXTRACK = 1024;
-#define	MAXTRACKLOW	16
+unsigned int MAXTRACK = 1024;	// Large memory history
+#define	MAXTRACKLOW	16	// Small memory history
 uint8_t **track = NULL;
 int *tracklen = NULL;
 
@@ -559,13 +560,13 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - 100 || (now - fixbase >= interval) || fixtim >= 65000))
+       && (fixnow || fixnext > MAXFIX - FIXALLOW || (now - fixbase >= interval) || fixtim >= 65000))
    {
       if (fixdebug)
       {
          if (fixnow)
             revk_info ("fix", "Fix forced (%u)", fixnext);
-         else if (fixnext > MAXFIX - 100)
+         else if (fixnext > MAXFIX - FIXALLOW)
             revk_info ("fix", "Fix space full (%u)", fixnext);
          else if (now - fixbase >= interval)
             revk_info ("fix", "Fix time expired %u (%u)", (unsigned int) (now - fixbase), fixnext);
