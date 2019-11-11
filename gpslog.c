@@ -82,14 +82,6 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       devid = atoi (sql_colz (auth, "device"));
       if (!devid)
          return "Missing device";
-      if (sql_col (auth, "replaces"))
-      {                         // New key in use, delete old
-         sql_transaction (sqlp);
-         sql_safe_query_free (sqlp, sql_printf ("UPDATE `%#S` SET `replaces`=NULL WHERE `ID`=%u", sqlauth, id));
-         sql_safe_query_free (sqlp, sql_printf ("DELETE FROM `%#S` WHERE `ID`=%#s", sqlauth, sql_col (auth, "replaces")));
-         if (sql_commit (sqlp))
-            warnx ("Commit error");
-      }
       device = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * FROM `%#S` WHERE `ID`=%u", sqldevice, devid));
       if (!sql_fetch_row (device))
          return "Missing device record";
@@ -275,6 +267,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             sql_sprintf (&s, ",`ip`=%#s,`port`=%u,`lastip`=now()", addr, port);
          else if (sql_time (sql_colz (device, "lastip")) < time (0) - 3600)
             sql_sprintf (&s, ",`ip`=NULL,`port`=NULL,`lastip`=NULL");
+         if (atoi (sql_colz (device, "auth")) != id)
+            sql_sprintf (&s, ",`auth`=%u", id);
          sql_sprintf (&s, " WHERE `ID`=%u", devid);
          sql_safe_query_s (sqlp, &s);
          sql_sprintf (&s, "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`period`=%u,`received`=NOW(),`fixes`=%u", sqllog, devid, t,
@@ -284,6 +278,11 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          if (margin >= 0 && margin < 65536)
             sql_sprintf (&s, ",`margin`=%u." MPART, margin / MSCALE, margin % MSCALE);
          sql_safe_query_s (sqlp, &s);
+         if (sql_col (auth, "replaces"))
+         {                      // New key in use, delete old
+            sql_safe_query_free (sqlp, sql_printf ("UPDATE `%#S` SET `replaces`=NULL WHERE `ID`=%u", sqlauth, id));
+            sql_safe_query_free (sqlp, sql_printf ("DELETE FROM `%#S` WHERE `ID`=%#s", sqlauth, sql_col (auth, "replaces")));
+         }
          if (sql_commit (sqlp))
             return "Bad SQL commit";
       }

@@ -34,7 +34,7 @@ CREATE TABLE `auth` (
   KEY `auth_ibfk_1` (`replaces`),
   CONSTRAINT `auth_ibfk_1` FOREIGN KEY (`replaces`) REFERENCES `auth` (`ID`) ON DELETE CASCADE,
   CONSTRAINT `auth_ibfk_2` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=50 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=52 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -47,6 +47,7 @@ DROP TABLE IF EXISTS `device`;
 CREATE TABLE `device` (
   `ID` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `tag` varchar(6) DEFAULT NULL,
+  `auth` int(10) unsigned DEFAULT NULL,
   `lastupdateutc` datetime DEFAULT NULL,
   `lastfixutc` datetime DEFAULT NULL,
   `lastip` datetime DEFAULT NULL,
@@ -59,7 +60,9 @@ CREATE TABLE `device` (
   `upgrade` enum('N','Y') NOT NULL DEFAULT 'N',
   PRIMARY KEY (`ID`),
   UNIQUE KEY `device` (`tag`),
-  KEY `ip` (`ip`,`port`)
+  KEY `ip` (`ip`,`port`),
+  KEY `auth` (`auth`),
+  CONSTRAINT `device_ibfk_1` FOREIGN KEY (`auth`) REFERENCES `auth` (`ID`)
 ) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -79,13 +82,12 @@ CREATE TABLE `gps` (
   `alt` decimal(8,1) DEFAULT NULL,
   `sats` int(2) DEFAULT NULL,
   `hdop` decimal(5,1) DEFAULT NULL,
-  `margin` decimal(8,2) DEFAULT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `utc_2` (`utc`,`device`),
   KEY `utc` (`utc`),
   KEY `device` (`device`),
   CONSTRAINT `gps_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=252587 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=269146 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -104,10 +106,11 @@ CREATE TABLE `log` (
   `fixes` int(10) unsigned DEFAULT NULL,
   `ip` varchar(39) DEFAULT NULL,
   `port` int(5) DEFAULT NULL,
+  `margin` decimal(8,3) DEFAULT NULL,
   PRIMARY KEY (`ID`),
   KEY `device` (`device`),
   CONSTRAINT `log_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=43 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=993 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -119,4 +122,4 @@ CREATE TABLE `log` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-11-10 15:23:19
+-- Dump completed on 2019-11-11  9:32:40
