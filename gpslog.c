@@ -646,10 +646,18 @@ main (int argc, const char *argv[])
                         sql_sprintf (&s, ",`replaces`=%u", authid);
                      sql_safe_query_s (&sql, &s);
                      authid = sql_insert_id (&sql);
-                     new = 1;
-                     if (sql_commit (&sql))
-                        warnx ("%s commit failed", tag);
-
+                     if (authid > 0xFFFFFF
+                         && sql_query_free (&sql,
+                                            sql_printf ("UPDATE `%#S` SET `ID`=%u WHERE `ID`=%u", sqlauth, authid & 0xFFFFFF,
+                                                        authid)))
+                        sql_safe_rollback (&sql);       // Really should not happen
+                     else
+                     {
+                        if (sql_commit (&sql))
+                           warnx ("%s commit failed", tag);
+                        else
+                           new = 1;
+                     }
                   }
                   close (r);
                }
