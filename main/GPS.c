@@ -395,12 +395,24 @@ atcmd (const void *cmd, int t1, int t2)
       if (l >= 0)
       {
          atbuf[l] = 0;
-         if (l && atdebug)
-            revk_info ("atrx", "%s", atbuf);
       } else
          atbuf[0] = 0;
-      if (!strncmp (atbuf, "Call Ready", 10) || !strncmp (atbuf, "SMS Ready", 9))
-         continue;
+      char *p = atbuf;
+      while (*p && *p < ' ')
+         p++;
+      char *e = p;
+      while (*e && *e >= ' ')
+         e++;
+      while (*e && *e < ' ')
+         e++;
+      if (!*e && (!strncmp (p, "Call Ready", 10) || !strncmp (p, "SMS Ready", 9) || !strncmp (p, "+CFUN:", 6)))
+      {
+         if (atdebug)
+            revk_info ("ignore", "%s", atbuf);
+         continue;              // Skip known single line async messages we can ignore
+      }
+      if (l && atdebug)
+         revk_info ("atrx", "%s", atbuf);
       break;
    }
    xSemaphoreGive (at_mutex);
