@@ -25,6 +25,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s8(gpstx,32)	\
 	s8(gpsfix,25)	\
 	s8(gpsen,26)	\
+	u16(mtu,1488)	\
       	bl(atdebug,N)    \
         s8(atuart,2)	\
         u32(atbaud,115200)	\
@@ -64,6 +65,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(testhdop,N)	\
 
 #define u32(n,d)	uint32_t n;
+#define u16(n,d)	uint16_t n;
 #define s8(n,d)	int8_t n;
 #define u8(n,d)	uint8_t n;
 #define b(n,d) uint8_t n;
@@ -71,6 +73,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 #define h(n) uint8_t *n;
 #define s(n,d) char * n;
 settings
+#undef u16
 #undef u32
 #undef s8
 #undef u8
@@ -111,7 +114,7 @@ time_t gpszda = 0;              // Last ZDA
 unsigned int MAXFIX = 10000;    // Large memory max fix
 #define MAXFIXLOW	5000    // Small memory max fix
 #define	FIXALLOW	 500    // Allow time to process fixes
-#define MAXDATA (1488-28)	// SIM800 says 1472 allowed but only 1460 works FFS
+#define MAXDATA (mtu-28)        // SIM800 says 1472 allowed but only 1460 works FFS
 
 float ascale = 1.0 / ASCALE;    // Alt scale default
 volatile time_t fixbase = 0;    // Base time for fixtime
@@ -975,6 +978,7 @@ encode (uint8_t * buf, unsigned int len, time_t ref)
 {
    if (!auth || *auth <= 3 + 16)
       return 0;
+   // Header
    buf[0] = VERSION;
    buf[1] = auth[1];
    buf[2] = auth[2];
@@ -983,23 +987,22 @@ encode (uint8_t * buf, unsigned int len, time_t ref)
    buf[5] = ref >> 16;
    buf[6] = ref >> 8;
    buf[7] = ref;
-   while ((len & 0xF) != 8)
+   while ((len & 0xF) != HEADLEN)
       buf[len++] = TAGF_PAD;
    {                            // Encrypt
-      uint8_t iv[16];
-      memcpy (iv, buf, 8);
-      memcpy (iv + 8, buf, 8);
+      uint8_t iv[16] = { };
+      memcpy (iv, buf, HEADLEN > sizeof (iv) ? sizeof (iv) : HEADLEN);
       esp_aes_context ctx;
       esp_aes_init (&ctx);
       esp_aes_setkey (&ctx, auth + 1 + 3, 128);
-      esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - 8, iv, buf + 8, buf + 8);
+      esp_aes_crypt_cbc (&ctx, ESP_AES_ENCRYPT, len - HEADLEN, iv, buf + HEADLEN, buf + HEADLEN);
       esp_aes_free (&ctx);
    }
    {                            // HMAC
       uint8_t mac[32];
       hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, buf, len, mac);
-      memcpy (buf + len, mac, 16);
-      len += 16;
+      memcpy (buf + len, mac, MACLEN);
+      len += MACLEN;
    }
    return len;
 }
@@ -1190,34 +1193,35 @@ at_task (void *X)
                len = 0;         // No auth
             }
             // Note, it seems to truncate by a byte, FFS
-            if (len >= 40 && *atbuf == VERSION && atbuf[1] == auth[1] && atbuf[2] == auth[2] && atbuf[3] == auth[3])
+            if (len >= HEADLEN + 16 + MACLEN && *atbuf == VERSION && atbuf[1] == auth[1] && atbuf[2] == auth[2]
+                && atbuf[3] == auth[3])
             {                   // Rx?
                time_t ts = (atbuf[4] << 24) + (atbuf[5] << 16) + (atbuf[6] << 8) + atbuf[7];
                if (ts <= now + 5 && ts > now - 60)
                {
-                  len = 8 + (len - 8) / 16 * 16;        // AES block size
+                  len = HEADLEN + MACLEN + (len - HEADLEN - MACLEN) / 16 * 16;  // AES block size
                   {             // HMAC
-                     len -= 16;
+                     len -= MACLEN;
                      uint8_t mac[32];
                      hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, (void *) atbuf, len, mac);
-                     if (memcmp (mac, atbuf + len, 16))
+                     if (memcmp (mac, atbuf + len, MACLEN))
                      {
                         revk_error (TAG, "Bad HMAC (%u bytes)", len);
                         len = 0;        // bad HMAC
                      }
                   }
                   {             // Decrypt
-                     uint8_t iv[16];
-                     memcpy (iv, atbuf, 8);
-                     memcpy (iv + 8, atbuf, 8);
+                     uint8_t iv[16] = { };
+                     memcpy (iv, atbuf, HEADLEN > sizeof (iv) ? sizeof (iv) : HEADLEN);
                      esp_aes_context ctx;
                      esp_aes_init (&ctx);
                      esp_aes_setkey (&ctx, auth + 1 + 3, 128);
-                     esp_aes_crypt_cbc (&ctx, ESP_AES_DECRYPT, len - 8, iv, (void *) atbuf + 8, (void *) atbuf + 8);
+                     esp_aes_crypt_cbc (&ctx, ESP_AES_DECRYPT, len - HEADLEN, iv, (void *) atbuf + HEADLEN,
+                                        (void *) atbuf + HEADLEN);
                      esp_aes_free (&ctx);
                   }
                   {             // Process
-                     uint8_t *p = (void *) atbuf + 8;
+                     uint8_t *p = (void *) atbuf + HEADLEN;
                      uint8_t *e = (void *) atbuf + len;
                      while (p < e)
                      {          // Process tags
@@ -1593,10 +1597,12 @@ app_main ()
 #define bl(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n) revk_register(#n,0,0,&n,NULL,SETTING_BINARY|SETTING_HEX);
 #define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define u16(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s(n,d) revk_register(#n,0,0,&n,d,0);
    settings;
+#undef u16
 #undef u32
 #undef s8
 #undef u8
@@ -1604,6 +1610,8 @@ app_main ()
 #undef b
 #undef h
 #undef s
+   if (mtu > 1488)
+      mtu = 1488;
    // Memory
    track = heap_caps_malloc (sizeof (*track) * MAXTRACK, MALLOC_CAP_SPIRAM);
    if (!track)
