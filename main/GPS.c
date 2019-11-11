@@ -2,6 +2,11 @@
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 static const char TAG[] = "GPS";
 
+// TODO
+// Settings via UDP?
+// Better roaming operator selection? Maybe signal strength, or retries of each?
+// AT command wait for OK/ERROR
+
 #include "revk.h"
 #include <esp32/aes.h>
 #include <driver/i2c.h>
@@ -43,6 +48,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u32(secondcm,10)\
 	u32(altscale,10)\
 	s(apn,"mobiledata")\
+	s(operator,"O2")\
 	s(loghost,"mqtt.revk.uk")\
 	u32(logport,6666)\
 	h(auth)		\
@@ -353,7 +359,9 @@ gpscmd (const char *fmt, ...)
 char *atbuf = NULL;
 int
 atcmd (const void *cmd, int t1, int t2)
-{                               // TODO process response cleanly...
+{
+   if (attx < 0 || atrx < 0)
+      return 0;
    xSemaphoreTake (at_mutex, portMAX_DELAY);
    if (cmd)
    {
@@ -362,32 +370,39 @@ atcmd (const void *cmd, int t1, int t2)
       if (atdebug)
          revk_info ("attx", "%s", cmd);
    }
-   int l = uart_read_bytes (atuart, (void *) atbuf, 1, (t1 ? : 100) / portTICK_PERIOD_MS);
-   if (l > 0)
-   {                            // initial response started
-      int l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
-      if (l2 > 0 && t2)
-      {                         // End of initial response
-         l += l2;
-         l2 = uart_read_bytes (atuart, (void *) atbuf + l, 1, t2 / portTICK_PERIOD_MS);
-         if (l2 > 0)
-         {                      // Secondary response started
-            l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
-            if (l2 > 0)
-               l += l2;         // End of secondary response
-            else
-               l = l2;
-         }
-      } else
-         l = l2;
-   }
-   if (l >= 0)
+   int l = 0;
+   while (1)
    {
-      atbuf[l] = 0;
-      if (l && atdebug)
-         revk_info ("atrx", "%s", atbuf);
-   } else
-      atbuf[0] = 0;
+      l = uart_read_bytes (atuart, (void *) atbuf, 1, (t1 ? : 100) / portTICK_PERIOD_MS);
+      if (l > 0)
+      {                         // initial response started
+         int l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
+         if (l2 > 0 && t2)
+         {                      // End of initial response
+            l += l2;
+            l2 = uart_read_bytes (atuart, (void *) atbuf + l, 1, t2 / portTICK_PERIOD_MS);
+            if (l2 > 0)
+            {                   // Secondary response started
+               l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
+               if (l2 > 0)
+                  l += l2;      // End of secondary response
+               else
+                  l = l2;
+            }
+         } else
+            l = l2;
+      }
+      if (l >= 0)
+      {
+         atbuf[l] = 0;
+         if (l && atdebug)
+            revk_info ("atrx", "%s", atbuf);
+      } else
+         atbuf[0] = 0;
+      if (!strncmp (atbuf, "Call Ready", 10) || !strncmp (atbuf, "SMS Ready", 9))
+         continue;
+      break;
+   }
    xSemaphoreGive (at_mutex);
    return l;
 }
@@ -414,7 +429,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
 {
    if (!strcmp (tag, "test"))
    {
-      trackmqtt = 0;            // Switch to mobile
+      trackmqtt = 1 - trackmqtt;        // Switch for testing
       return "";
    }
    if (!strcmp (tag, "contrast"))
@@ -1124,6 +1139,27 @@ at_task (void *X)
             if (strstr ((char *) atbuf, "+CREG: 0,1"))
                break;
          }
+         if (atcmd ("AT+COPS=?", 20000, 1000) < 0)      // Operator list
+            continue;
+         if (!strstr ((char *) atbuf, "OK"))
+            continue;
+         {
+            char temp[200];
+            snprintf (temp, sizeof (temp), "AT+COPS=1,0,\"%s\"", operator);
+            if (atcmd (temp, 10000, 1000) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+            {
+               if (atcmd ("AT+COPS=0", 10000, 1000) < 0)        // Automatic selection
+                  continue;
+               if (!strstr ((char *) atbuf, "OK"))
+                  continue;
+            }
+         }
+         if (atcmd ("AT+COPS?", 20000, 1000) < 0)       // Operator selected
+            continue;
+         if (!strstr ((char *) atbuf, "OK"))
+            continue;
          {
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+CSTT=\"%s\"", apn);
@@ -1153,10 +1189,10 @@ at_task (void *X)
             continue;
          try = 50;
          revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
+         time_t ka = 0;
          while (1)
          {                      // Connected, send data as needed
             time_t now = time (0);
-            static time_t ka = 0;
             int len = 0;
             uint8_t buf[MAXDATA];
             if (!trackmqtt && (len = tracknext (buf)) > 0)
