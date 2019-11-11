@@ -1155,18 +1155,19 @@ at_task (void *X)
             continue;
          if (!strstr ((char *) atbuf, "OK"))
             continue;
+         if (*operator&& strstr (atbuf, operator))
          {
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+COPS=1,0,\"%s\"", operator);
             if (atcmd (temp, 10000, 1000) < 0)
                continue;
+         }
+         if (!strstr ((char *) atbuf, "OK"))
+         {
+            if (atcmd ("AT+COPS=0", 10000, 1000) < 0)   // Automatic selection
+               continue;
             if (!strstr ((char *) atbuf, "OK"))
-            {
-               if (atcmd ("AT+COPS=0", 10000, 1000) < 0)        // Automatic selection
-                  continue;
-               if (!strstr ((char *) atbuf, "OK"))
-                  continue;
-            }
+               continue;
          }
          if (atcmd ("AT+COPS?", 20000, 1000) < 0)       // Operator selected
             continue;
