@@ -68,6 +68,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(flight,N)	\
 	b(balloon,N)	\
 	b(testhdop,N)	\
+	u8(minkmh,2)	\
 
 #define u32(n,d)	uint32_t n;
 #define u16(n,d)	uint16_t n;
@@ -133,7 +134,7 @@ struct fix_s
    int lon;                     // min*DSCALE
    uint16_t tim;                // Time (TSCALE)
    uint16_t dist;               // RDP distance (MSCALE)
-   int16_t alt;                 // Alt (ascale)
+   uint16_t alt;                // Alt (ascale and offset, hence unsigned)
    uint8_t sats:6;              // Number of sats
    uint8_t dgps:1;              // DGPS
    uint8_t keep:1;              // Keep (RDP algorithm)
@@ -699,11 +700,11 @@ nmea (char *s)
             if (fixtim / TSCALE + 100 < (gpszda % 86400))
                fixtim += 86400 * TSCALE;        // Day wrap
             fixtim -= (fixbase - gpszda / 86400 * 86400) * TSCALE;
-            int fixalt = round ((alt + ALTBASE) / ascale);      // Offset and scale to store in 15 bits
+            int fixalt = round ((alt + ALTBASE) / ascale);      // Offset and scale to store in 16 bits
             if (fixalt < 0)
-               fixalt = 0;      // Range to 15 bits
-            else if (fixalt > 32767)
-               fixalt = 32767;
+               fixalt = 0;      // Range to 16 bits
+            else if (fixalt > 65535)
+               fixalt = 65535;
             int fixdiff (fix_t * a, fix_t * b)
             {                   // Different (except for time)
                if (a->lat != b->lat)
@@ -805,7 +806,7 @@ nmea (char *s)
             moving = 0;         // Stopped moving
             lograte (logslow);
          }
-      } else if (speed > 1 && speed > hdop * hdop * hdop)
+      } else if (speed >= minkmh && speed > hdop * hdop * hdop)
       {
          if (!moving)
          {
@@ -1612,6 +1613,8 @@ gps_task (void *z)
                if (fixtag & TAGF_FIX_ALT)
                {
                   v = (int) f->alt - (int) (ALTBASE / ascale);  // Alt
+                  if (v > 32767)
+                     v = 32767; // Fit to signed 16 bits
                   *p++ = v >> 8;
                   *p++ = v;
                }
