@@ -100,7 +100,8 @@ float course = 0;
 int sats = 0;
 int fixtype = 0;
 int fixmode = 0;
-char moving = 0;
+char moving = 0;                // We are moving
+char mobile = 0;                // Mobile data on line
 char gotfix = 0;
 char lonforce = 0;
 char latforce = 0;
@@ -855,7 +856,7 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s", mobile ? "*" : " ");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fixtype == 2 ? "Diff" : fixtype == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
@@ -1136,6 +1137,7 @@ at_task (void *X)
       try = 50;
       while (1)
       {
+         mobile = 0;
          if (--try <= 0)
             break;              // Power cycle
          do
@@ -1211,6 +1213,7 @@ at_task (void *X)
          }
          if (!strstr ((char *) atbuf, "CONNECT OK"))
             continue;
+         mobile = 1;
          try = 50;
          revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
          time_t ka = 0;
