@@ -806,6 +806,8 @@ nmea (char *s)
       {
          if (moving)
          {
+            if (fixdebug)
+               revk_info ("fix", "Not moving %.1fkm/h", speed);
             moving = 0;         // Stopped moving
             lograte (logslow);
          }
@@ -813,6 +815,8 @@ nmea (char *s)
       {
          if (!moving)
          {
+            if (fixdebug)
+               revk_info ("fix", "Moving %.1fkm/h %.2f DOP", speed, hdop);
             moving = 1;         // Started moving
             lograte (logfast);
          }
