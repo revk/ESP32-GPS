@@ -6,7 +6,7 @@ static const char TAG[] = "GPS";
 // Settings via UDP?
 // Better roaming operator selection? Maybe signal strength, or retries of each?
 // AT command wait for OK/ERROR
-// Some way to have a stationary or moving mode (speed checks maybe?)
+// Better logic for stationary inside...
 
 #include "revk.h"
 #include <esp32/aes.h>
