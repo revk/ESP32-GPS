@@ -240,9 +240,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                                t + (tim / TSCALE), tim % TSCALE, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
                   if (fixtags & TAGF_FIX_ALT)
                   {
-                     if (q[0] != 0x80 || q[1])
-                     {          // Valid
-                        short alt = (q[0] << 8) + q[1];
+                     short alt = (q[0] << 8) + q[1];
+                     if (alt != -32768 && alt != 32767)
+                     {
                         float a = (float) alt * ascale;
                         q += 2;
                         sql_sprintf (&f, ",`alt`=%.1f", a);

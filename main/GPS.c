@@ -68,7 +68,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(flight,N)	\
 	b(balloon,N)	\
 	b(testhdop,N)	\
-	u8(minkmh,3)	\
+	u8(minkmh,5)	\
 
 #define u32(n,d)	uint32_t n;
 #define u16(n,d)	uint16_t n;
