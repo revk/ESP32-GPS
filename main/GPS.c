@@ -56,8 +56,6 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u8(sun,0)	\
 	u32(logslow,0)	\
 	u32(logfast,0)	\
-	u32(speedlow,1)	\
-	u32(speedhigh,4)\
 	b(waas,Y)	\
 	b(sbas,Y)	\
 	b(aic,Y)	\
@@ -799,15 +797,22 @@ nmea (char *s)
          course = strtof (f[1], NULL);
       if (!speedforce)
          speed = strtof (f[7], NULL);
-      if (speed > speedhigh)
-         lograte (logfast);
-      else if (speed < speedlow)
-         lograte (logslow);
       // Are we moving?
       if (speed < 0.5)
-         moving = 0;            // Stopped moving
-      else if (speed > 1 && speed > hdop * hdop * hdop)
-         moving = 1;            // Started moving
+      {
+         if (moving)
+         {
+            moving = 0;         // Stopped moving
+            lograte (logslow);
+         }
+      } else if (speed > 1 && speed > hdop * hdop * hdop)
+      {
+         if (!moving)
+         {
+            moving = 1;         // Started moving
+            lograte (logfast);
+         }
+      }
       return;
    }
    if (!strncmp (f[0], "GPGSA", 5) && n >= 18)
@@ -849,8 +854,7 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",
-                 speed < speedlow ? "-" : speed > speedhigh ? "+" : " ");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s", moving ? "*" : " ");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fixtype == 2 ? "Diff" : fixtype == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
