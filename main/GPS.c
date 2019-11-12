@@ -855,7 +855,7 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s", moving ? "*" : " ");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fixtype == 2 ? "Diff" : fixtype == 1 ? "GPS" : "No fix");
       y -= 3;                   // Line
       y -= 8;
