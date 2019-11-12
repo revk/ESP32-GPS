@@ -980,10 +980,10 @@ display_task (void *p)
       else
          x = oled_text (5, 0, y, "%4.1f", s);
       oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", mph ? "mph" : "km/h");
-      if (moving)
-         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "%3.0f", course);
-      else
+      if (!moving)
          x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "---");
+      else
+         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "%3.0f", course);
       oled_text (0, x, y + 24 + 3, "o");
       oled_unlock ();
    }
