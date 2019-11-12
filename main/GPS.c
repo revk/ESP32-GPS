@@ -101,6 +101,7 @@ float course = 0;
 int sats = 0;
 int fixtype = 0;
 int fixmode = 0;
+char moving = 0;
 char gotfix = 0;
 char lonforce = 0;
 char latforce = 0;
@@ -721,7 +722,7 @@ nmea (char *s)
                   return 6;
                return 0;
             }
-            if (fixnext < MAXFIX)
+            if (fixnext < MAXFIX && (!fixnext || moving))
             {
                fix[fixnext].keep = 0;
                fix[fixnext].dist = 0;
@@ -734,7 +735,7 @@ nmea (char *s)
                fix[fixnext].hdop = round (hdop * HSCALE);
                if (fixnext > 1 && fixnext > fixsave + 1 && !fixdiff (&fix[fixnext - 1], &fix[fixnext])
                    && !fixdiff (&fix[fixnext - 2], &fix[fixnext - 1]))
-                  fix[fixnext - 1].tim = fixtim;        // Skip intermediate fix
+                  fix[fixnext - 1].tim = fixtim;        // Skip intermediate identical fix
                else
                {                // Save
                   if (fixdump)
@@ -802,6 +803,11 @@ nmea (char *s)
          lograte (logfast);
       else if (speed < speedlow)
          lograte (logslow);
+      // Are we moving?
+      if (speed < 0.5)
+         moving = 0;            // Stopped moving
+      else if (speed > 1 && speed > hdop * hdop * hdop)
+         moving = 1;            // Started moving
       return;
    }
    if (!strncmp (f[0], "GPGSA", 5) && n >= 18)
@@ -859,18 +865,18 @@ display_task (void *p)
       else
          oled_text (1, 0, y, "%16s", "");
       if (fixmode > 1)
-         oled_text (1, CONFIG_OLED_WIDTH - 4 * 6 - 2, y, "%5.1f", hdop);
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", hdop);
       else
-         oled_text (1, CONFIG_OLED_WIDTH - 4 * 6 - 2, y, "   \002 ");
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
       y -= 8;
       if (fixmode >= 3)
          oled_text (1, 0, y, "Alt: %6.1fm", alt);
       else
          oled_text (1, 0, y, "%16s", "");
       if (fixmode >= 3)
-         oled_text (1, CONFIG_OLED_WIDTH - 4 * 6 - 2, y, "%5.1f", vdop);
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", vdop);
       else
-         oled_text (1, CONFIG_OLED_WIDTH - 4 * 6 - 2, y, "   \002 ");
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
       y -= 3;                   // Line
       if (gotfix)
       {
@@ -963,19 +969,18 @@ display_task (void *p)
       // Speed
       y = 20;
       float s = speed;
-      float minspeed = hdop * 2;        // Use as basis for ignoring spurious speeds
       if (mph)
          s /= 1.609344;         // miles
-      if (speed >= 999)
+      if (!moving)
+         x = oled_text (5, 0, y, " -.-");
+      else if (s >= 999)
          x = oled_text (5, 0, y, "\002---");
-      else if (speed >= 99.9)
+      else if (s >= 99.9)
          x = oled_text (5, 0, y, "\002%3.0f", s);
-      else if (hdop && speed > minspeed)
-         x = oled_text (5, 0, y, "%4.1f", s);
       else
-         x = oled_text (5, 0, y, " 0.0");
+         x = oled_text (5, 0, y, "%4.1f", s);
       oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", mph ? "mph" : "km/h");
-      if (hdop && speed > minspeed && speed <= 99.9)
+      if (moving)
          x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "%3.0f", course);
       else
          x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "---");
