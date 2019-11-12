@@ -809,7 +809,7 @@ nmea (char *s)
             moving = 0;         // Stopped moving
             lograte (logslow);
          }
-      } else if (speed > 1 && speed > (float) refkmh * hdop * hdop)
+      } else if (speed > 1 && fixmode > 1 && hdop && speed > (float) refkmh * hdop * hdop)
       {
          if (!moving)
          {
