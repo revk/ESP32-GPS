@@ -68,7 +68,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(flight,N)	\
 	b(balloon,N)	\
 	b(testhdop,N)	\
-	u8(refkmh,3)	\
+	u8(refkmh,5)	\
 
 #define u32(n,d)	uint32_t n;
 #define u16(n,d)	uint16_t n;
@@ -802,12 +802,12 @@ nmea (char *s)
       if (!speedforce)
          speed = strtof (f[7], NULL);
       // Are we moving?
-      if (speed < 0.5)
+      if (speed < hdop * hdop)
       {
          if (moving)
          {
             if (fixdebug)
-               revk_info ("fix", "Not moving %.1fkm/h", speed);
+               revk_info ("fix", "Not moving %.1fkm/h %.2f HDOP", speed, hdop);
             moving = 0;         // Stopped moving
             lograte (logslow);
          }
@@ -816,7 +816,7 @@ nmea (char *s)
          if (!moving)
          {
             if (fixdebug)
-               revk_info ("fix", "Moving %.1fkm/h %.2f DOP", speed, hdop);
+               revk_info ("fix", "Moving %.1fkm/h %.2f HDOP", speed, hdop);
             moving = 1;         // Started moving
             lograte (logfast);
          }
@@ -931,7 +931,7 @@ display_task (void *p)
                   float v = q * sqrt (1 - (float) d / w * (float) d / w) + w;
                   int l = ceil (v);
                   if (l)
-                     oled_set (l - 1, y + Y, ((float) l - v) * oled_get (l - 1, y + Y));
+                     oled_set (l - 1, y + Y, (1.0 - ((float) l - v)) * oled_get (l - 1, y + Y));
                   for (int X = l; X < CONFIG_OLED_WIDTH; X++)
                      oled_set (X, Y + y, (X + Y) & 1 ? 0 : oled_get (X, Y + y) >> 3);
                }
@@ -944,7 +944,7 @@ display_task (void *p)
                   float v = q * sqrt (1 - (float) d / w * (float) d / w) + w;
                   int r = floor (v);
                   if (r < w * 2)
-                     oled_set (r, Y + y, ((float) r + 1 - v) * oled_get (r, Y + y));
+                     oled_set (r, Y + y, (1.0 - (v - r)) * oled_get (r, Y + y));
                   for (int X = 0; X < r; X++)
                      oled_set (X, Y + y, (X + Y) & 1 ? 0 : oled_get (X, Y + y) >> 3);
                }
