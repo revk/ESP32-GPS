@@ -91,7 +91,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       if (debug)
       {
          fprintf (stderr, "Data(%u):", len);
-         for (int n = 0; n < len ; n++)
+         for (int n = 0; n < len; n++)
             fprintf (stderr, " %02X", data[n]);
          fprintf (stderr, "\n");
       }
@@ -240,10 +240,13 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                                t + (tim / TSCALE), tim % TSCALE, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
                   if (fixtags & TAGF_FIX_ALT)
                   {
-                     short alt = (q[0] << 8) + q[1];
-                     float a = (float) alt * ascale;
-                     q += 2;
-                     sql_sprintf (&f, ",`alt`=%.1f", a);
+                     if (q[0] != 0x80 || q[1])
+                     {          // Valid
+                        short alt = (q[0] << 8) + q[1];
+                        float a = (float) alt * ascale;
+                        q += 2;
+                        sql_sprintf (&f, ",`alt`=%.1f", a);
+                     }
                   }
                   if (fixtags & TAGF_FIX_SATS)
                   {

@@ -706,6 +706,8 @@ nmea (char *s)
                fixalt = 0;      // Range to 16 bits
             else if (fixalt > 65535)
                fixalt = 65535;
+            if (fixmode < 3)
+               fixalt = 0;
             int fixdiff (fix_t * a, fix_t * b)
             {                   // Different (except for time)
                if (a->lat != b->lat)
@@ -1450,7 +1452,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       }
       inline float z (fix_t * p)
       {
-         if (!(datafix & TAGF_FIX_ALT))
+         if (!(datafix & TAGF_FIX_ALT) || !p->alt)
             return 0;           // Not considering alt
          return (float) (p->alt - calt) * ascale / (float) altscale;
       }
@@ -1615,11 +1617,18 @@ gps_task (void *z)
                // Optional fix data
                if (fixtag & TAGF_FIX_ALT)
                {
-                  v = (int) f->alt - (int) (ALTBASE / ascale);  // Alt
-                  if (v > 32767)
-                     v = 32767; // Fit to signed 16 bits
-                  *p++ = v >> 8;
-                  *p++ = v;
+                  if (!f->alt)
+                  {             // No alt
+                     *p++ = 0x80;
+                     *p++ = 0;
+                  } else
+                  {
+                     v = (int) f->alt - (int) (ALTBASE / ascale);       // Alt
+                     if (v > 32767)
+                        v = 32767;      // Fit to signed 16 bits
+                     *p++ = v >> 8;
+                     *p++ = v;
+                  }
                }
                if (fixtag & TAGF_FIX_SATS)
                   *p++ = f->sats + (f->dgps ? 0x80 : 0);
