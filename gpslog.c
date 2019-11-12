@@ -91,7 +91,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       if (debug)
       {
          fprintf (stderr, "Data(%u):", len);
-         for (int n = 0; n < len + MACLEN; n++)
+         for (int n = 0; n < len ; n++)
             fprintf (stderr, " %02X", data[n]);
          fprintf (stderr, "\n");
       }
