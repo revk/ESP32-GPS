@@ -721,7 +721,7 @@ nmea (char *s)
                   return 6;
                return 0;
             }
-            if (fixnext < MAXFIX && (!fixnext || moving || sats != fix[fixnext - 1].sats))
+            if (fixnext < MAXFIX && (fixnext < 2 || moving || sats != fix[fixnext - 1].sats))
             {
                fix[fixnext].keep = 0;
                fix[fixnext].dist = 0;
