@@ -806,7 +806,7 @@ nmea (char *s)
             moving = 0;         // Stopped moving
             lograte (logslow);
          }
-      } else if (speed >= minkmh && speed > hdop * hdop * hdop)
+      } else if (speed >= (float) minkmh + hdop * hdop - 1)
       {
          if (!moving)
          {
