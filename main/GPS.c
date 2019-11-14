@@ -35,6 +35,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
       	bl(atdebug,N)    \
         s8(atuart,2)	\
         u32(atbaud,115200)	\
+        u32(gpsbaud,115200)	\
         s8(attx,27)	\
         s8(atrx,26)	\
         s8(atkey,4)	\
@@ -615,12 +616,13 @@ nmea (char *s)
 {
    if (gpsdebug)
       revk_info ("rx", "%s", s);
-   if (!s || *s != '$' || s[1] != 'G' || s[2] != 'P')
+   if (!s || *s != '$' || s[1] != 'G' || (s[2] != 'P' && s[2] != 'N' && s[2] != 'L'))
       return;
    if (!gpsstarted && (esp_timer_get_time () > 10000000 || !revk_offline ()))
    {                            // The delay is to allow debug logging, etc.
-      gpscmd ("$PMTK220,%d", 1000 / fixpersec); // Fix rate
       gpscmd ("$PQTXT,W,0,1");  // Disable GPTXT
+      gpscmd ("$PMTK220,%d", 1000 / fixpersec); // Fix rate
+      gpscmd ("$PMTK353,1,1,1,0,0");    // NAVSTAR, GLONASS, and Galileo
       gpscmd ("$PMTK314,0,0,%d,1,%d,0,0,0,0,0,0,0,0,0,0,0,0,%d,0", fixpersec, fixpersec * 10, fixpersec * 10);  // What to send
       gpscmd ("$PMTK301,%d", waas ? 2 : 0);     // WAAS
       gpscmd ("$PMTK313,%d", sbas ? 1 : 0);     // SBAS
@@ -646,7 +648,7 @@ nmea (char *s)
    }
    if (!n)
       return;
-   if (!strncmp (f[0], "GPGGA", 5) && n >= 14)
+   if (!strncmp (f[0] + 2, "GGA", 3) && n >= 14)
    {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
       if (strlen (f[1]) >= 10 && strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
       {
@@ -767,7 +769,7 @@ nmea (char *s)
       }
       return;
    }
-   if (!strncmp (f[0], "GPZDA", 5) && n >= 5)
+   if (!strncmp (f[0] + 2, "ZDA", 3) && n >= 5)
    {                            // Time: $GPZDA,093624.000,02,11,2019,,
       if (strlen (f[1]) == 10 && !timeforce)
       {
@@ -795,7 +797,7 @@ nmea (char *s)
       }
       return;
    }
-   if (!strncmp (f[0], "GPVTG", 5) && n >= 10)
+   if (!strncmp (f[0] + 2, "VTG", 3) && n >= 10)
    {
       if (!courseforce)
          course = strtof (f[1], NULL);
@@ -823,7 +825,7 @@ nmea (char *s)
       }
       return;
    }
-   if (!strncmp (f[0], "GPGSA", 5) && n >= 18)
+   if (!strncmp (f[0] + 2, "GSA", 3) && n >= 18)
    {
       fixmode = atoi (f[2]);
       if (!pdopforce)
@@ -1765,17 +1767,17 @@ app_main ()
          else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
             revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
       }
-      connect (115200);
+      connect (gpsbaud);
       uint8_t temp;
-      if (uart_read_bytes (gpsuart, &temp, 1, 1000 / portTICK_PERIOD_MS) <= 0 || temp != '$')
+      if (gpsbaud != 9600 && (uart_read_bytes (gpsuart, &temp, 1, 1000 / portTICK_PERIOD_MS) <= 0 || temp != '$'))
       {
          uart_driver_delete (gpsuart);
          connect (9600);
          sleep (1);
-         gpscmd ("$PMTK251,115200");    // Baud rate
+         gpscmd ("$PMTK251,%d", gpsbaud);       // Baud rate set (at 9600)
          sleep (1);
          uart_driver_delete (gpsuart);
-         connect (115200);
+         connect (gpsbaud);
       }
    }
    if (attx >= 0 && atrx >= 0 && atpwr >= 0)
