@@ -138,7 +138,7 @@ float temp = -999;
 time_t gpszda = 0;              // Last ZDA
 
 unsigned int MAXFIX = 10000;    // Large memory max fix
-#define MAXFIXLOW	5000    // Small memory max fix
+#define MAXFIXLOW	4500    // Small memory max fix
 #define	FIXALLOW	 500    // Allow time to process fixes
 #define MAXDATA (mtu-28)        // SIM800 says 1472 allowed but only 1460 works FFS
 
@@ -668,9 +668,9 @@ nmea (char *s)
       if (fixdebug)
          revk_info (TAG, "GPS running");
    }
-   if (!strcmp (f[0], "PMTK001"))
+   if (!strcmp (f[0], "PMTK001") || !strcmp (f[0], "PQTXT"))
       return;
-   if (!strcmp (f[0], "PMTK010"))
+   if (!strcmp (f[0], "PMTK010") || !strcmp (f[0], "PMTK011"))
       return;                   // GPS started? check logic
    if (!strcmp (f[0], "PQEPE") && n >= 3)
    {                            // Estimated position error
