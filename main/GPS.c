@@ -16,6 +16,9 @@ static const char TAG[] = "GPS";
 #include "oled.h"
 #include "esp_sntp.h"
 #include "revkgps.h"
+#include "owb.h"
+#include "owb_rmt.h"
+#include "ds18b20.h"
 extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * data, size_t data_len, uint8_t * mac);
 
 #define settings	\
@@ -31,6 +34,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s8(gpstx,32)	\
 	s8(gpsfix,25)	\
 	s8(gpsen,26)	\
+	s8(ds18b20,-1)	\
 	u16(mtu,1488)	\
       	bl(atdebug,N)    \
         s8(atuart,2)	\
@@ -66,6 +70,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(mph, Y)	\
 	u8(datafix,0x07)\
 	b(datamargin,Y) \
+	b(datatemp,Y)	\
 	b(flight,N)	\
 	b(balloon,N)	\
 	u8(refkmh,5)	\
@@ -120,11 +125,20 @@ char gpsstarted = 0;
 char iccid[22] = { };
 char imei[22] = { };
 
+#define MAX_OWB 8
+#define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
+int8_t num_owb = 0;
+OneWireBus *owb = NULL;
+owb_rmt_driver_info rmt_driver_info;
+DS18B20_Info *ds18b20s[MAX_OWB] = { 0 };
+
+float temp = -999;
+
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
 
 unsigned int MAXFIX = 10000;    // Large memory max fix
-#define MAXFIXLOW	5000    // Small memory max fix
+#define MAXFIXLOW	4500    // Small memory max fix
 #define	FIXALLOW	 500    // Allow time to process fixes
 #define MAXDATA (mtu-28)        // SIM800 says 1472 allowed but only 1460 works FFS
 
@@ -654,15 +668,15 @@ nmea (char *s)
       if (fixdebug)
          revk_info (TAG, "GPS running");
    }
-   if (!strcmp (f[0], "PMTK001"))
+   if (!strcmp (f[0], "PMTK001") || !strcmp (f[0], "PQTXT"))
       return;
-   if (!strcmp (f[0], "PMTK010"))
+   if (!strcmp (f[0], "PMTK010") || !strcmp (f[0], "PMTK011"))
       return;                   // GPS started? check logic
    if (!strcmp (f[0], "PQEPE") && n >= 3)
    {                            // Estimated position error
       if (!hepeforce)
          hepe = strtof (f[1], NULL);
-      if (vepeforce)
+      if (!vepeforce)
          vepe = strtof (f[2], NULL);
       return;
    }
@@ -1599,6 +1613,15 @@ gps_task (void *z)
             *p++ = fixbase >> 8;
             *p++ = fixbase;
          }
+         if (datatemp)
+         {
+            int t = temp * TSCALE;
+            if (t > -128 && t < 127)
+            {
+               *p++ = TAGF_TEMPC;
+               *p++ = t;
+            }
+         }
          uint8_t fixtag = TAGF_FIX | datafix;
          unsigned int fixlen = 10;
          for (int n = 0; n < sizeof (tagf_fix); n++)
@@ -1683,6 +1706,24 @@ gps_task (void *z)
             fixdelete = 0;
          fixsave = -1;
       }
+   }
+}
+
+void
+ds18b20_task (void *z)
+{                               // temperature
+   z = z;
+   while (1)
+   {
+      usleep (100000);
+      ds18b20_convert_all (owb);
+      ds18b20_wait_for_conversion (ds18b20s[0]);
+      float readings[MAX_OWB] = { 0 };
+      DS18B20_ERROR errors[MAX_OWB] = { 0 };
+      for (int i = 0; i < num_owb; ++i)
+         errors[i] = ds18b20_read_temp (ds18b20s[i], &readings[i]);
+      if (!errors[0])
+         temp = readings[0];
    }
 }
 
@@ -1831,4 +1872,36 @@ app_main ()
    revk_task ("NMEA", nmea_task, NULL);
    revk_task ("Log", log_task, NULL);
    revk_task ("GPS", gps_task, NULL);
+   if (ds18b20 >= 0)
+   {                            // DS18B20 init
+      owb = owb_rmt_initialize (&rmt_driver_info, ds18b20, RMT_CHANNEL_1, RMT_CHANNEL_0);
+      owb_use_crc (owb, true);  // enable CRC check for ROM code
+      OneWireBus_ROMCode device_rom_codes[MAX_OWB] = { 0 };
+      OneWireBus_SearchState search_state = { 0 };
+      bool found = false;
+      owb_search_first (owb, &search_state, &found);
+      while (found && num_owb < MAX_OWB)
+      {
+         char rom_code_s[17];
+         owb_string_from_rom_code (search_state.rom_code, rom_code_s, sizeof (rom_code_s));
+         device_rom_codes[num_owb] = search_state.rom_code;
+         ++num_owb;
+         owb_search_next (owb, &search_state, &found);
+      }
+      for (int i = 0; i < num_owb; i++)
+      {
+         DS18B20_Info *ds18b20_info = ds18b20_malloc ();        // heap allocation
+         ds18b20s[i] = ds18b20_info;
+         if (num_owb == 1)
+            ds18b20_init_solo (ds18b20_info, owb);      // only one device on bus
+         else
+            ds18b20_init (ds18b20_info, owb, device_rom_codes[i]);      // associate with bus and device
+         ds18b20_use_crc (ds18b20_info, true);  // enable CRC check for temperature readings
+         ds18b20_set_resolution (ds18b20_info, DS18B20_RESOLUTION);
+      }
+      if (!num_owb)
+         revk_error ("temp", "No OWB devices");
+      else
+         revk_task ("DS18B20", ds18b20_task, NULL);
+   }
 }
