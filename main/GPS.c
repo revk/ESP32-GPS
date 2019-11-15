@@ -68,7 +68,6 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(datamargin,Y) \
 	b(flight,N)	\
 	b(balloon,N)	\
-	b(testhdop,N)	\
 	u8(refkmh,5)	\
 
 #define u32(n,d)	uint32_t n;
@@ -112,6 +111,8 @@ char altforce = 0;
 char timeforce = 0;
 char speedforce = 0;
 char courseforce = 0;
+char hepeforce = 0;
+char vepeforce = 0;
 char hdopforce = 0;
 char pdopforce = 0;
 char vdopforce = 0;
@@ -142,7 +143,7 @@ struct fix_s
    uint8_t sats:6;              // Number of sats
    uint8_t dgps:1;              // DGPS
    uint8_t keep:1;              // Keep (RDP algorithm)
-   uint8_t hdop;                // HSCALE
+   uint8_t hepe;                // ESCALE
 };
 fix_t *fix = NULL;
 unsigned int fixnext = 0;       // Next fix to store
@@ -531,6 +532,8 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    force (hdop);
    force (pdop);
    force (vdop);
+   force (hepe);
+   force (vepe);
 #undef force
    if (!strcmp (tag, "gpstx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
@@ -652,13 +655,15 @@ nmea (char *s)
          revk_info (TAG, "GPS running");
    }
    if (!strcmp (f[0], "PMTK001"))
-	   return;
+      return;
    if (!strcmp (f[0], "PMTK010"))
-      return; // GPS started? check logic
+      return;                   // GPS started? check logic
    if (!strcmp (f[0], "PQEPE") && n >= 3)
    {                            // Estimated position error
-      hepe = strtof (f[1], NULL);
-      vepe = strtof (f[2], NULL);
+      if (!hepeforce)
+         hepe = strtof (f[1], NULL);
+      if (vepeforce)
+         vepe = strtof (f[2], NULL);
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && n >= 14)
@@ -723,6 +728,9 @@ nmea (char *s)
                fixalt = 65535;
             if (fixmode < 3)
                fixalt = 0;
+            int fixhepe = round (hepe * ESCALE);
+            if (fixhepe > 255)
+               fixhepe = 255;   // Limit
             int fixdiff (fix_t * a, fix_t * b)
             {                   // Different (except for time)
                if (a->lat != b->lat)
@@ -733,7 +741,7 @@ nmea (char *s)
                   return 3;
                if (a->sats != b->sats)
                   return 4;
-               if (a->hdop != b->hdop)
+               if (a->hepe != b->hepe)
                   return 5;
                if (a->dgps != b->dgps)
                   return 6;
@@ -749,7 +757,7 @@ nmea (char *s)
                fix[fixnext].lon = fixlon;
                fix[fixnext].sats = sats;
                fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
-               fix[fixnext].hdop = round (hdop * HSCALE);
+               fix[fixnext].hepe = fixhepe;
                if (fixnext > 1 && fixnext > fixsave + 1 && !fixdiff (&fix[fixnext - 1], &fix[fixnext])
                    && !fixdiff (&fix[fixnext - 2], &fix[fixnext - 1]))
                   fix[fixnext - 1].tim = fixtim;        // Skip intermediate identical fix
@@ -848,7 +856,7 @@ nmea (char *s)
       return;
    }
    if (!gpsdebug)
-      revk_info ("gpsrx", "$%s... (%d)", f[0],n);       // Unknown
+      revk_info ("gpsrx", "$%s... (%d)", f[0], n);      // Unknown
 }
 
 static void
@@ -1510,8 +1518,6 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
                float T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
                d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
             }
-            if (testhdop && p->hdop > HSCALE)
-               d = d * HSCALE * HSCALE / p->hdop / p->hdop;
             if (bestn >= 0 && d <= best)
                continue;
             bestn = n;          // New furthest
@@ -1657,8 +1663,8 @@ gps_task (void *z)
                }
                if (fixtag & TAGF_FIX_SATS)
                   *p++ = f->sats + (f->dgps ? 0x80 : 0);
-               if (fixtag & TAGF_FIX_HDOP)
-                  *p++ = f->hdop;
+               if (fixtag & TAGF_FIX_HEPE)
+                  *p++ = f->hepe;
             }
          }
          unsigned int len = encode (t, p - t, fixbase);

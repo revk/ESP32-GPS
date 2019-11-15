@@ -253,9 +253,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      sql_sprintf (&f, ",`sats`=%u", *q & 0x7F);
                      q++;
                   }
-                  if ((fixtags & TAGF_FIX_HDOP) && *q)
+                  if ((fixtags & TAGF_FIX_HEPE) && *q)
                   {
-                     sql_sprintf (&f, ",`hdop`=%u." HPART, *q / HSCALE, *q % HSCALE);
+                     sql_sprintf (&f, ",`hepe`=%u." EPART, *q / ESCALE, *q % ESCALE);
                      q++;
                   }
                   sql_safe_query_s (sqlp, &f);

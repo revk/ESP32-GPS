@@ -7,8 +7,8 @@
 #define TPART   "%02u"
 #define	DSCALE	100000		// Per degree
 #define	ASCALE	10		// Per metre
-#define	HSCALE	10		// HDOP scale
-#define	HPART	"%01u"
+#define	ESCALE	10		// EPE scale
+#define	EPART	"%01u"
 #define	MSCALE	1000		// Margin scale
 #define	MPART	"%03u"
 #define	ALT_BALLOON	2.5	// m per unit in balloon mode
@@ -28,6 +28,6 @@
 #define	TAGF_FIX		0x80	// Base fix
 #define	TAGF_FIX_ALT		0x01	// Alt included
 #define	TAGF_FIX_SATS		0x02	// Sats and DGPS status (top bit)
-#define	TAGF_FIX_HDOP		0x04	// HDOP/HEPE (HSCALE)
+#define	TAGF_FIX_HEPE		0x04	// HEPE (ESCALE)
 const uint8_t tagf_fix[7]={2,1,1,0,0,0,0};	// length of tag fix bits
 
