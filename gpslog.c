@@ -613,6 +613,10 @@ main (int argc, const char *argv[])
             {                   // No device
                sql_safe_query_free (&sql, sql_printf ("INSERT INTO `%#S` SET `tag`=%#s", sqldevice, tag));
                devid = sql_insert_id (&sql);
+               sql_free_result (device);
+               device = sql_safe_query_store_free (&sql, sql_printf ("SELECT * from `%#S` WHERE `ID`=%u", devid));
+               if (!sql_fetch_row (device))
+                  warnx ("WTF");
             }
             unsigned int authid = 0,
                old = 0,
@@ -630,7 +634,7 @@ main (int argc, const char *argv[])
                if (!new && sql_time (sql_colz (auth, "issued")) < time (0) - 86400)
                   old = 1;
             }
-            if (!authid || old)
+            if (!authid || old || (!new && !sql_col (device, "auth")))
             {                   // Allocate authentication
                int r = open ("/dev/urandom", O_RDONLY);
                if (r >= 0)
@@ -661,9 +665,11 @@ main (int argc, const char *argv[])
                         else
                            new = 1;
                      }
-                  }
+                  } else
+                     warnx ("Bad read random");
                   close (r);
-               }
+               } else
+                  warnx ("Bad open random");
             }
             sql_free_result (auth);
             sql_free_result (device);
@@ -746,7 +752,7 @@ main (int argc, const char *argv[])
                l->imei = strdup (val);
                sql_safe_query_free (&sql, sql_printf ("UPDATE `%#S` SET `imei`=%#s WHERE `tag`=%#s", sqldevice, l->imei, tag));
             }
-         } else if (!strcmp (type, "rx"))
+         } else if (!strcmp (type, "gpsrx"))
          {
             char *f[100],
              *p = val;
