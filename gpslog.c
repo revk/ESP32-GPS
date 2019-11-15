@@ -250,12 +250,16 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   }
                   if (fixtags & TAGF_FIX_SATS)
                   {
-                     sql_sprintf (&f, ",`sats`=%u", *q & 0x7F);
+                     int s = (*q & 0x3F);
+                     if (s < 0x3F)
+                        sql_sprintf (&f, ",`sats`=%u", s);
                      q++;
                   }
-                  if ((fixtags & TAGF_FIX_HEPE) && *q)
+                  if (fixtags & TAGF_FIX_HEPE)
                   {
-                     sql_sprintf (&f, ",`hepe`=%u." EPART, *q / ESCALE, *q % ESCALE);
+                     int e = *q;
+                     if (e)
+                        sql_sprintf (&f, ",`hepe`=%u." EPART, e / ESCALE, e % ESCALE);
                      q++;
                   }
                   sql_safe_query_s (sqlp, &f);
