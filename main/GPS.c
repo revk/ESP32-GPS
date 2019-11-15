@@ -96,6 +96,8 @@ float alt = 0;
 float gsep = 0;
 float pdop = 0;
 float hdop = 0;
+float hepe = 0;
+float vepe = 0;
 float vdop = 0;
 float course = 0;
 int sats = 0;
@@ -350,7 +352,7 @@ gpscmd (const char *fmt, ...)
    for (p = s + 1; *p; p++)
       c ^= *p;
    if (gpsdebug)
-      revk_info ("tx", "%s", s);
+      revk_info ("gpstx", "%s", s);
    if (*s == '$')
       p += sprintf (p, "*%02X\r\n", c); // We allowed space
    xSemaphoreTake (cmd_mutex, portMAX_DELAY);
@@ -530,7 +532,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    force (pdop);
    force (vdop);
 #undef force
-   if (!strcmp (tag, "tx") && len)
+   if (!strcmp (tag, "gpstx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
       gpscmd ("%s", value);
       return "";
@@ -615,12 +617,27 @@ static void
 nmea (char *s)
 {
    if (gpsdebug)
-      revk_info ("rx", "%s", s);
-   if (!s || *s != '$' || s[1] != 'G' || (s[2] != 'P' && s[2] != 'N' && s[2] != 'L'))
+      revk_info ("gpsrx", "%s", s);
+   if (!s || *s != '$' || !s[1] || !s[2] || !s[3])
       return;
-   if (!gpsstarted && (esp_timer_get_time () > 10000000 || !revk_offline ()))
+   char *f[50];
+   int n = 0;
+   s++;
+   while (n < sizeof (f) / sizeof (*f))
+   {
+      f[n++] = s;
+      while (*s && *s != ',')
+         s++;
+      if (!*s || *s != ',')
+         break;
+      *s++ = 0;
+   }
+   if (!n)
+      return;
+   if (!gpsstarted && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_offline ()))
    {                            // The delay is to allow debug logging, etc.
-      gpscmd ("$PQTXT,W,0,1");  // Disable GPTXT
+      gpscmd ("$PQTXT,W,0,1");  // Disable TXT
+      gpscmd ("$PQEPE,W,1,1");  // Enable EPE
       gpscmd ("$PMTK220,%d", 1000 / fixpersec); // Fix rate
       gpscmd ("$PMTK353,1,1,1,0,0");    // NAVSTAR, GLONASS, and Galileo
       gpscmd ("$PMTK314,0,0,%d,1,%d,0,0,0,0,0,0,0,0,0,0,0,0,%d,0", fixpersec, fixpersec * 10, fixpersec * 10);  // What to send
@@ -634,21 +651,17 @@ nmea (char *s)
       if (fixdebug)
          revk_info (TAG, "GPS running");
    }
-   char *f[50];
-   int n = 0;
-   s++;
-   while (*s && n < sizeof (f) / sizeof (*f))
-   {
-      f[n++] = s;
-      while (*s && *s != ',')
-         s++;
-      if (!*s || *s != ',')
-         break;
-      *s++ = 0;
-   }
-   if (!n)
+   if (!strcmp (f[0], "PMTK001"))
+	   return;
+   if (!strcmp (f[0], "PMTK010"))
+      return; // GPS started? check logic
+   if (!strcmp (f[0], "PQEPE") && n >= 3)
+   {                            // Estimated position error
+      hepe = strtof (f[1], NULL);
+      vepe = strtof (f[2], NULL);
       return;
-   if (!strncmp (f[0] + 2, "GGA", 3) && n >= 14)
+   }
+   if (*f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && n >= 14)
    {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
       if (strlen (f[1]) >= 10 && strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
       {
@@ -769,7 +782,7 @@ nmea (char *s)
       }
       return;
    }
-   if (!strncmp (f[0] + 2, "ZDA", 3) && n >= 5)
+   if (*f[0] == 'G' && !strcmp (f[0] + 2, "ZDA") && n >= 5)
    {                            // Time: $GPZDA,093624.000,02,11,2019,,
       if (strlen (f[1]) == 10 && !timeforce)
       {
@@ -797,7 +810,7 @@ nmea (char *s)
       }
       return;
    }
-   if (!strncmp (f[0] + 2, "VTG", 3) && n >= 10)
+   if (*f[0] == 'G' && !strcmp (f[0] + 2, "VTG") && n >= 10)
    {
       if (!courseforce)
          course = strtof (f[1], NULL);
@@ -825,7 +838,7 @@ nmea (char *s)
       }
       return;
    }
-   if (!strncmp (f[0] + 2, "GSA", 3) && n >= 18)
+   if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSA") && n >= 18)
    {
       fixmode = atoi (f[2]);
       if (!pdopforce)
@@ -834,6 +847,8 @@ nmea (char *s)
          vdop = strtof (f[17], NULL);
       return;
    }
+   if (!gpsdebug)
+      revk_info ("gpsrx", "$%s... (%d)", f[0],n);       // Unknown
 }
 
 static void
@@ -872,25 +887,37 @@ display_task (void *p)
          oled_text (1, 0, y, "Lat: %11.6f", lat);
       else
          oled_text (1, 0, y, "%16s", "");
-      oled_text (1, CONFIG_OLED_WIDTH - 3 * 6, y, fixmode > 1 ? "DOP" : "   ");
+      oled_text (1, CONFIG_OLED_WIDTH - 3 * 6, y, fixmode > 1 ? hepe ? "EPE" : "DOP" : "   ");
       y -= 8;
       if (fixmode > 1)
          oled_text (1, 0, y, "Lon: %11.6f", lon);
       else
          oled_text (1, 0, y, "%16s", "");
       if (fixmode > 1)
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", hdop);
-      else
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
+      {
+         if (hepe > 999.9)
+            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "---.-m", hepe);
+         else if (hepe)
+            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", hepe);
+         else
+            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", hdop);
+      } else
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
       y -= 8;
       if (fixmode >= 3)
          oled_text (1, 0, y, "Alt: %6.1fm", alt);
       else
          oled_text (1, 0, y, "%16s", "");
       if (fixmode >= 3)
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", vdop);
-      else
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "   \002  ");
+      {
+         if (vepe > 999.9)
+            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "---.-m", vepe);
+         else if (vepe)
+            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", vepe);
+         else
+            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", vdop);
+      } else
+         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
       y -= 3;                   // Line
       if (gotfix)
       {
@@ -1377,15 +1404,7 @@ nmea_task (void *z)
             {                   // Process line
                timeout = esp_timer_get_time () + 10000000;
                l[-3] = 0;
-               if (p[1] == 'G')
-                  nmea ((char *) p);
-               else
-               {
-                  if (!strcmp ((char *) p, "$PMTK010,1"))
-                     gpsstarted = 0;    // Resend config
-                  if (strncmp ((char *) p, "$PMTK001", 8))
-                     revk_info ("rx", "%s", p); // Other packet
-               }
+               nmea ((char *) p);
             }
          } else if (l > p)
             revk_error (TAG, "[%.*s]", l - p, p);

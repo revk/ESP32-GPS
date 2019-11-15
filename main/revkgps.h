@@ -28,6 +28,6 @@
 #define	TAGF_FIX		0x80	// Base fix
 #define	TAGF_FIX_ALT		0x01	// Alt included
 #define	TAGF_FIX_SATS		0x02	// Sats and DGPS status (top bit)
-#define	TAGF_FIX_HDOP		0x04	// HDOP (HSCALE)
+#define	TAGF_FIX_HDOP		0x04	// HDOP/HEPE (HSCALE)
 const uint8_t tagf_fix[7]={2,1,1,0,0,0,0};	// length of tag fix bits
 
