@@ -13,8 +13,7 @@
 #define	MPART	"%03u"
 #define	ALT_BALLOON	2.5	// m per unit in balloon mode
 #define	ALT_FLIGHT	1.0	// m per unit in flight mode
-#define	CSCALE			// C temp scale
-#define	CPART	"%01u"
+#define	CSCALE		2	// C temp scale
 
 #define TAGF_PAD		0x00	// Padding
 #define	TAGF_BALLOON		0x01	// Alt is in balloon mode (ALT_BALLOON metres per unit)

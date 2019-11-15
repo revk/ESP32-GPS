@@ -163,6 +163,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       int margin = -1;
       unsigned int fixes = 0;
       float ascale = 1.0 / ASCALE;
+      float tempc = -999;
       sql_transaction (sqlp);
       while (p < e && !(*p & TAGF_FIX))
       {                         // Process tags
@@ -193,9 +194,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          else if (*p == TAGF_FLIGHT)
             ascale = ALT_FLIGHT;
          else if (*p == TAGF_MARGIN)
-         {
             margin = (p[1] << 8) + p[2];
-         } else if (*p && debug)
+         else if (*p == TAGF_TEMPC)
+            tempc = (float) ((signed char *) p)[1] / CSCALE;
+         else if (*p && debug)
             fprintf (stderr, "Unknown tag %02X\n", *p);
          p += 1 + dlen;
       }
@@ -284,6 +286,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
          if (margin >= 0 && margin < 65536)
             sql_sprintf (&s, ",`margin`=%u." MPART, margin / MSCALE, margin % MSCALE);
+         if (tempc > -999)
+            sql_sprintf (&s, ",`tempc`=%.1f", tempc);
          sql_safe_query_s (sqlp, &s);
          if (sql_col (auth, "replaces"))
          {                      // New key in use, delete old
