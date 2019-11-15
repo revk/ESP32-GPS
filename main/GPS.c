@@ -1662,7 +1662,7 @@ gps_task (void *z)
                   }
                }
                if (fixtag & TAGF_FIX_SATS)
-                  *p++ = f->sats + (f->dgps ? 0x80 : 0);
+                  *p++ = (f->sats & 0x3F) + (f->dgps ? 0x80 : 0);
                if (fixtag & TAGF_FIX_HEPE)
                   *p++ = f->hepe;
             }
