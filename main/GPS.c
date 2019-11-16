@@ -132,7 +132,7 @@ OneWireBus *owb = NULL;
 owb_rmt_driver_info rmt_driver_info;
 DS18B20_Info *ds18b20s[MAX_OWB] = { 0 };
 
-float temp = -999;
+float tempc = -999;
 
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
@@ -1044,10 +1044,14 @@ display_task (void *p)
          x = oled_text (5, 0, y, "%4.1f", s);
       oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", mph ? "mph" : "km/h");
       if (!moving)
-         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "---");
+         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "---");
       else
-         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 24, "%3.0f", course);
-      oled_text (0, x, y + 24 + 3, "o");
+         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "%3.0f", course);
+      x = oled_text (0, x, y + 12 + 3, "o");
+      if (tempc < -9.9 || tempc > 99.9)
+         x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "--");
+      else
+         x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2.0f", tempc);
       oled_unlock ();
    }
 }
@@ -1615,7 +1619,7 @@ gps_task (void *z)
          }
          if (datatemp)
          {
-            int t = temp * TSCALE;
+            int t = tempc * CSCALE;
             if (t > -128 && t < 127)
             {
                *p++ = TAGF_TEMPC;
@@ -1723,7 +1727,7 @@ ds18b20_task (void *z)
       for (int i = 0; i < num_owb; ++i)
          errors[i] = ds18b20_read_temp (ds18b20s[i], &readings[i]);
       if (!errors[0])
-         temp = readings[0];
+         tempc = readings[0];
    }
 }
 
