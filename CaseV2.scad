@@ -7,7 +7,7 @@ width=45;
 height=56;
 
 // Box thickness reference to component cube
-base=1.2;
+base=1;
 top=10.2;
 
 $fn=48;
@@ -35,4 +35,4 @@ module pcb(s=0)
     }
 }
 
-case(width,height,base,top,cutoffset=4,sidet=0.2){pcb(0);pcb(-1);pcb(1);};
+case(width,height,base,top,cutoffset=4){pcb(0);pcb(-1);pcb(1);};
