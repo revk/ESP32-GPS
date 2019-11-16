@@ -1016,10 +1016,7 @@ display_task (void *p)
          }
          // Sun angle
          x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
-         if (fixmode > 1)
-            x = oled_text (1, x, y + 14, "%+3.0f", sunalt);
-         else
-            x = oled_text (1, x, y + 14, "   ");
+         x = oled_text (1, x, y + 14, "%+3.0f", sunalt);
          x = oled_text (0, x, y + 17, "o");
          y -= 3;                // Line
       }
