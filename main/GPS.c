@@ -1048,11 +1048,14 @@ display_task (void *p)
       else
          x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "%3.0f", course);
       x = oled_text (0, x, y + 12 + 3, "o");
-      if (tempc < -9.9 || tempc > 99.9)
-         x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "--");
-      else
-         x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2.0f", tempc);
-      oled_unlock ();
+      if (ds18b20 >= 0)
+      {
+         if (tempc < -9.9 || tempc > 99.9)
+            x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "--");
+         else
+            x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2.0f", tempc);
+         oled_unlock ();
+      }
    }
 }
 
