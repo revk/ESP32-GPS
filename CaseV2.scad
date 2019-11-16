@@ -7,7 +7,7 @@ width=45;
 height=56;
 
 // Box thickness reference to component cube
-base=1.6;
+base=1.2;
 top=10.2;
 
 $fn=48;
@@ -23,7 +23,7 @@ module pcb(s=0)
         esp32(s,17.708,-5.855,180);
         l86(s,12.430,39.115,90);
         bat1220(s,32,41.210,90);
-        oled(s,1,1,180,screw=1,smd=true);
+        oled(s,1,1,180,screw=0.5,smd=true);
         hull()
         { // DS18B20
             translate([31.5+3,37,6])
