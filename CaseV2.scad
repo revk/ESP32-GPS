@@ -29,10 +29,10 @@ module pcb(s=0)
             translate([31.5+3,37,6])
             rotate([-90,0,0])
             cylinder(d=6,h=10);
-            translate([31.5,37,0])
+            translate([31.5,37,-1])
             cube([6,10,1]);
         }
     }
 }
 
-case(width,height,base,top,cutoffset=4){pcb(0);pcb(-1);pcb(1);};
+case(width,height,base,top,cutoffset=4,sidet=0.2){pcb(0);pcb(-1);pcb(1);};
