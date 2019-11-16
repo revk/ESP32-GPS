@@ -895,7 +895,7 @@ nmea (char *s)
          vdop = strtof (f[17], NULL);
       return;
    }
-   if (*f[0] == 'G' && !strcmp (f[2] + 2, "GSV") && n >= 4)
+   if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSV") && n >= 4)
    {
       int n = atoi (f[3]);
       if (f[0][1] == 'P')
