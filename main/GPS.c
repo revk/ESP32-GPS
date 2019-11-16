@@ -37,6 +37,9 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s8(ds18b20,-1)	\
 	u16(mtu,1488)	\
       	bl(atdebug,N)    \
+	b(navstar,Y)	\
+	b(glonass,Y)	\
+	b(galileo,Y)	\
         s8(atuart,2)	\
         u32(atbaud,115200)	\
         u32(gpsbaud,115200)	\
@@ -105,6 +108,9 @@ float vepe = 0;
 float vdop = 0;
 float course = 0;
 int sats = 0;
+int satsp = 0;
+int satsl = 0;
+int satsa = 0;
 int fixtype = 0;
 int fixmode = 0;
 char moving = 0;                // We are moving
@@ -656,8 +662,27 @@ nmea (char *s)
       gpscmd ("$PQTXT,W,0,1");  // Disable TXT
       gpscmd ("$PQEPE,W,1,1");  // Enable EPE
       gpscmd ("$PMTK220,%d", 1000 / fixpersec); // Fix rate
-      gpscmd ("$PMTK353,1,1,1,0,0");    // NAVSTAR, GLONASS, and Galileo
-      gpscmd ("$PMTK314,0,0,%d,1,%d,0,0,0,0,0,0,0,0,0,0,0,0,%d,0", fixpersec, fixpersec * 10, fixpersec * 10);  // What to send
+      gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
+      gpscmd ("$PMTK314,0,"     // GLL
+              "0,"              // RMC
+              "%d,"             // VTG
+              "1,"              // GGA
+              "%d,"             // GSA
+              "%d,"             // GSV
+              "0,"              // 6
+              "0,"              // 7
+              "0,"              // 8
+              "0,"              // 9
+              "0,"              // 10
+              "0,"              // 11
+              "0,"              // 12
+              "0,"              // 13 
+              "0,"              // 14
+              "0,"              // 15
+              "0,"              // 16
+              "%d,"             // ZDA
+              "0"               // 18
+              , fixpersec, fixpersec * 10, fixpersec * 10, fixpersec * 10);     // What to send
       gpscmd ("$PMTK301,%d", waas ? 2 : 0);     // WAAS
       gpscmd ("$PMTK313,%d", sbas ? 1 : 0);     // SBAS
       gpscmd ("$PMTK513,%d", sbas ? 1 : 0);     // SBAS
@@ -869,6 +894,17 @@ nmea (char *s)
          vdop = strtof (f[17], NULL);
       return;
    }
+   if (*f[0] == 'G' && !strcmp (f[2] + 2, "GSV") && n >= 4)
+   {
+      int n = atoi (f[3]);
+      if (f[0][1] == 'P')
+         satsp = n;
+      else if (f[0][1] == 'L')
+         satsl = n;
+      else if (f[0][1] == 'A')
+         satsa = n;
+      return;
+   }
    if (!gpsdebug)
       revk_info ("gpsrx", "$%s... (%d)", f[0], n);      // Unknown
 }
@@ -901,8 +937,10 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s", mobile ? "*" : " ");
-      oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", fixtype == 2 ? "Diff" : fixtype == 1 ? "GPS" : "No fix");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %c%c%c%c", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",
+                 mobile ? "*" : " ");
+      oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", satsp ? 'P' : '-', satsl ? 'L' : '-', satsa ? 'A' : '-',
+                 fixtype == 2 ? 'D' : fixtype == 1 ? 'F' : 'X');
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
