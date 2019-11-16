@@ -22,18 +22,18 @@ static const char TAG[] = "GPS";
 extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * data, size_t data_len, uint8_t * mac);
 
 #define settings	\
-	s8(oledsda,27)	\
-	s8(oledscl,14)	\
+	s8(oledsda,-1)	\
+	s8(oledscl,-1)	\
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
 	b(oledflip,Y)	\
 	bl(gpsdebug,N)	\
-	s8(gpspps,34)	\
+	s8(gpspps,-1)	\
 	s8(gpsuart,1)	\
-	s8(gpsrx,33)	\
-	s8(gpstx,32)	\
-	s8(gpsfix,25)	\
-	s8(gpsen,26)	\
+	s8(gpsrx,-1)	\
+	s8(gpstx,-1)	\
+	s8(gpsfix,-1)	\
+	s8(gpsen,-1)	\
 	s8(ds18b20,-1)	\
 	u16(mtu,1488)	\
       	bl(atdebug,N)    \
@@ -43,10 +43,10 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
         s8(atuart,2)	\
         u32(atbaud,115200)	\
         u32(gpsbaud,115200)	\
-        s8(attx,27)	\
-        s8(atrx,26)	\
-        s8(atkey,4)	\
-        s8(atrst,5)	\
+        s8(attx,-1)	\
+        s8(atrx,-1)	\
+        s8(atkey,-1)	\
+        s8(atrst,-1)	\
         s8(atpwr,-1)	\
 	u8(fixpersec,10)\
 	bl(fixdump,N)	\
@@ -379,6 +379,7 @@ gpscmd (const char *fmt, ...)
    xSemaphoreTake (cmd_mutex, portMAX_DELAY);
    uart_write_bytes (gpsuart, s, p - s);
    xSemaphoreGive (cmd_mutex);
+   usleep (100000);
 }
 
 #define ATBUFSIZE 2000
@@ -657,7 +658,7 @@ nmea (char *s)
    }
    if (!n)
       return;
-   if (!gpsstarted && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_offline ()))
+   if (!gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "RMC") && (esp_timer_get_time () > 10000000 || !revk_offline ()))
    {                            // The delay is to allow debug logging, etc.
       gpscmd ("$PQTXT,W,0,1");  // Disable TXT
       gpscmd ("$PQEPE,W,1,1");  // Enable EPE
@@ -906,7 +907,7 @@ nmea (char *s)
       return;
    }
    if (!gpsdebug)
-      revk_info ("gpsrx", "$%s... (%d)", f[0], n);      // Unknown
+      revk_error ("gpsrx", "$%s... (%d)", f[0], n);      // Unknown
 }
 
 static void
