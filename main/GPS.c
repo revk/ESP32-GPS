@@ -907,7 +907,7 @@ nmea (char *s)
       return;
    }
    if (!gpsdebug)
-      revk_error ("gpsrx", "$%s... (%d)", f[0], n);      // Unknown
+      revk_error ("gpsrx", "$%s... (%d)", f[0], n);     // Unknown
 }
 
 static void
@@ -1090,8 +1090,8 @@ display_task (void *p)
             x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "--");
          else
             x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2.0f", tempc);
-         oled_unlock ();
       }
+      oled_unlock ();
    }
 }
 
