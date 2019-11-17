@@ -107,27 +107,27 @@ float hepe = 0;
 float vepe = 0;
 float vdop = 0;
 float course = 0;
-int sats = 0;
-int satsp = 0;
-int satsl = 0;
-int satsa = 0;
-int fixtype = 0;
-int fixmode = 0;
-char moving = 0;                // We are moving
-char mobile = 0;                // Mobile data on line
-char gotfix = 0;
-char lonforce = 0;
-char latforce = 0;
-char altforce = 0;
-char timeforce = 0;
-char speedforce = 0;
-char courseforce = 0;
-char hepeforce = 0;
-char vepeforce = 0;
-char hdopforce = 0;
-char pdopforce = 0;
-char vdopforce = 0;
-char gpsstarted = 0;
+uint8_t sats = 0;
+uint8_t satsp = 0;
+uint8_t satsl = 0;
+uint8_t satsa = 0;
+uint8_t fixtype = 0;
+uint8_t fixmode = 0;
+int8_t moving = 0;              // We are moving
+int8_t mobile = 0;              // Mobile data on line
+int8_t gotfix = 0;
+int8_t lonforce = 0;
+int8_t latforce = 0;
+int8_t altforce = 0;
+int8_t timeforce = 0;
+int8_t speedforce = 0;
+int8_t courseforce = 0;
+int8_t hepeforce = 0;
+int8_t vepeforce = 0;
+int8_t hdopforce = 0;
+int8_t pdopforce = 0;
+int8_t vdopforce = 0;
+volatile int8_t gpsstarted = 0;
 char iccid[22] = { };
 char imei[22] = { };
 
@@ -185,6 +185,7 @@ SemaphoreHandle_t track_mutex = NULL;
 void trackreset (time_t reference);
 
 SemaphoreHandle_t cmd_mutex = NULL;
+SemaphoreHandle_t ack_semaphore = NULL;
 SemaphoreHandle_t at_mutex = NULL;
 
 #include "day.h"
@@ -376,10 +377,11 @@ gpscmd (const char *fmt, ...)
       revk_info ("gpstx", "%s", s);
    if (*s == '$')
       p += sprintf (p, "*%02X\r\n", c); // We allowed space
-   xSemaphoreTake (cmd_mutex, portMAX_DELAY);
+   if (!strncmp (s, "$PMTK", 5))
+      xSemaphoreTake (ack_semaphore, 3000 * portTICK_PERIOD_MS);    // Wait for ACK from last command
+   xQueueTakeMutexRecursive (cmd_mutex, portMAX_DELAY);
    uart_write_bytes (gpsuart, s, p - s);
-   xSemaphoreGive (cmd_mutex);
-   usleep (100000);
+   xQueueGiveMutexRecursive (cmd_mutex);
 }
 
 #define ATBUFSIZE 2000
@@ -389,7 +391,7 @@ atcmd (const void *cmd, int t1, int t2)
 {
    if (attx < 0 || atrx < 0)
       return 0;
-   xSemaphoreTake (at_mutex, portMAX_DELAY);
+   xQueueTakeMutexRecursive (at_mutex, portMAX_DELAY);
    if (cmd)
    {
       uart_write_bytes (atuart, cmd, strlen ((char *) cmd));
@@ -442,7 +444,7 @@ atcmd (const void *cmd, int t1, int t2)
          revk_info ("atrx", "%s", atbuf);
       break;
    }
-   xSemaphoreGive (at_mutex);
+   xQueueGiveMutexRecursive (at_mutex);
    return l;
 }
 
@@ -484,16 +486,16 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "disconnect"))
    {
-      xSemaphoreTake (track_mutex, portMAX_DELAY);
+      xQueueTakeMutexRecursive (track_mutex, portMAX_DELAY);
       trackmqtt = 0;
-      xSemaphoreGive (track_mutex);
+      xQueueGiveMutexRecursive (track_mutex);
       return "";
    }
    if (!strcmp (tag, "connect"))
    {
-      xSemaphoreTake (track_mutex, portMAX_DELAY);
+      xQueueTakeMutexRecursive (track_mutex, portMAX_DELAY);
       trackmqtt = 1;
-      xSemaphoreGive (track_mutex);
+      xQueueGiveMutexRecursive (track_mutex);
       if (logslow || logfast)
          gpscmd ("$PMTK183");   // Log status
       if (*iccid)
@@ -638,6 +640,44 @@ fixcheck (unsigned int fixtim)
 }
 
 static void
+gps_init (void)
+{                               // Set up GPS
+   gpscmd ("$PQTXT,W,0,1");     // Disable TXT
+   gpscmd ("$PQEPE,W,1,1");     // Enable EPE
+   gpscmd ("$PMTK220,%d", 1000 / fixpersec);    // Fix rate
+   gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
+   gpscmd ("$PMTK314,0,"        // GLL
+           "0,"                 // RMC
+           "%d,"                // VTG
+           "1,"                 // GGA
+           "%d,"                // GSA
+           "%d,"                // GSV
+           "0,"                 // 6
+           "0,"                 // 7
+           "0,"                 // 8
+           "0,"                 // 9
+           "0,"                 // 10
+           "0,"                 // 11
+           "0,"                 // 12
+           "0,"                 // 13 
+           "0,"                 // 14
+           "0,"                 // 15
+           "0,"                 // 16
+           "%d,"                // ZDA
+           "0"                  // 18
+           , fixpersec, fixpersec * 10, fixpersec * 10, fixpersec * 10);        // What to send
+   gpscmd ("$PMTK301,%d", waas ? 2 : 0);        // WAAS
+   gpscmd ("$PMTK313,%d", sbas ? 1 : 0);        // SBAS
+   gpscmd ("$PMTK513,%d", sbas ? 1 : 0);        // SBAS
+   gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
+   gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);      // Easy
+   gpscmd ("$PMTK225,%d", (always ? 8 : 0) + (backup ? 1 : 0)); // Periodic
+   gpsstarted = 1;
+   if (fixdebug || gpsdebug)
+      revk_info (TAG, "GPS running");
+}
+
+static void
 nmea (char *s)
 {
    if (gpsdebug)
@@ -658,46 +698,20 @@ nmea (char *s)
    }
    if (!n)
       return;
-   if (!gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "RMC") && (esp_timer_get_time () > 10000000 || !revk_offline ()))
-   {                            // The delay is to allow debug logging, etc.
-      gpscmd ("$PQTXT,W,0,1");  // Disable TXT
-      gpscmd ("$PQEPE,W,1,1");  // Enable EPE
-      gpscmd ("$PMTK220,%d", 1000 / fixpersec); // Fix rate
-      gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
-      gpscmd ("$PMTK314,0,"     // GLL
-              "0,"              // RMC
-              "%d,"             // VTG
-              "1,"              // GGA
-              "%d,"             // GSA
-              "%d,"             // GSV
-              "0,"              // 6
-              "0,"              // 7
-              "0,"              // 8
-              "0,"              // 9
-              "0,"              // 10
-              "0,"              // 11
-              "0,"              // 12
-              "0,"              // 13 
-              "0,"              // 14
-              "0,"              // 15
-              "0,"              // 16
-              "%d,"             // ZDA
-              "0"               // 18
-              , fixpersec, fixpersec * 10, fixpersec * 10, fixpersec * 10);     // What to send
-      gpscmd ("$PMTK301,%d", waas ? 2 : 0);     // WAAS
-      gpscmd ("$PMTK313,%d", sbas ? 1 : 0);     // SBAS
-      gpscmd ("$PMTK513,%d", sbas ? 1 : 0);     // SBAS
-      gpscmd ("$PMTK286,%d", aic ? 1 : 0);      // AIC
-      gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);   // Easy
-      gpscmd ("$PMTK225,%d", (always ? 8 : 0) + (backup ? 1 : 0));      // Periodic
-      gpsstarted = 1;
-      if (fixdebug)
-         revk_info (TAG, "GPS running");
-   }
-   if (!strcmp (f[0], "PMTK001") || !strcmp (f[0], "PQTXT"))
+   if (!gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_offline ()))
+      gpsstarted = -1;          // Time to send init
+   if (!strcmp (f[0], "PMTK001"))
+   {                            // ACK
+      xSemaphoreGive (ack_semaphore);
       return;
-   if (!strcmp (f[0], "PMTK010") || !strcmp (f[0], "PMTK011"))
-      return;                   // GPS started? check logic
+   }
+   if (!strcmp (f[0], "PQTXT"))
+      return;                   // ignore
+   if (!strcmp (f[0], "PMTK010"))
+   {
+      gpsstarted = 0;           // Restarted
+      return;
+   }
    if (!strcmp (f[0], "PQEPE") && n >= 3)
    {                            // Estimated position error
       if (!hepeforce)
@@ -938,8 +952,7 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",
-                 mobile ? "*" : " ");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s", mobile ? "*" : " ");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c", satsp ? 'P' : '-', satsl ? 'L' : '-', satsa ? 'A' : '-',
                  fixtype == 2 ? 'D' : fixtype == 1 ? 'F' : '-');
       y -= 3;                   // Line
@@ -1092,7 +1105,7 @@ display_task (void *p)
 void
 trackreset (time_t reference)
 {                               // Reset tracking
-   xSemaphoreTake (track_mutex, portMAX_DELAY);
+   xQueueTakeMutexRecursive (track_mutex, portMAX_DELAY);
    if (reference > fixbase)
       reference = fixbase;      // safety net
    trackbase = reference;
@@ -1101,7 +1114,7 @@ trackreset (time_t reference)
       tracko = 0;
    else
       tracko = tracki - MAXTRACK;
-   xSemaphoreGive (track_mutex);
+   xQueueGiveMutexRecursive (track_mutex);
    if (fixdebug)
       revk_info ("fix", "Resend from %u", (unsigned int) reference);
 }
@@ -1145,7 +1158,7 @@ tracknext (uint8_t * buf)
 {                               // Check if tracking message to be sent, if so, pack and encrypt in to bug and return length, else 0. -1 if try again
    if (tracko >= tracki)
       return 0;                 // nothing to send
-   xSemaphoreTake (track_mutex, portMAX_DELAY);
+   xQueueTakeMutexRecursive (track_mutex, portMAX_DELAY);
    int len = 0;
    if (tracko < tracki)
    {                            // Still something to send now we have semaphore
@@ -1179,7 +1192,7 @@ tracknext (uint8_t * buf)
       }
       tracko++;                 // Next
    }
-   xSemaphoreGive (track_mutex);
+   xQueueGiveMutexRecursive (track_mutex);
    return len;
 }
 
@@ -1615,6 +1628,11 @@ gps_task (void *z)
    while (1)
    {                            // main task
       sleep (1);
+      if (gpsstarted < 0)
+      {
+         revk_error (TAG, "Starting GPS");
+         gps_init ();
+      }
       fixcheck (0);
       if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
@@ -1625,11 +1643,11 @@ gps_task (void *z)
             last = fixsave - 1;
          unsigned int dlost = 0,
             dkept = 0;
-         xSemaphoreTake (track_mutex, portMAX_DELAY);
+         xQueueTakeMutexRecursive (track_mutex, portMAX_DELAY);
          if (tracki >= MAXTRACK && tracko < tracki + 1 - MAXTRACK)
             tracko = tracki + 1 - MAXTRACK;     // Lost as wrapped
          tracklen[tracki % MAXTRACK] = 0;       // Ensure not sent until we have put in data
-         xSemaphoreGive (track_mutex);
+         xQueueGiveMutexRecursive (track_mutex);
          uint8_t *t = track[tracki % MAXTRACK],
             *p = t + 8;
          if (fixend > fixbase)
@@ -1730,10 +1748,10 @@ gps_task (void *z)
          unsigned int len = encode (t, p - t, fixbase);
          if (len)
          {
-            xSemaphoreTake (track_mutex, portMAX_DELAY);
+            xQueueTakeMutexRecursive (track_mutex, portMAX_DELAY);
             tracklen[tracki % MAXTRACK] = len;
             tracki++;
-            xSemaphoreGive (track_mutex);
+            xQueueGiveMutexRecursive (track_mutex);
          }
          if (fixsave == 1)
             fixdelete = 1;      // Delete the one entry and start with no fixes
@@ -1773,6 +1791,7 @@ app_main ()
       ascale = ALT_FLIGHT;
    esp_err_t err;
    cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
+   vSemaphoreCreateBinary (ack_semaphore);        // GPS ACK mutex
    at_mutex = xSemaphoreCreateMutex (); // Shared command access
    track_mutex = xSemaphoreCreateMutex ();
    revk_init (&app_command);
