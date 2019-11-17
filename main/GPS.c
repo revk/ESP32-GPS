@@ -938,10 +938,10 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %c%c%c%c", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s",
                  mobile ? "*" : " ");
-      oled_text (1, CONFIG_OLED_WIDTH - 6 * 6, y, "%6s", satsp ? 'P' : '-', satsl ? 'L' : '-', satsa ? 'A' : '-',
-                 fixtype == 2 ? 'D' : fixtype == 1 ? 'F' : 'X');
+      oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c", satsp ? 'P' : '-', satsl ? 'L' : '-', satsa ? 'A' : '-',
+                 fixtype == 2 ? 'D' : fixtype == 1 ? 'F' : '-');
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
@@ -1059,12 +1059,6 @@ display_task (void *p)
          x = oled_text (0, x, y + 17, "o");
          y -= 3;                // Line
       }
-#if 0                           // Show time
-      y -= 8;
-      localtime_r (&set, &t);
-      strftime (temp, sizeof (temp), "%F\004%T %Z", &t);
-      oled_text (1, 0, y, temp);
-#endif
       // Speed
       y = 20;
       float s = speed;
@@ -1912,7 +1906,8 @@ app_main ()
       gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
       revk_task ("Mobile", at_task, NULL);
    }
-   revk_task ("NMEA", nmea_task, NULL);
+   if (gpsrx >= 0)
+      revk_task ("NMEA", nmea_task, NULL);
    revk_task ("Log", log_task, NULL);
    revk_task ("GPS", gps_task, NULL);
    if (ds18b20 >= 0)

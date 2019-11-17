@@ -622,7 +622,7 @@ main (int argc, const char *argv[])
                sql_safe_query_free (&sql, sql_printf ("INSERT INTO `%#S` SET `tag`=%#s", sqldevice, tag));
                devid = sql_insert_id (&sql);
                sql_free_result (device);
-               device = sql_safe_query_store_free (&sql, sql_printf ("SELECT * from `%#S` WHERE `ID`=%u", devid));
+               device = sql_safe_query_store_free (&sql, sql_printf ("SELECT * from `%#S` WHERE `ID`=%u", sqldevice, devid));
                if (!sql_fetch_row (device))
                   warnx ("WTF");
             }
@@ -714,9 +714,10 @@ main (int argc, const char *argv[])
             while (*e && *e != ' ')
                e++;
             *e = 0;
-            if (strcmp (v, l->version))
+            if (!l->version || strcmp (v, l->version))
             {
-               free (l->version);
+               if (l->version)
+                  free (l->version);
                l->version = strdup (v);
                sql_safe_query_free (&sql,
                                     sql_printf ("UPDATE `%#S` SET `version`=%#s WHERE `ID`=%u", sqldevice, l->version, devid));
