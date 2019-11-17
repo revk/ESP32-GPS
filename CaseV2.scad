@@ -28,11 +28,11 @@ module pcb(s=0)
         { // DS18B20
             translate([31.5+3,37,6])
             rotate([-90,0,0])
-            cylinder(d=6,h=10);
+            cylinder(d=6,h=12);
             translate([31.5,37,-1])
-            cube([6,10,1]);
+            cube([6,12,1]);
         }
     }
 }
 
-case(width,height,base,top,cutoffset=4){pcb(0);pcb(-1);pcb(1);};
+case(width,height,base,top,cutoffset=4,margin=0.5,side=3){pcb(0);pcb(-1);pcb(1);};
