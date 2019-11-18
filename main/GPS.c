@@ -677,7 +677,7 @@ gps_init (void)
    gpscmd ("$PMTK313,%d", sbas ? 1 : 0);        // SBAS
    gpscmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
    gpscmd ("$PMTK513,%d", sbas ? 1 : 0);        // SBAS
-   gpscmd ("$PMTK286,%d", aic ? 1 : 0); 	// AIC
+   gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
    gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);      // Easy
    gpscmd ("$PMTK225,%d", (always ? 8 : 0));
    gpsstarted = 1;
@@ -719,6 +719,10 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "PQTXT"))
       return;                   // ignore
+   if (*f[0] == 'G' && !strcmp (f[0] + 2, "GLL"))
+      return;                   // ignore
+   if (*f[0] == 'G' && !strcmp (f[0] + 2, "RMC"))
+      return;                   // ignore
    if (!strcmp (f[0], "PMTK010"))
       return;                   // Started, happens at end of init anyway
    if (!strcmp (f[0], "PMTK011"))
@@ -736,7 +740,13 @@ nmea (char *s)
       if (strlen (f[1]) >= 10 && strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
       {
          fixtype = atoi (f[6]);
-         sats = atoi (f[7]);
+         int s = atoi (f[7]);
+         if (s != sats)
+         {
+            sats = s;
+            if (fixdebug)
+               revk_info ("fix", "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d)", sats, satsp, satsl, satsa);
+         }
          if (!altforce)
             alt = strtof (f[9], NULL);
          gsep = strtof (f[10], NULL);
