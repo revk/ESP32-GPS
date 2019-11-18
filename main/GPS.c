@@ -37,9 +37,6 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s8(ds18b20,-1)	\
 	u16(mtu,1488)	\
       	bl(atdebug,N)    \
-	b(navstar,Y)	\
-	b(glonass,Y)	\
-	b(galileo,Y)	\
         s8(atuart,2)	\
         u32(atbaud,115200)	\
         u32(gpsbaud,115200)	\
@@ -64,17 +61,22 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u8(sun,0)	\
 	u32(logslow,0)	\
 	u32(logfast,0)	\
+	b(navstar,Y)	\
+	b(glonass,Y)	\
+	b(galileo,N)	\
 	b(waas,Y)	\
 	b(sbas,Y)	\
+	b(qzss,N)	\
 	b(aic,Y)	\
 	b(easy,Y)	\
+	b(always,N)	\
 	b(mph, Y)	\
 	u8(datafix,0x07)\
 	b(datamargin,Y) \
 	b(datatemp,Y)	\
 	b(flight,N)	\
 	b(balloon,N)	\
-	u8(refkmh,5)	\
+	u8(refkmh,2)	\
 
 #define u32(n,d)	uint32_t n;
 #define u16(n,d)	uint16_t n;
@@ -383,10 +385,9 @@ gpscmd (const char *fmt, ...)
    xSemaphoreGive (cmd_mutex);
    if (!strncmp (s, "$PMTK", 5))
    {
-      xSemaphoreTake (ack_semaphore,0);
+      xSemaphoreTake (ack_semaphore, 0);
       pmtk = atoi (s + 5);
-   }
-   else
+   } else
       pmtk = 0;
 }
 
@@ -672,11 +673,13 @@ gps_init (void)
            "%d,"                // ZDA
            "0"                  // 18
            , fixpersec, fixpersec * 10, fixpersec * 10, fixpersec * 10);        // What to send
-   gpscmd ("$PMTK301,%d", waas ? 2 : 0);        // WAAS
+   gpscmd ("$PMTK301,%d", waas ? 2 : 0);        // WAAS (yes, 2 is enable)
    gpscmd ("$PMTK313,%d", sbas ? 1 : 0);        // SBAS
+   gpscmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
    gpscmd ("$PMTK513,%d", sbas ? 1 : 0);        // SBAS
-   gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
+   gpscmd ("$PMTK286,%d", aic ? 1 : 0); 	// AIC
    gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);      // Easy
+   gpscmd ("$PMTK225,%d", (always ? 8 : 0));
    gpsstarted = 1;
    if (fixdebug || gpsdebug)
       revk_info (TAG, "GPS running");
@@ -961,8 +964,11 @@ display_task (void *p)
       }
       y -= 10;
       oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s", mobile ? "*" : " ");
-      oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c", satsp ? 'P' : '-', satsl ? 'L' : '-', satsa ? 'A' : '-',
-                 fixtype == 2 ? 'D' : fixtype == 1 ? 'X' : '-');
+      oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c",   //
+                 navstar ? satsp ? 'P' : '-' : ' ',     //
+                 glonass ? satsl ? 'L' : '-' : ' ',     //
+                 galileo ? satsa ? 'A' : '-' : ' ',     //
+                 fixtype == 2 ? 'D' : '-');
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
@@ -1891,7 +1897,7 @@ app_main ()
             revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
          else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
             revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-         else if ((err = uart_driver_install (gpsuart, 256, 0, 0, NULL, 0)))
+         else if ((err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0)))
             revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
       }
       connect (gpsbaud);
@@ -1921,7 +1927,7 @@ app_main ()
          revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
       else if ((err = uart_set_pin (atuart, attx, atrx, -1, -1)))
          revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-      else if ((err = uart_driver_install (atuart, 256, 0, 0, NULL, 0)))
+      else if ((err = uart_driver_install (atuart, 1024, 0, 0, NULL, 0)))
          revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
       if (atkey >= 0)
          gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
