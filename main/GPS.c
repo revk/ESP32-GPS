@@ -867,7 +867,7 @@ nmea (char *s)
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "ZDA") && n >= 5)
    {                            // Time: $GPZDA,093624.000,02,11,2019,,
-      if (strlen (f[1]) == 10 && !timeforce)
+      if (strlen (f[1]) == 10 && !timeforce && atoi (f[4]) > 2000)
       {
          struct tm t = { };
          struct timeval v = { };
