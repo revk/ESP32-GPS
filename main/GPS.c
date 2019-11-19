@@ -26,7 +26,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s8(oledscl,-1)	\
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
-	b(oledflip,Y)	\
+	b(oledflip,N)	\
 	bl(gpsdebug,N)	\
 	s8(gpspps,-1)	\
 	s8(gpsuart,1)	\
@@ -63,7 +63,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u32(logfast,0)	\
 	b(navstar,Y)	\
 	b(glonass,Y)	\
-	b(galileo,N)	\
+	b(galileo,Y)	\
 	b(waas,Y)	\
 	b(sbas,Y)	\
 	b(qzss,N)	\
