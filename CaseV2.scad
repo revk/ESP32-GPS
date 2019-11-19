@@ -18,6 +18,8 @@ module pcb(s=0)
     { // 1mm ref edge of PCB vs SVG design
         usbc(s,0.480,7.290,-90);
         spox(s,1,40,-90,4,smd=true,hidden=true);
+        smd1206(s,8.78,7.96,90);
+        smd1206(s,8.78,12.36,90);
         switch66(s,7.750,1,smd=true);
         d24v5f3(s,7,20.050,smd=true);
         esp32(s,17.708,-5.855,180);
