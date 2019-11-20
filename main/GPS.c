@@ -973,7 +973,8 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s", mobile ? "*" : " ");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : tracko == tracki ? "*" : "+", sats,
+                 sats == 1 ? " " : "s", mobile ? tracko == tracki ? "*" : "+" : " ");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c",   //
                  navstar ? satsp ? 'P' : '-' : ' ',     //
                  glonass ? satsl ? 'L' : '-' : ' ',     //

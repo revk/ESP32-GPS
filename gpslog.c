@@ -647,7 +647,7 @@ main (int argc, const char *argv[])
                int r = open ("/dev/urandom", O_RDONLY);
                if (r >= 0)
                {
-                  char auth[3 + 16 + 16];
+                  unsigned char auth[3 + 16 + 16];
                   if (read (r, auth, sizeof (auth)) == sizeof (auth))
                   {
                      char hex[sizeof (auth) * 2 + 1];
