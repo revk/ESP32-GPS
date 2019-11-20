@@ -29,4 +29,4 @@ module pcb(s=0)
     }
 }
 
-case(width,height,base,top,cutoffset=6,side=3){pcb(0);pcb(-1);pcb(1);};
+case(width,height,base,top,cutoffset=6,side=3,margin=0.5,sidet=0.4){pcb(0);pcb(-1);pcb(1);};
