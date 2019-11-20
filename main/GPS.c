@@ -26,7 +26,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s8(oledscl,-1)	\
 	s8(oledaddress,0x3D)	\
 	u8(oledcontrast,127)	\
-	b(oledflip,Y)	\
+	b(oledflip,N)	\
 	bl(gpsdebug,N)	\
 	s8(gpspps,-1)	\
 	s8(gpsuart,1)	\
@@ -63,7 +63,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u32(logfast,0)	\
 	b(navstar,Y)	\
 	b(glonass,Y)	\
-	b(galileo,N)	\
+	b(galileo,Y)	\
 	b(waas,Y)	\
 	b(sbas,Y)	\
 	b(qzss,N)	\
@@ -973,7 +973,8 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : "*", sats, sats == 1 ? " " : "s", mobile ? "*" : " ");
+      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : tracko == tracki ? "*" : "+", sats,
+                 sats == 1 ? " " : "s", mobile ? tracko == tracki ? "*" : "+" : " ");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c",   //
                  navstar ? satsp ? 'P' : '-' : ' ',     //
                  glonass ? satsl ? 'L' : '-' : ' ',     //
