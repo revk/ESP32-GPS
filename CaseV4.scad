@@ -7,8 +7,8 @@ width=45;
 height=45;
 
 // Box thickness reference to component cube
-base=1;
-top=10.4;
+base=2;
+top=10.5;
 
 $fn=48;
 
@@ -25,9 +25,10 @@ module pcb(s=0)
         d24v5f3(s,6.715,20.05,smd=true);
         esp32(s,18.75,-0.870,180);
         bat1220(s,14.4,33.4,0);
-        oled(s,1,1,180,screw=0.5,smd=true);
+        oled(s,1,1,180,screw=1,smd=true);
     }
 }
 
-case(width,height,base,top,cutoffset=6){pcb(0);pcb(-1);pcb(1);};
+case(width,height,base,top,cutoffset=4){pcb(0);pcb(-1);pcb(1);};
+
 
