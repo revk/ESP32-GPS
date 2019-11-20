@@ -1227,10 +1227,10 @@ at_task (void *X)
    atbuf = malloc (ATBUFSIZE);
    while (1)
    {
-      gpio_set_level (atpwr, 0);
+      gpio_set_level (atkey, 0);
       sleep (1);
       gpio_set_level (atrst, 0);
-      gpio_set_level (atpwr, 1);
+      gpio_set_level (atkey, 1);
       sleep (1);
       gpio_set_level (atrst, 1);
       int try = 60;
@@ -1944,7 +1944,11 @@ app_main ()
          gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
       if (atrst >= 0)
          gpio_set_direction (atrst, GPIO_MODE_OUTPUT);
-      gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
+      if (atpwr >= 0)
+      {
+         gpio_set_level (atpwr, 1);
+         gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
+      }
       revk_task ("Mobile", at_task, NULL);
    }
    if (gpsrx >= 0)
