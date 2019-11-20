@@ -24,7 +24,7 @@ module pcb(s=0)
         switch66(s,7.750,1,smd=true);
         d24v5f3(s,6.715,20.05,smd=true);
         esp32(s,18.75,-0.870,180);
-        bat1220(s,14.4,33.5,0);
+        bat1220(s,14.4,33.4,0);
         oled(s,1,1,180,screw=0.5,smd=true);
     }
 }
