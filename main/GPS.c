@@ -6,7 +6,6 @@ static const char TAG[] = "GPS";
 // Settings via UDP?
 // Better roaming operator selection? Maybe signal strength, or retries of each?
 // AT command wait for OK/ERROR
-// Better logic for stationary inside...
 
 #include "revk.h"
 #include <esp32/aes.h>
@@ -77,6 +76,8 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(flight,N)	\
 	b(balloon,N)	\
 	u8(refkmh,5)	\
+	u8(lightmin,30)	\
+	s8(light,-1)	\
 
 #define u32(n,d)	uint32_t n;
 #define u16(n,d)	uint16_t n;
@@ -627,7 +628,7 @@ static void
 fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
-   if (gpszda && fixsave < 0 && fixdelete < 0
+   if (!timeforce && gpszda && fixsave < 0 && fixdelete < 0
        && (fixnow || fixnext > MAXFIX - FIXALLOW || (now - fixbase >= interval) || fixtim >= 65000))
    {
       if (fixdebug)
@@ -1018,7 +1019,7 @@ display_task (void *p)
       } else
          oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
       y -= 3;                   // Line
-      if (gotfix)
+      if (gpszda && gotfix)
       {
          // Sun
          y -= 22;
@@ -1034,15 +1035,17 @@ display_task (void *p)
          o = 0;
          do
             set = sun_set (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
-         while (set <= now && o < 200);
+         while (set + lightmin * 60 <= now && o < 200);
          if (rise > set)
+            o = set - now;
+         else
+            o = rise - now;
+         if (o >= 0 && rise > set)
          {
             oled_icon (0, y, day, 22, 21);
-            o = set - now;
          } else
          {
             oled_icon (0, y, night, 22, 21);
-            o = rise - now;
             // Moon
 #define LUNY 2551442.8768992    // Seconds per lunar cycle
             int s = now - 1571001050;   // Seconds since reference full moon
@@ -1080,16 +1083,26 @@ display_task (void *p)
 #undef w
          }
          x = 22;
-         if (o / 3600 < 1000)
-         {                      // H:MM:SS
-            x = oled_text (3, x, y, "%3d", o / 3600);
-            x = oled_text (2, x, y, ":%02d", o / 60 % 60);
-            x = oled_text (1, x, y, ":%02d", o % 60);
-         } else
-         {                      // D HH:MM
-            x = oled_text (3, x, y, "%3d", o / 86400);
-            x = oled_text (2, x, y, "\002%02d", o / 3600 % 24);
-            x = oled_text (1, x, y, ":%02d", o / 60 % 60);
+         {
+            const char *s = "%3d";
+            if (o < 0)
+            {
+               o = 0 - o;
+               s = "%+3d";
+            }
+            if (light >= 0)
+               gpio_set_level (light, rise > set || o < lightmin * 60 ? 1 : 0); // Light control
+            if (o / 3600 < 1000)
+            {                   // H:MM:SS
+               x = oled_text (3, x, y, s, o / 3600);
+               x = oled_text (2, x, y, ":%02d", o / 60 % 60);
+               x = oled_text (1, x, y, ":%02d", o % 60);
+            } else
+            {                   // D HH:MM
+               x = oled_text (3, x, y, s, o / 86400);
+               x = oled_text (2, x, y, "\002%02d", o / 3600 % 24);
+               x = oled_text (1, x, y, ":%02d", o / 60 % 60);
+            }
          }
          // Sun angle
          x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
@@ -1227,6 +1240,8 @@ at_task (void *X)
    atbuf = malloc (ATBUFSIZE);
    while (1)
    {
+      gpio_set_level (atpwr, 1);
+      sleep (1);
       gpio_set_level (atkey, 0);
       sleep (1);
       gpio_set_level (atrst, 0);
@@ -1945,12 +1960,11 @@ app_main ()
       if (atrst >= 0)
          gpio_set_direction (atrst, GPIO_MODE_OUTPUT);
       if (atpwr >= 0)
-      {
-         gpio_set_level (atpwr, 1);
          gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
-      }
       revk_task ("Mobile", at_task, NULL);
    }
+   if (light >= 0)
+      gpio_set_direction (light, GPIO_MODE_OUTPUT);
    if (gpsrx >= 0)
       revk_task ("NMEA", nmea_task, NULL);
    revk_task ("Log", log_task, NULL);
