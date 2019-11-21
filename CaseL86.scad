@@ -21,5 +21,5 @@ module pcb(s=0)
     }
 }
 
-case(width,height,base,top,cutoffset=2){pcb(0);pcb(-1);pcb(1);};
+case(width,height,base,top,cutoffset=2,topedge=6){pcb(0);pcb(-1);pcb(1);};
 
