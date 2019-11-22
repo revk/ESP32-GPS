@@ -789,6 +789,7 @@ nmea (char *s)
                  rates[0], rates[1], rates[2], rates[3], rates[4], rates[5], rates[6], rates[7], rates[8], rates[9], rates[10],
                  rates[11], rates[12], rates[13], rates[14], rates[15], rates[16], rates[17], rates[18], rates[19]);
       }
+      return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && n >= 14)
    {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
