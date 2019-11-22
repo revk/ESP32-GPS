@@ -44,7 +44,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
         s8(atkey,-1)	\
         s8(atrst,-1)	\
         s8(atpwr,-1)	\
-	u8(fixpersec,10)\
+	u32(fixms,1000) \
 	bl(fixdump,N)	\
 	bl(fixdebug,N)	\
 	b(battery,Y)	\
@@ -655,7 +655,7 @@ static void
 gps_init (void)
 {                               // Set up GPS
    //gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);      // Easy -- TODO, disruptive, seems to resent, use query to change maybe
-   gpscmd ("$PMTK220,%d", 1000 / fixpersec);
+   gpscmd ("$PMTK220,%d", fixms);
    gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
    gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
    gpscmd ("$PMTK314,0,"        // GLL
@@ -677,7 +677,7 @@ gps_init (void)
            "0,"                 // 16
            "%d,"                // ZDA
            "0"                  // 18
-           , fixpersec, fixpersec * 10, fixpersec * 10, fixpersec * 10);        // What to send
+           , 1000 / fixms ? : 1, 10000 / fixms ? : 1, 10000 / fixms ? : 1, 10000 / fixms ? : 1);        // What to send
    gpscmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);      // DGPS mode SBAS (including WAAS/EGNOS/GAGAN/MSAS)
    gpscmd ("$PMTK313,%d", sbas ? 1 : 0);        // SBAS
    gpscmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
@@ -764,8 +764,8 @@ nmea (char *s)
          {
             sats = s;
             if (fixdebug)
-               revk_info ("fix", "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d) type=%d mode=%d", sats, satsp, satsl, satsa, fixtype,
-                          fixmode);
+               revk_info ("fix", "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d) type=%d mode=%d hepe=%.1f vepe=%.1f", sats, satsp,
+                          satsl, satsa, fixtype, fixmode, hepe, vepe);
          }
          if (!altforce)
             alt = strtof (f[9], NULL);
@@ -1003,7 +1003,7 @@ display_task (void *p)
                  navstar ? satsp ? 'P' : '-' : ' ',     //
                  glonass ? satsl ? 'L' : '-' : ' ',     //
                  galileo ? satsa ? 'A' : '-' : ' ',     //
-                 fixtype == 2 ? 'D' : '-');
+                 ((waas || sbas) && fixms >= 1000) ? ' ' : fixtype == 2 ? 'D' : '-');
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
