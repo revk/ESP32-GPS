@@ -638,13 +638,13 @@ fixcheck (unsigned int fixtim)
       if (fixdebug)
       {
          if (fixnow)
-            revk_info ("fix", "Fix forced (%u)", fixnext);
+            revk_info (TAG, "Fix forced (%u)", fixnext);
          else if (fixnext > MAXFIX - FIXALLOW)
-            revk_info ("fix", "Fix space full (%u)", fixnext);
+            revk_info (TAG, "Fix space full (%u)", fixnext);
          else if (now - fixbase >= interval)
-            revk_info ("fix", "Fix time expired %u (%u)", (unsigned int) (now - fixbase), fixnext);
+            revk_info (TAG, "Fix time expired %u (%u)", (unsigned int) (now - fixbase), fixnext);
          else if (fixtim >= 65000)
-            revk_info ("fix", "Fix tim too high %u (%u)", fixtim, fixnext);
+            revk_info (TAG, "Fix tim too high %u (%u)", fixtim, fixnext);
       }
       fixend = time (0);
       fixsave = fixnext;        // Save the fixes we have so far (more may accumulate whilst saving)
@@ -654,7 +654,6 @@ fixcheck (unsigned int fixtim)
 static void
 gps_init (void)
 {                               // Set up GPS
-   gpscmd ("$PMTK220,%d", fixms);
    gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
    gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
    gpscmd ("$PMTK314,0,"        // GLL
@@ -677,24 +676,17 @@ gps_init (void)
            "%d,"                // ZDA
            "0"                  // 18
            , 1000 / fixms ? : 1, 10000 / fixms ? : 1, 10000 / fixms ? : 1, 10000 / fixms ? : 1);        // What to send
-   gpscmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);      // DGPS mode SBAS (including WAAS/EGNOS/GAGAN/MSAS)
-   gpscmd ("$PMTK313,%d", sbas ? 1 : 0);        // SBAS
    gpscmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
    gpscmd ("$PQTXT,W,0,1");     // Disable TXT
    gpscmd ("$PQEPE,W,1,1");     // Enable EPE
    gpscmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0);  // FR mode
-   if (fixdebug || gpsdebug)
-   {
-      gpscmd ("$PMTK605");      // Q_RELEASE
-      gpscmd ("$PMTK400");      // Q_FIX
-      gpscmd ("$PMTK401");      // Q_DGPS
-      gpscmd ("$PMTK413");      // Q_SBAS
-      gpscmd ("$PMTK414");      // Q_NMEA_OUTPUT
-   }
+   gpscmd ("$PMTK605");         // Q_RELEASE
+   gpscmd ("$PMTK400");         // Q_FIX
+   gpscmd ("$PMTK401");         // Q_DGPS
+   gpscmd ("$PMTK413");         // Q_SBAS
    gpscmd ("$PMTK869,0");       // Query EASY - response used to set easy mode if needed
+   gpscmd ("$PMTK414");         // Q_NMEA_OUTPUT
    gpsstarted = 1;
-   if (fixdebug || gpsdebug)
-      revk_info (TAG, "GPS running");
 }
 
 static void
@@ -754,9 +746,48 @@ nmea (char *s)
       return;
    }
    if (!strcmp (f[0], "PMTK869") && n >= 2)
-   {
+   {                            // Set EASY
       if (atoi (f[1]) != easy)
+      {
+         if (fixdebug)
+            revk_info (TAG, "Setting EASY");
          gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);
+      }
+      return;
+   }
+   if (!strcmp (f[0], "PMTK513") && n >= 2)
+   {                            // Set SBAS
+      if (atoi (f[1]) != sbas)
+      {
+         if (fixdebug)
+            revk_info (TAG, "Setting SBAS");
+         gpscmd ("$PMTK313,%d", sbas ? 1 : 0);
+      }
+      return;
+   }
+   if (!strcmp (f[0], "PMTK501") && n >= 2)
+   {                            // Set DGPS
+      if (atoi (f[1]) != ((sbas || waas) ? 2 : 0))
+      {
+         if (fixdebug)
+            revk_info (TAG, "Setting DGPS");
+         gpscmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);
+      }
+      return;
+   }
+   if (!strcmp (f[0], "PMTK500") && n >= 2)
+   {                            // Set DGPS
+      if (atoi (f[1]) != fixms)
+      {
+         if (fixdebug)
+            revk_info (TAG, "Setting fix rate");
+         gpscmd ("$PMTK220,%d", fixms);
+      }
+      return;
+   }
+   if (!strcmp (f[0], "PMTK705") && n >= 2)
+   {
+      revk_info (TAG, "GPS version %s", f[1]);
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && n >= 14)
@@ -769,7 +800,7 @@ nmea (char *s)
          {
             sats = s;
             if (fixdebug)
-               revk_info ("fix", "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d) type=%d mode=%d hepe=%.1f vepe=%.1f", sats, satsp,
+               revk_info (TAG, "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d) type=%d mode=%d hepe=%.1f vepe=%.1f", sats, satsp,
                           satsl, satsa, fixtype, fixmode, hepe, vepe);
          }
          if (!altforce)
@@ -864,7 +895,7 @@ nmea (char *s)
                else
                {                // Save
                   if (fixdump)
-                     revk_info ("fix", "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
+                     revk_info (TAG, "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
                                 fixalt, ascale);
                   fixnext++;
                }
@@ -877,7 +908,7 @@ nmea (char *s)
          unsigned int n,
            p = 0;
          int diff = fixend - fixbase;
-         //if (fixdebug) revk_info ("fix", "Fix deleted %d, adjust %d", fixdelete, diff);
+         //if (fixdebug) revk_info(TAG, "Fix deleted %d, adjust %d", fixdelete, diff);
          for (n = fixdelete; n < fixnext; n++)
          {
             fix[p] = fix[n];
@@ -908,7 +939,7 @@ nmea (char *s)
          {
             sntp_stop ();
             if (fixdebug)
-               revk_info ("fix", "Set clock %s-%s-%s %s", f[4], f[3], f[2], f[1]);
+               revk_info (TAG, "Set clock %s-%s-%s %s", f[4], f[3], f[2], f[1]);
             fixbase = v.tv_sec;
             fixend = v.tv_sec;
             fixsave = 0;        // Send a null fix
@@ -930,7 +961,7 @@ nmea (char *s)
          if (moving)
          {
             if (fixdebug)
-               revk_info ("fix", "Not moving %.1fkm/h %.2f HDOP", speed, hdop);
+               revk_info (TAG, "Not moving %.1fkm/h %.2f HDOP", speed, hdop);
             moving = 0;         // Stopped moving
             lograte (logslow);
          }
@@ -939,7 +970,7 @@ nmea (char *s)
          if (!moving)
          {
             if (fixdebug)
-               revk_info ("fix", "Moving %.1fkm/h %.2f HDOP", speed, hdop);
+               revk_info (TAG, "Moving %.1fkm/h %.2f HDOP", speed, hdop);
             moving = 1;         // Started moving
             lograte (logfast);
          }
@@ -1005,10 +1036,10 @@ display_task (void *p)
       oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : tracko == tracki ? "*" : "+", sats,
                  sats == 1 ? " " : "s", mobile ? tracko == tracki ? "*" : "+" : " ");
       oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c",   //
-                 navstar ? satsp ? 'P' : '-' : ' ',     //
-                 glonass ? satsl ? 'L' : '-' : ' ',     //
-                 galileo ? satsa ? 'A' : '-' : ' ',     //
-                 ((waas || sbas) && fixms >= 1000) ? ' ' : fixtype == 2 ? 'D' : '-');
+                 navstar ? satsp ? 'P' : '-' : ' ',     // G[P]S (NAVSTAR(
+                 glonass ? satsl ? 'L' : '-' : ' ',     // G[L]ANOSS
+                 galileo ? satsa ? 'A' : '-' : ' ',     // G[A]LILEO
+                 fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');   // DGPS
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
@@ -1182,7 +1213,7 @@ trackreset (time_t reference)
       tracko = tracki - MAXTRACK;
    xSemaphoreGive (track_mutex);
    if (fixdebug)
-      revk_info ("fix", "Resend from %u", (unsigned int) reference);
+      revk_info (TAG, "Resend from %u", (unsigned int) reference);
 }
 
 unsigned int
@@ -1664,7 +1695,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       h = bestn;                // First half recursive
    }
    if (fixdebug)
-      revk_info ("fix", "RDP completed in %uus", (unsigned int) (esp_timer_get_time () - start));
+      revk_info (TAG, "RDP completed in %uus", (unsigned int) (esp_timer_get_time () - start));
    // Sort
    unsigned int lost = 0,
       kept = 0;
@@ -1754,7 +1785,7 @@ gps_task (void *z)
          unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;  // How many fixes we can fit...
          last = rdp (last, max, &dlost, &dkept);
          if (fixdebug)
-            revk_info ("fix", "Logging %u/%u from %u fixes at %u." MPART "/%u." MPART "/%u." MPART " covering %u seconds", last,
+            revk_info (TAG, "Logging %u/%u from %u fixes at %u." MPART "/%u." MPART "/%u." MPART " covering %u seconds", last,
                        max, fixsave, fix[1].dist / MSCALE, fix[1].dist % MSCALE, dkept / MSCALE, dkept % MSCALE, dlost / MSCALE,
                        dlost % MSCALE, fixend - fixbase);
          if (last > max)
