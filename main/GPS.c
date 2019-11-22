@@ -656,37 +656,17 @@ gps_init (void)
 {                               // Set up GPS
    gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
    gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
-   gpscmd ("$PMTK314,0,"        // GLL
-           "0,"                 // RMC
-           "%d,"                // VTG
-           "1,"                 // GGA
-           "%d,"                // GSA
-           "%d,"                // GSV
-           "0,"                 // 6
-           "0,"                 // 7
-           "0,"                 // 8
-           "0,"                 // 9
-           "0,"                 // 10
-           "0,"                 // 11
-           "0,"                 // 12
-           "0,"                 // 13 
-           "0,"                 // 14
-           "0,"                 // 15
-           "0,"                 // 16
-           "%d,"                // ZDA
-           "0"                  // 18
-           , 1000 / fixms ? : 1, 10000 / fixms ? : 1, 10000 / fixms ? : 1, 10000 / fixms ? : 1);        // What to send
    gpscmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
    gpscmd ("$PQTXT,W,0,1");     // Disable TXT
    gpscmd ("$PQEPE,W,1,1");     // Enable EPE
    gpscmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0);  // FR mode
    // Queries - responses prompt settings changes if needed
+   gpscmd ("$PMTK414");         // Q_NMEA_OUTPUT
    gpscmd ("$PMTK605");         // Q_RELEASE
    gpscmd ("$PMTK400");         // Q_FIX
    gpscmd ("$PMTK401");         // Q_DGPS
    gpscmd ("$PMTK413");         // Q_SBAS
    gpscmd ("$PMTK869,0");       // Query EASY
-   //gpscmd ("$PMTK414");         // Q_NMEA_OUTPUT
    gpsstarted = 1;
 }
 
@@ -790,6 +770,25 @@ nmea (char *s)
    {
       revk_info (TAG, "GPS version %s", f[1]);
       return;
+   }
+   if (!strcmp (f[0], "PMTK514") && n >= 2)
+   {
+      unsigned int rates[19] = { };
+      rates[2] = (1000 / fixms ? : 1);  // VTG
+      rates[3] = 1;             // GGA
+      rates[4] = (10000 / fixms ? : 1); // GSA
+      rates[5] = (10000 / fixms ? : 1); // GSV
+      rates[17] = (10000 / fixms ? : 1);        // ZDA
+      int q;
+      for (q = 0; q < sizeof (rates) / sizeof (rates) && rates[q] == (1 + q < n ? atoi (f[1 + q]) : 0); q++);
+      if (q < sizeof (rates) / sizeof (rates))
+      {                         // Set message rates
+         if (fixdebug)
+            revk_info (TAG, "Setting message rates");
+         gpscmd ("$PMTK314,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                 rates[0], rates[1], rates[2], rates[3], rates[4], rates[5], rates[6], rates[7], rates[8], rates[9], rates[10],
+                 rates[11], rates[12], rates[13], rates[14], rates[15], rates[16], rates[17], rates[18], rates[19]);
+      }
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && n >= 14)
    {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
