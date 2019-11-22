@@ -51,7 +51,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u32(interval,600)\
 	u32(keepalive,0)\
 	u32(secondcm,10)\
-	u32(altscale,10)\
+        u32(altscale,10)\
 	s(apn,"mobiledata")\
 	s(operator,"O2")\
 	s(loghost,"mqtt.revk.uk")\
@@ -1651,7 +1651,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       {
          if (!(datafix & TAGF_FIX_ALT) || !p->alt)
             return 0;           // Not considering alt
-         return (float) (p->alt - calt) * ascale / (float) altscale;
+         return (float) (p->alt - calt) * ascale / (float) altscale; // altscale is adjust for point reduction
       }
       inline float t (fix_t * p)
       {
@@ -1882,10 +1882,6 @@ ds18b20_task (void *z)
 void
 app_main ()
 {
-   if (balloon)
-      ascale = ALT_BALLOON;
-   else if (flight)
-      ascale = ALT_FLIGHT;
    esp_err_t err;
    cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
    vSemaphoreCreateBinary (ack_semaphore);      // GPS ACK mutex
@@ -1909,6 +1905,10 @@ app_main ()
 #undef b
 #undef h
 #undef s
+   if (balloon)
+      ascale = ALT_BALLOON;
+   else if (flight)
+      ascale = ALT_FLIGHT;
    if (mtu > 1488)
       mtu = 1488;
    // Memory
