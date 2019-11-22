@@ -654,7 +654,6 @@ fixcheck (unsigned int fixtim)
 static void
 gps_init (void)
 {                               // Set up GPS
-   //gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);      // Easy -- TODO, disruptive, seems to resent, use query to change maybe
    gpscmd ("$PMTK220,%d", fixms);
    gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
    gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
@@ -691,8 +690,8 @@ gps_init (void)
       gpscmd ("$PMTK401");      // Q_DGPS
       gpscmd ("$PMTK413");      // Q_SBAS
       gpscmd ("$PMTK414");      // Q_NMEA_OUTPUT
-      gpscmd ("$PMTK869,0");    // Query EASY
    }
+   gpscmd ("$PMTK869,0");       // Query EASY - response used to set easy mode if needed
    gpsstarted = 1;
    if (fixdebug || gpsdebug)
       revk_info (TAG, "GPS running");
@@ -752,6 +751,12 @@ nmea (char *s)
          hepe = strtof (f[1], NULL);
       if (!vepeforce)
          vepe = strtof (f[2], NULL);
+      return;
+   }
+   if (!strcmp (f[0], "PMTK869") && n >= 2)
+   {
+      if (atoi (f[1]) != easy)
+         gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && n >= 14)
