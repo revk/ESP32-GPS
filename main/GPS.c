@@ -68,11 +68,11 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(qzss,N)	\
 	b(aic,Y)	\
 	b(easy,Y)	\
-	b(always,N)	\
 	b(mph, Y)	\
 	u8(datafix,0x07)\
 	b(datamargin,Y) \
 	b(datatemp,Y)	\
+	b(walking,N)	\
 	b(flight,N)	\
 	b(balloon,N)	\
 	u8(refkmh,5)	\
@@ -367,7 +367,7 @@ void
 gpscmd (const char *fmt, ...)
 {                               // Send command to UART
    if (pmtk)
-      xSemaphoreTake (ack_semaphore, 3000 * portTICK_PERIOD_MS);        // Wait for ACK from last command
+      xSemaphoreTake (ack_semaphore, 1000 * portTICK_PERIOD_MS);        // Wait for ACK from last command
    char s[100];
    va_list ap;
    va_start (ap, fmt);
@@ -594,21 +594,25 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    if (!strcmp (tag, "hot"))
    {
       gpscmd ("$PMTK101");      // Hot start
+      gpsstarted = 0;
       return "";
    }
    if (!strcmp (tag, "warm"))
    {
       gpscmd ("$PMTK102");      // Warm start
+      gpsstarted = 0;
       return "";
    }
    if (!strcmp (tag, "cold"))
    {
       gpscmd ("$PMTK103");      // Cold start
+      gpsstarted = 0;
       return "";
    }
    if (!strcmp (tag, "reset"))
    {
       gpscmd ("$PMTK104");      // Full cold start (resets to default settings including Baud rate)
+      revk_restart ("GPS has been reset", 1);
       return "";
    }
    if (!strcmp (tag, "sleep"))
@@ -650,9 +654,9 @@ fixcheck (unsigned int fixtim)
 static void
 gps_init (void)
 {                               // Set up GPS
-   gpscmd ("$PQTXT,W,0,1");     // Disable TXT
-   gpscmd ("$PQEPE,W,1,1");     // Enable EPE
-   gpscmd ("$PMTK220,%d", 1000 / fixpersec);    // Fix rate
+   //gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);      // Easy -- TODO, disruptive, seems to resent, use query to change maybe
+   gpscmd ("$PMTK220,%d", 1000 / fixpersec);
+   gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
    gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
    gpscmd ("$PMTK314,0,"        // GLL
            "0,"                 // RMC
@@ -674,13 +678,21 @@ gps_init (void)
            "%d,"                // ZDA
            "0"                  // 18
            , fixpersec, fixpersec * 10, fixpersec * 10, fixpersec * 10);        // What to send
-   gpscmd ("$PMTK301,%d", waas ? 2 : 0);        // WAAS (yes, 2 is enable)
+   gpscmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);      // DGPS mode SBAS (including WAAS/EGNOS/GAGAN/MSAS)
    gpscmd ("$PMTK313,%d", sbas ? 1 : 0);        // SBAS
    gpscmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
-   gpscmd ("$PMTK513,%d", sbas ? 1 : 0);        // SBAS
-   gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
-   gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);      // Easy
-   gpscmd ("$PMTK225,%d", (always ? 8 : 0));
+   gpscmd ("$PQTXT,W,0,1");     // Disable TXT
+   gpscmd ("$PQEPE,W,1,1");     // Enable EPE
+   gpscmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0);  // FR mode
+   if (fixdebug || gpsdebug)
+   {
+      gpscmd ("$PMTK605");      // Q_RELEASE
+      gpscmd ("$PMTK400");      // Q_FIX
+      gpscmd ("$PMTK401");      // Q_DGPS
+      gpscmd ("$PMTK413");      // Q_SBAS
+      gpscmd ("$PMTK414");      // Q_NMEA_OUTPUT
+      gpscmd ("$PMTK869,0");    // Query EASY
+   }
    gpsstarted = 1;
    if (fixdebug || gpsdebug)
       revk_info (TAG, "GPS running");
@@ -709,13 +721,19 @@ nmea (char *s)
       return;
    if (!gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_offline ()))
       gpsstarted = -1;          // Time to send init
-   if (!strcmp (f[0], "PMTK001"))
+   if (!strcmp (f[0], "PMTK001") && n >= 3)
    {                            // ACK
-      if (pmtk && pmtk == atoi (f[1]))
-      {
+      int tag = atoi (f[1]);
+      if (pmtk && pmtk == tag)
+      {                         // ACK received
          xSemaphoreGive (ack_semaphore);
          pmtk = 0;
       }
+      int ok = atoi (f[2]);
+      if (ok == 1)
+         revk_error (TAG, "PMTK%d unsupported", tag);
+      else if (ok == 2)
+         revk_error (TAG, "PMTK%d failed", tag);
       return;
    }
    if (!strcmp (f[0], "PQTXT"))
@@ -746,7 +764,8 @@ nmea (char *s)
          {
             sats = s;
             if (fixdebug)
-               revk_info ("fix", "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d)", sats, satsp, satsl, satsa);
+               revk_info ("fix", "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d) type=%d mode=%d", sats, satsp, satsl, satsa, fixtype,
+                          fixmode);
          }
          if (!altforce)
             alt = strtof (f[9], NULL);
@@ -943,7 +962,11 @@ nmea (char *s)
       return;
    }
    if (!gpsdebug)
-      revk_error ("gpsrx", "$%s... (%d)", f[0], n);     // Unknown
+   {                            // Report unknown
+      for (int q = 1; q < n; q++)
+         f[q][-1] = ',';
+      revk_error ("gpsrx", "$%s", f[0]);
+   }
 }
 
 static void
