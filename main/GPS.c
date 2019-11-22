@@ -680,12 +680,13 @@ gps_init (void)
    gpscmd ("$PQTXT,W,0,1");     // Disable TXT
    gpscmd ("$PQEPE,W,1,1");     // Enable EPE
    gpscmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0);  // FR mode
+   // Queries - responses prompt settings changes if needed
    gpscmd ("$PMTK605");         // Q_RELEASE
    gpscmd ("$PMTK400");         // Q_FIX
    gpscmd ("$PMTK401");         // Q_DGPS
    gpscmd ("$PMTK413");         // Q_SBAS
-   gpscmd ("$PMTK869,0");       // Query EASY - response used to set easy mode if needed
-   gpscmd ("$PMTK414");         // Q_NMEA_OUTPUT
+   gpscmd ("$PMTK869,0");       // Query EASY
+   //gpscmd ("$PMTK414");         // Q_NMEA_OUTPUT
    gpsstarted = 1;
 }
 
@@ -745,12 +746,12 @@ nmea (char *s)
          vepe = strtof (f[2], NULL);
       return;
    }
-   if (!strcmp (f[0], "PMTK869") && n >= 2)
+   if (!strcmp (f[0], "PMTK869") && n >= 4)
    {                            // Set EASY
-      if (atoi (f[1]) != easy)
+      if (atoi (f[1]) == 2 && atoi (f[2]) != easy)
       {
          if (fixdebug)
-            revk_info (TAG, "Setting EASY");
+            revk_info (TAG, "Setting EASY %s  (%s days)", easy ? "on" : "off", f[3]);
          gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);
       }
       return;
@@ -760,7 +761,7 @@ nmea (char *s)
       if (atoi (f[1]) != sbas)
       {
          if (fixdebug)
-            revk_info (TAG, "Setting SBAS");
+            revk_info (TAG, "Setting SBAS %s", sbas ? "on" : "off");
          gpscmd ("$PMTK313,%d", sbas ? 1 : 0);
       }
       return;
@@ -770,17 +771,17 @@ nmea (char *s)
       if (atoi (f[1]) != ((sbas || waas) ? 2 : 0))
       {
          if (fixdebug)
-            revk_info (TAG, "Setting DGPS");
+            revk_info (TAG, "Setting DGPS %s", (sbas || waas) ? "on" : "off");
          gpscmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);
       }
       return;
    }
    if (!strcmp (f[0], "PMTK500") && n >= 2)
-   {                            // Set DGPS
+   {                            // Fix rate
       if (atoi (f[1]) != fixms)
       {
          if (fixdebug)
-            revk_info (TAG, "Setting fix rate");
+            revk_info (TAG, "Setting fix rate %dms", fixms);
          gpscmd ("$PMTK220,%d", fixms);
       }
       return;
