@@ -662,11 +662,11 @@ gps_init (void)
    gpscmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0);  // FR mode
    // Queries - responses prompt settings changes if needed
    gpscmd ("$PMTK414");         // Q_NMEA_OUTPUT
-   gpscmd ("$PMTK605");         // Q_RELEASE
    gpscmd ("$PMTK400");         // Q_FIX
    gpscmd ("$PMTK401");         // Q_DGPS
    gpscmd ("$PMTK413");         // Q_SBAS
    gpscmd ("$PMTK869,0");       // Query EASY
+   gpscmd ("$PMTK605");         // Q_RELEASE
    gpsstarted = 1;
 }
 
