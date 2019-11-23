@@ -1309,7 +1309,7 @@ at_task (void *X)
       sleep (1);
       gpio_set_level (atrst, 1);
       int try = 60;
-      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && strncmp (atbuf, "OK", 2))) && --try > 0)
+      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && !strstr(atbuf, "OK"))) && --try > 0)
          sleep (1);
       if (try <= 0)
          continue;              // Cause power cycle and try again
