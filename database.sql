@@ -82,6 +82,7 @@ CREATE TABLE `gps` (
   `alt` decimal(8,1) DEFAULT NULL,
   `sats` int(2) DEFAULT NULL,
   `hdop` decimal(5,1) DEFAULT NULL,
+  `hepe` decimal(4,1) DEFAULT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `utc_2` (`utc`,`device`),
   KEY `utc` (`utc`),
