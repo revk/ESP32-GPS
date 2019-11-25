@@ -1,8 +1,8 @@
--- MySQL dump 10.17  Distrib 10.3.17-MariaDB, for debian-linux-gnu (x86_64)
+-- MySQL dump 10.17  Distrib 10.3.18-MariaDB, for debian-linux-gnu (x86_64)
 --
 -- Host: localhost    Database: gps
 -- ------------------------------------------------------
--- Server version	10.3.17-MariaDB-0+deb10u1
+-- Server version	10.3.18-MariaDB-0+deb10u1
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -34,7 +34,7 @@ CREATE TABLE `auth` (
   KEY `auth_ibfk_1` (`replaces`),
   CONSTRAINT `auth_ibfk_1` FOREIGN KEY (`replaces`) REFERENCES `auth` (`ID`) ON DELETE CASCADE,
   CONSTRAINT `auth_ibfk_2` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=52 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -63,7 +63,7 @@ CREATE TABLE `device` (
   KEY `ip` (`ip`,`port`),
   KEY `auth` (`auth`),
   CONSTRAINT `device_ibfk_1` FOREIGN KEY (`auth`) REFERENCES `auth` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -81,13 +81,13 @@ CREATE TABLE `gps` (
   `lon` decimal(13,8) DEFAULT NULL,
   `alt` decimal(8,1) DEFAULT NULL,
   `sats` int(2) DEFAULT NULL,
-  `hdop` decimal(5,1) DEFAULT NULL,
+  `hepe` decimal(4,1) DEFAULT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `utc_2` (`utc`,`device`),
   KEY `utc` (`utc`),
   KEY `device` (`device`),
   CONSTRAINT `gps_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=269146 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -107,10 +107,11 @@ CREATE TABLE `log` (
   `ip` varchar(39) DEFAULT NULL,
   `port` int(5) DEFAULT NULL,
   `margin` decimal(8,3) DEFAULT NULL,
+  `tempc` decimal(5,1) DEFAULT NULL,
   PRIMARY KEY (`ID`),
   KEY `device` (`device`),
   CONSTRAINT `log_ibfk_1` FOREIGN KEY (`device`) REFERENCES `device` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=993 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -122,4 +123,4 @@ CREATE TABLE `log` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-11-11  9:32:40
+-- Dump completed on 2019-11-25 12:19:52
