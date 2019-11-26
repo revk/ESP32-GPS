@@ -25,14 +25,13 @@ module pcb(s=0)
         smd1206(s,19.9,51.835,90);
         d24v5f3(s,15.605,1.635,90);
         bat1220(s,14.819,56.89,180);
-        gsm2click(s,2.54,12.74);
+        gsm2click(s,1.31,12.43);
         if(!s)
         {
-            pads(3.54,16.24,ny=8);
-            pads(26,16.24,ny=6);
+            pads(2.58,16.24,ny=8);
+            pads(25.44,16.24,ny=6);
         }
     }
 }
 
 case(width,height,base,top,cutoffset=-3){pcb(0);pcb(-1);pcb(1);};
-
