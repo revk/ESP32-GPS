@@ -54,7 +54,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
         u32(altscale,10)\
 	s(apn,"mobiledata")\
 	s(operator,"")\
-	s(loghost,"mqtt.revk.uk")\
+	s(loghost,"91.240.176.1")\
 	u32(logport,6666)\
 	h(auth)		\
 	u8(sun,0)	\
@@ -1380,7 +1380,7 @@ at_task (void *X)
          if (strstr ((char *) atbuf, "NORMAL POWER DOWN"))
             break;
          next = time (0) + 10;  // retry time
-         if (atcmd (m95 ? "AT+QIPCLOSE" : "AT+CIPSHUT", 2000, 0) < 0)
+         if (atcmd (m95 ? "AT+QICLOSE" : "AT+CIPSHUT", 2000, 0) < 0)
             continue;
          char roam = 0;
          while (--try > 0)
@@ -1428,7 +1428,8 @@ at_task (void *X)
 #endif
          {
             char temp[200];
-            snprintf (temp, sizeof (temp), m95 ? "AT+CGDCONT=1,\"IP\",\"%s\"" : "AT+CSTT=\"%s\"", apn);
+            //snprintf (temp, sizeof (temp), m95 ? "AT+CGDCONT=1,\"IP\",\"%s\"" : "AT+CSTT=\"%s\"", apn);
+            snprintf (temp, sizeof (temp), m95 ? "AT+QICSGP=1,\"%s\"" : "AT+CSTT=\"%s\"", apn);
             if (atcmd (temp, 1000, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
@@ -1456,7 +1457,10 @@ at_task (void *X)
             if (atcmd (temp, 1000, 10000) < 0)
                break;
             if (strstr ((char *) atbuf, "CONNECT FAIL"))
+	    {
+		    sleep(1);
                continue;
+	    }
             if (strstr ((char *) atbuf, "OK"))
                break;
          }
@@ -1476,7 +1480,7 @@ at_task (void *X)
             if (!trackmqtt && (len = tracknext (buf)) > 0)
             {
                char temp[30];
-               snprintf (temp, sizeof (temp), m95 ? "AT+QIPSEND=%d" : "AT+CIPSEND=%d", len);
+               snprintf (temp, sizeof (temp), m95 ? "AT+QISEND=%d" : "AT+CIPSEND=%d", len);
                if (atcmd (temp, 1000, 0) < 0 || !strstr (atbuf, ">"))
                   break;        // Failed
                uart_write_bytes (atuart, (void *) buf, len);
