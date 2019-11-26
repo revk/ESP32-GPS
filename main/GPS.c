@@ -1300,16 +1300,27 @@ at_task (void *X)
    atbuf = malloc (ATBUFSIZE);
    while (1)
    {
-      gpio_set_level (atpwr, 1);
-      sleep (1);
-      gpio_set_level (atkey, 0);
-      sleep (1);
-      gpio_set_level (atrst, 0);
-      gpio_set_level (atkey, 1);
-      sleep (1);
-      gpio_set_level (atrst, 1);
+      if (atpwr >= 0)
+      {
+         gpio_set_level (atpwr, 1);
+         sleep (1);
+      }
+      if (atkey >= 0)
+      {
+         gpio_set_level (atkey, 0);
+         sleep (1);
+      }
+      if (atrst >= 0)
+         gpio_set_level (atrst, 0);
+      if (atkey >= 0)
+         gpio_set_level (atkey, 1);
+      if (atrst >= 0)
+      {
+         sleep (1);
+         gpio_set_level (atrst, 1);
+      }
       int try = 60;
-      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && !strstr(atbuf, "OK"))) && --try > 0)
+      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && !strstr (atbuf, "OK"))) && --try > 0)
          sleep (1);
       if (try <= 0)
          continue;              // Cause power cycle and try again
@@ -1651,7 +1662,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       {
          if (!(datafix & TAGF_FIX_ALT) || !p->alt)
             return 0;           // Not considering alt
-         return (float) (p->alt - calt) * ascale / (float) altscale; // altscale is adjust for point reduction
+         return (float) (p->alt - calt) * ascale / (float) altscale;    // altscale is adjust for point reduction
       }
       inline float t (fix_t * p)
       {
