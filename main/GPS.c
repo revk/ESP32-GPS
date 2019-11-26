@@ -53,8 +53,8 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u32(secondcm,10)\
         u32(altscale,10)\
 	s(apn,"mobiledata")\
-	s(operator,"O2")\
-	s(loghost,"mqtt.revk.uk")\
+	s(operator,"")\
+	s(loghost,"91.240.176.1")\
 	u32(logport,6666)\
 	h(auth)		\
 	u8(sun,0)	\
@@ -1297,24 +1297,44 @@ tracknext (uint8_t * buf)
 void
 at_task (void *X)
 {
+   if (atdebug)
+      revk_error (TAG, "AT Debug enabled");
+   char m95 = 0;
    atbuf = malloc (ATBUFSIZE);
    while (1)
    {
-      gpio_set_level (atpwr, 1);
-      sleep (1);
-      gpio_set_level (atkey, 0);
-      sleep (1);
-      gpio_set_level (atrst, 0);
-      gpio_set_level (atkey, 1);
-      sleep (1);
-      gpio_set_level (atrst, 1);
+      // Power cycle
+      if (atpwr >= 0)
+      {
+         gpio_set_level (atpwr, 1);
+         sleep (1);
+      }
+      if (atkey >= 0)
+      {
+         gpio_set_level (atkey, 0);
+         sleep (1);
+      }
+      if (atrst >= 0)
+         gpio_set_level (atrst, 0);
+      if (atkey >= 0)
+         gpio_set_level (atkey, 1);
+      if (atrst >= 0)
+      {
+         sleep (1);
+         gpio_set_level (atrst, 1);
+      }
       int try = 60;
-      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && !strstr(atbuf, "OK"))) && --try > 0)
+      atcmd (NULL, 0, 0);
+      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && !strstr (atbuf, "OK"))) && --try > 0)
          sleep (1);
       if (try <= 0)
          continue;              // Cause power cycle and try again
       atcmd ("ATE0", 0, 0);
-      atcmd (NULL, 0, 0);
+      if (atcmd ("ATI", 0, 0) > 0)
+      {
+         if (strstr ((char *) atbuf, "Quectel_M95"))
+            m95 = 1;
+      }
       if (atcmd ("AT+GSN", 0, 0) > 0)
       {
          char *p = atbuf,
@@ -1333,13 +1353,16 @@ at_task (void *X)
             *o = iccid;
          while (*p && *p < ' ')
             p++;
-         while (isdigit ((int) *p) && o < iccid + sizeof (iccid) - 1)
-            *o++ = *p++;
+         while (*p && o < iccid + sizeof (iccid) - 1)
+         {
+            if (isdigit ((int) *p))
+               *o++ = *p;
+            p++;
+         }
          *o = 0;
          if (*iccid)
             revk_info ("iccid", "%s", iccid);
       }
-      atcmd ("AT+CBC", 0, 0);
       time_t next = 0;
       try = 50;
       while (1)
@@ -1348,12 +1371,16 @@ at_task (void *X)
          if (--try <= 0)
             break;              // Power cycle
          do
+         {
             atcmd (NULL, 1000, 0);
+            if (strstr ((char *) atbuf, "NORMAL POWER DOWN"))
+               break;
+         }
          while (time (0) < next);
+         if (strstr ((char *) atbuf, "NORMAL POWER DOWN"))
+            break;
          next = time (0) + 10;  // retry time
-         if (atcmd ("AT+CIPSHUT", 2000, 0) < 0)
-            continue;
-         if (!strstr ((char *) atbuf, "SHUT OK"))
+         if (atcmd (m95 ? "AT+QICLOSE" : "AT+CIPSHUT", 2000, 0) < 0)
             continue;
          char roam = 0;
          while (--try > 0)
@@ -1371,10 +1398,14 @@ at_task (void *X)
             if (strstr ((char *) atbuf, "+CREG: 0,1"))
                break;
          }
-         if (atcmd ("AT+COPS=?", 20000, 1000) < 0)      // Operator list
-            continue;
-         if (!strstr ((char *) atbuf, "OK"))
-            continue;
+#if 0
+         {
+            if (atcmd ("AT+COPS=?", 20000, 1000) < 0)   // Operator list
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+         }
+#endif
          if (*operator&& strstr (atbuf, operator))
          {
             char temp[200];
@@ -1382,6 +1413,7 @@ at_task (void *X)
             if (atcmd (temp, 10000, 1000) < 0)
                continue;
          }
+#if 0
          if (!strstr ((char *) atbuf, "OK"))
          {
             if (atcmd ("AT+COPS=0", 10000, 1000) < 0)   // Automatic selection
@@ -1393,31 +1425,47 @@ at_task (void *X)
             continue;
          if (!strstr ((char *) atbuf, "OK"))
             continue;
+#endif
          {
             char temp[200];
-            snprintf (temp, sizeof (temp), "AT+CSTT=\"%s\"", apn);
+            //snprintf (temp, sizeof (temp), m95 ? "AT+CGDCONT=1,\"IP\",\"%s\"" : "AT+CSTT=\"%s\"", apn);
+            snprintf (temp, sizeof (temp), m95 ? "AT+QICSGP=1,\"%s\"" : "AT+CSTT=\"%s\"", apn);
             if (atcmd (temp, 1000, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
          }
-         if (atcmd ("AT+CIICR", 60000, 0) < 0)
-            continue;
-         if (!strstr ((char *) atbuf, "OK"))
-            continue;
-         next = time (0) + 300; // Don't hammer mobile data connections
-         if (atcmd ("AT+CIFSR", 20000, 0) < 0)
-            continue;
-         if (!strstr ((char *) atbuf, "."))
-            continue;           // Yeh, not an OK after the IP!!! How fucking stupid
          {
-            char temp[200];
-            snprintf (temp, sizeof (temp), "AT+CIPSTART=\"UDP\",\"%s\",%d", loghost, logport);
-            if (atcmd (temp, 1000, 10000) < 0)
+            if (atcmd (m95 ? "AT+CGACT=1,1" : "AT+CIICR", 60000, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
          }
+         next = time (0) + 300; // Don't hammer mobile data connections
+         {
+            if (atcmd (m95 ? "AT+CGPADDR=1" : "AT+CIFSR", 20000, 0) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "."))
+               continue;        // Yeh, not an OK after the IP!!! How fucking stupid
+         }
+         try = 10;
+         while (--try > 0)
+         {
+            sleep (1);
+            char temp[200];
+            snprintf (temp, sizeof (temp), "AT+%s=\"UDP\",\"%s\",%d", m95 ? "QIOPEN" : "CIPSTART", loghost, logport);
+            if (atcmd (temp, 1000, 10000) < 0)
+               break;
+            if (strstr ((char *) atbuf, "CONNECT FAIL"))
+	    {
+		    sleep(1);
+               continue;
+	    }
+            if (strstr ((char *) atbuf, "OK"))
+               break;
+         }
+         if (!try || !strstr ((char *) atbuf, "OK"))
+            continue;
          if (!strstr ((char *) atbuf, "CONNECT OK"))
             continue;
          mobile = 1;
@@ -1432,7 +1480,7 @@ at_task (void *X)
             if (!trackmqtt && (len = tracknext (buf)) > 0)
             {
                char temp[30];
-               snprintf (temp, sizeof (temp), "AT+CIPSEND=%d", len);
+               snprintf (temp, sizeof (temp), m95 ? "AT+QISEND=%d" : "AT+CIPSEND=%d", len);
                if (atcmd (temp, 1000, 0) < 0 || !strstr (atbuf, ">"))
                   break;        // Failed
                uart_write_bytes (atuart, (void *) buf, len);
@@ -1444,7 +1492,7 @@ at_task (void *X)
                continue;        // try again
             if (!trackmqtt && keepalive && now > ka)
             {                   // Keep alives
-               if (atcmd ("AT+CIPSEND=1", 1000, 0) < 0 || !strstr (atbuf, ">"))
+               if (atcmd (m95 ? "AT+QIPSEND=1" : "AT+CIPSEND=1", 1000, 0) < 0 || !strstr (atbuf, ">"))
                   break;        // Failed
                uint8_t v = VERSION;
                uart_write_bytes (atuart, (void *) &v, 1);
@@ -1651,7 +1699,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       {
          if (!(datafix & TAGF_FIX_ALT) || !p->alt)
             return 0;           // Not considering alt
-         return (float) (p->alt - calt) * ascale / (float) altscale; // altscale is adjust for point reduction
+         return (float) (p->alt - calt) * ascale / (float) altscale;    // altscale is adjust for point reduction
       }
       inline float t (fix_t * p)
       {
@@ -1999,7 +2047,7 @@ app_main ()
          connect (gpsbaud);
       }
    }
-   if (attx >= 0 && atrx >= 0 && atpwr >= 0)
+   if (attx >= 0 && atrx >= 0 && (atpwr >= 0 || atkey >= 0))
    {
       // Init UART for Mobile
       uart_config_t uart_config = {
