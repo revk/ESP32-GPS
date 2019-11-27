@@ -3,8 +3,8 @@
 
 use <PCBCase/case.scad>
 
-width=30.01953;
-height=70.58008;
+width=28.01953;
+height=68.58008;
 
 // Box thickness reference to component cube
 base=11;
@@ -25,11 +25,11 @@ module pcb(s=0)
         smd1206(s,19.9,51.835,90);
         d24v5f3(s,15.605,1.635,90);
         bat1220(s,14.819,56.89,180);
-        gsm2click(s,1.31,12.43);
+        gsm2click(s,1+1.31,16.24-2.54-1.27a);
         if(!s)
         {
-            pads(2.58,16.24,ny=8);
-            pads(25.44,16.24,ny=6);
+            pads(3.58,16.24,ny=8);
+            pads(26.44,16.24,ny=6);
         }
     }
 }
