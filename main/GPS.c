@@ -635,7 +635,7 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (!timeforce && gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - FIXALLOW || (now - fixbase >= fixtimeout) || fixtim >= 65000))
+       && (fixnow || fixnext > MAXFIX - FIXALLOW || (now >= fixtimeout) || fixtim >= 65000))
    {
       if (fixdebug)
       {
@@ -643,7 +643,7 @@ fixcheck (unsigned int fixtim)
             revk_info (TAG, "Fix forced (%u)", fixnext);
          else if (fixnext > MAXFIX - FIXALLOW)
             revk_info (TAG, "Fix space full (%u)", fixnext);
-         else if (now - fixbase >= fixtimeout)
+         else if (fixbase >= fixtimeout)
             revk_info (TAG, "Fix time expired %u", (unsigned int) (now - fixbase));
          else if (fixtim >= 65000)
             revk_info (TAG, "Fix tim too high %u (%u)", fixtim, fixnext);
