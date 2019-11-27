@@ -48,13 +48,14 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	bl(fixdump,N)	\
 	bl(fixdebug,N)	\
 	b(battery,Y)	\
-	u32(interval,600)\
+	u32(periodstopped,1200)\
+	u32(periodmoving,120)\
 	u32(keepalive,0)\
 	u32(secondcm,10)\
         u32(altscale,10)\
 	s(apn,"mobiledata")\
 	s(operator,"")\
-	s(loghost,"91.240.176.1")\
+	s(loghost,"mqtt.revk.uk")\
 	u32(logport,6666)\
 	h(auth)		\
 	u8(sun,0)	\
@@ -173,6 +174,7 @@ unsigned int fixnext = 0;       // Next fix to store
 volatile int fixsave = -1;      // Time to save fixes (-1 means not, so we do a zero fix at start)
 volatile int fixdelete = -1;    // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
 volatile char fixnow = 0;       // Force fix
+volatile time_t fixtimeout = 0; // When to do next fix
 
 uint8_t **track = NULL;
 int *tracklen = NULL;
@@ -633,7 +635,7 @@ fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
    if (!timeforce && gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - FIXALLOW || (now - fixbase >= interval) || fixtim >= 65000))
+       && (fixnow || fixnext > MAXFIX - FIXALLOW || (now - fixbase >= fixtimeout) || fixtim >= 65000))
    {
       if (fixdebug)
       {
@@ -641,8 +643,8 @@ fixcheck (unsigned int fixtim)
             revk_info (TAG, "Fix forced (%u)", fixnext);
          else if (fixnext > MAXFIX - FIXALLOW)
             revk_info (TAG, "Fix space full (%u)", fixnext);
-         else if (now - fixbase >= interval)
-            revk_info (TAG, "Fix time expired %u (%u)", (unsigned int) (now - fixbase), fixnext);
+         else if (now - fixbase >= fixtimeout)
+            revk_info (TAG, "Fix time expired %u", (unsigned int) (now - fixbase));
          else if (fixtim >= 65000)
             revk_info (TAG, "Fix tim too high %u (%u)", fixtim, fixnext);
       }
@@ -666,7 +668,8 @@ gps_init (void)
    gpscmd ("$PMTK401");         // Q_DGPS
    gpscmd ("$PMTK413");         // Q_SBAS
    gpscmd ("$PMTK869,0");       // Query EASY
-   gpscmd ("$PMTK605");         // Q_RELEASE
+   if (fixdebug)
+      gpscmd ("$PMTK605");      // Q_RELEASE
    gpsstarted = 1;
 }
 
@@ -961,6 +964,7 @@ nmea (char *s)
       {
          if (moving)
          {
+            fixnow = 1;         // Do fix now
             if (fixdebug)
                revk_info (TAG, "Not moving %.1fkm/h %.2f HDOP", speed, hdop);
             moving = 0;         // Stopped moving
@@ -974,6 +978,7 @@ nmea (char *s)
                revk_info (TAG, "Moving %.1fkm/h %.2f HDOP", speed, hdop);
             moving = 1;         // Started moving
             lograte (logfast);
+            fixtimeout = time (0) + periodmoving;
          }
       }
       return;
@@ -1380,13 +1385,13 @@ at_task (void *X)
          if (strstr ((char *) atbuf, "NORMAL POWER DOWN"))
             break;
          next = time (0) + 10;  // retry time
-         if (atcmd (m95 ? "AT+QICLOSE" : "AT+CIPSHUT", 2000, 0) < 0)
+         if (atcmd (m95 ? "AT+QICLOSE" : "AT+CIPSHUT", 0, 0) < 0)
             continue;
          char roam = 0;
          while (--try > 0)
          {
             sleep (1);
-            if (atcmd ("AT+CREG?", 1000, 1000) < 0)
+            if (atcmd ("AT+CREG?", 0, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
@@ -1430,7 +1435,7 @@ at_task (void *X)
             char temp[200];
             //snprintf (temp, sizeof (temp), m95 ? "AT+CGDCONT=1,\"IP\",\"%s\"" : "AT+CSTT=\"%s\"", apn);
             snprintf (temp, sizeof (temp), m95 ? "AT+QICSGP=1,\"%s\"" : "AT+CSTT=\"%s\"", apn);
-            if (atcmd (temp, 1000, 0) < 0)
+            if (atcmd (temp, 0, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
@@ -1448,19 +1453,47 @@ at_task (void *X)
             if (!strstr ((char *) atbuf, "."))
                continue;        // Yeh, not an OK after the IP!!! How fucking stupid
          }
+         if (m95)
+         {
+            char *p = loghost;
+            if (isdigit ((int) *p))
+            {
+               while (isdigit ((int) *p))
+                  p++;
+               if (*p == '.' && isdigit ((int) p[1]))
+               {
+                  while (isdigit ((int) *p))
+                     p++;
+                  if (*p == '.' && isdigit ((int) p[1]))
+                  {
+                     while (isdigit ((int) *p))
+                        p++;
+                     if (*p == '.' && isdigit ((int) p[1]))
+                     {
+                        while (isdigit ((int) *p))
+                           p++;
+                        if (!*p)
+                           p = NULL;    // Looks like an IP address
+                     }
+                  }
+               }
+            }
+            if (p)
+               atcmd ("AT+QIDNSIP=1", 0, 0);    // Domain name
+         }
          try = 10;
          while (--try > 0)
          {
             sleep (1);
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+%s=\"UDP\",\"%s\",%d", m95 ? "QIOPEN" : "CIPSTART", loghost, logport);
-            if (atcmd (temp, 1000, 10000) < 0)
+            if (atcmd (temp, 0, 10000) < 0)
                break;
             if (strstr ((char *) atbuf, "CONNECT FAIL"))
-	    {
-		    sleep(1);
+            {
+               sleep (1);
                continue;
-	    }
+            }
             if (strstr ((char *) atbuf, "OK"))
                break;
          }
@@ -1898,6 +1931,7 @@ gps_task (void *z)
             tracki++;
             xSemaphoreGive (track_mutex);
          }
+         fixtimeout = time (0) + (moving ? periodmoving : periodstopped);
          if (fixsave == 1)
             fixdelete = 1;      // Delete the one entry and start with no fixes
          else if (fixsave)
