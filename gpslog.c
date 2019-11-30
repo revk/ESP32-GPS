@@ -365,12 +365,16 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      lastfix = tim;
                   if (ecef)
                   {
-                     rx += (int32_t) ((q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3]);
+                     int32_t dx = (q[0] << 24) | (q[1] << 16) | (q[2] << 8) | q[3];
                      q += 4;
-                     ry += (int32_t) ((q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3]);
+                     int32_t dy = (q[0] << 24) | (q[1] << 16) | (q[2] << 8) | q[3];
                      q += 4;
-                     rz += (int32_t) ((q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3]);
+                     int32_t dz = (q[0] << 24) | (q[1] << 16) | (q[2] << 8) | q[3];
                      q += 4;
+                     //fprintf (stderr, "dx=%d dy=%d dz=%d rx=%lld ry=%lld rz=%lld\n", dx, dy, dz, rx, ry, rz);
+                     rx += dx;
+                     ry += dy;
+                     rz += dz;
                      int64_t v = rx;
                      sql_sprintf (&f, ",`ecefx`=");
                      if (v < 0)
@@ -399,9 +403,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                         { (long double) rx / 1000000.0, (long double) ry / 1000000.0, (long double) rz / 1000000.0 };
                      long double llh[3] = { };
                      wgsecef2llh (ecef, llh);
-                     sql_sprintf (&f, ",`lat`=%.8Lf",llh[0] * 180.0 / M_PIl);
-                     sql_sprintf (&f, ",`lon`=%.8Lf",llh[1] * 180.0 / M_PIl);
-                     sql_sprintf (&f, ",`alt`=%.8Lf",llh[2]);
+                     sql_sprintf (&f, ",`lat`=%.8Lf", llh[0] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`lon`=%.8Lf", llh[1] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`alt`=%.8Lf", llh[2]);
                   } else
                   {
                      int lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];

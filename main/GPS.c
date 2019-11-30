@@ -1942,7 +1942,7 @@ gps_task (void *z)
             }
          }
          uint8_t fixtag = TAGF_FIX | datafix;
-         unsigned int fixlen = (ecef ? 12 + 5 * 3 : 10);
+         unsigned int fixlen = 2 + (ecef ? 4 * 3 : 4 * 2);      // Tim, and ECEF or LL
          if (ecef)
             fixtag &= ~TAGF_FIX_ALT;    // Alt from ECEF
          for (int n = 0; n < sizeof (tagf_fix); n++)
@@ -1951,6 +1951,8 @@ gps_task (void *z)
          uint8_t *q = p;
          if (datamargin)
             q += 3;
+         if (ecef)
+            q += 5 * 3;         // reference X/Y/Z
          q += 2;                // fix tag to be added once we know it
          unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;  // How many fixes we can fit...
          last = rdp (last, max, &dlost, &dkept);
