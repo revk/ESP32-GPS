@@ -48,7 +48,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	bl(fixdump,N)	\
 	bl(fixdebug,N)	\
 	b(battery,Y)	\
-	u32(periodstopped,1200)\
+	u32(periodstopped,600)\
 	u32(periodmoving,120)\
 	u32(keepalive,0)\
 	u32(secondcm,10)\
@@ -79,6 +79,10 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u8(refkmh,5)	\
 	u8(lightmin,30)	\
 	s8(light,-1)	\
+	u8(movingepe,15)\
+	u8(stoppedepe,5)\
+	b(ecef,N)	\
+
 
 #define u32(n,d)	uint32_t n;
 #define u16(n,d)	uint16_t n;
@@ -102,6 +106,9 @@ float bearing = 0;
 float lat = 0;
 float lon = 0;
 float alt = 0;
+int64_t ecefx = 0;
+int64_t ecefy = 0;
+int64_t ecefz = 0;
 float gsep = 0;
 float pdop = 0;
 float hdop = 0;
@@ -109,6 +116,7 @@ float hepe = 0;
 float vepe = 0;
 float vdop = 0;
 float course = 0;
+float hepea = 0;                // Slower average
 uint8_t sats = 0;
 uint8_t satsp = 0;
 uint8_t satsl = 0;
@@ -145,8 +153,8 @@ float tempc = -999;
 #define MINL	0.1
 time_t gpszda = 0;              // Last ZDA
 
-unsigned int MAXFIX = 10000;    // Large memory max fix
-#define MAXFIXLOW	1000    // Small memory max fix
+unsigned int MAXFIX = 6000;     // Large memory max fix
+#define MAXFIXLOW	 700    // Small memory max fix
 #define	FIXALLOW	 100    // Allow time to process fixes
 #define MAXDATA (mtu-28)        // SIM800 says 1472 allowed but only 1460 works FFS
 unsigned int MAXTRACK = 1024;   // Large memory history
@@ -159,11 +167,23 @@ typedef struct fix_s fix_t;
 #define ALTBASE	400             // Making alt unsigned as stored by allowing for -400m
 struct fix_s
 {                               // 12 byte fix data
-   int lat;                     // min*DSCALE
-   int lon;                     // min*DSCALE
+   union
+   {
+      struct
+      {
+         int lat;               // min*DSCALE
+         int lon;               // min*DSCALE
+         uint16_t alt;          // Alt (ascale and offset, hence unsigned)
+      };
+      struct
+      {
+         int64_t x,
+           y,
+           z;
+      };
+   };
    uint16_t tim;                // Time (TSCALE)
    uint16_t dist;               // RDP distance (MSCALE)
-   uint16_t alt;                // Alt (ascale and offset, hence unsigned)
    uint8_t sats:6;              // Number of sats
    uint8_t dgps:1;              // DGPS
    uint8_t keep:1;              // Keep (RDP algorithm)
@@ -660,6 +680,7 @@ gps_init (void)
    gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
    gpscmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
    gpscmd ("$PQTXT,W,0,1");     // Disable TXT
+   gpscmd ("$PQECEF,W,%d,1", ecef);     // Enable/Disable ECEF
    gpscmd ("$PQEPE,W,1,1");     // Enable EPE
    gpscmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0);  // FR mode
    // Queries - responses prompt settings changes if needed
@@ -713,6 +734,8 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "PQTXT"))
       return;                   // ignore
+   if (!strcmp (f[0], "PQECEF"))
+      return;                   // ignore
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GLL"))
       return;                   // ignore
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "RMC"))
@@ -724,9 +747,46 @@ nmea (char *s)
    if (!strcmp (f[0], "PQEPE") && n >= 3)
    {                            // Estimated position error
       if (!hepeforce)
+      {
          hepe = strtof (f[1], NULL);
+         if (hepe)
+         {
+            if (hepe > hepea)
+               hepea = hepe;
+            else
+               hepea = (hepe + hepea) / 2;
+         }
+      }
       if (!vepeforce)
          vepe = strtof (f[2], NULL);
+      return;
+   }
+   if (!strcmp (f[0], "ECEFPOSVEL") && n >= 7)
+   {
+      char *s,
+       *p;
+      if (*(s = p = f[2]) == '-')
+         p++;
+      ecefx = strtoll (p, &p, 0) * 1000000LL;
+      if (*p++ == '.')
+         ecefx += strtoll (p, NULL, 0);
+      if (*s == '-')
+         ecefx *= -1;
+      if (*(s = p = f[3]) == '-')
+         p++;
+      ecefy = strtoll (p, &p, 0) * 1000000LL;
+      if (*p++ == '.')
+         ecefy += strtoll (p, NULL, 0);
+      if (*s == '-')
+         ecefy *= -1;
+      if (*(s = p = f[4]) == '-')
+         p++;
+      ecefz = strtoll (p, &p, 0) * 1000000LL;
+      if (*p++ == '.')
+         ecefz += strtoll (p, NULL, 0);
+      if (*s == '-')
+         ecefz *= -1;
+      //revk_info (TAG, "%lld %lld %lld %s %s %s", ecefx, ecefy, ecefz, f[2], f[3], f[4]);
       return;
    }
    if (!strcmp (f[0], "PMTK869") && n >= 4)
@@ -819,7 +879,7 @@ nmea (char *s)
          if (!hdopforce)
             hdop = strtof (f[8], NULL);
          gotfix = 1;
-         if (gpszda && fixtype)
+         if (gpszda && fixtype && fixbase)
          {                      // Store fix data
             char *p = f[2];
             int s = DSCALE;
@@ -887,9 +947,17 @@ nmea (char *s)
                fix[fixnext].keep = 0;
                fix[fixnext].dist = 0;
                fix[fixnext].tim = fixtim;
-               fix[fixnext].alt = fixalt;
-               fix[fixnext].lat = fixlat;
-               fix[fixnext].lon = fixlon;
+               if (ecef)
+               {
+                  fix[fixnext].x = ecefx;
+                  fix[fixnext].y = ecefy;
+                  fix[fixnext].z = ecefz;
+               } else
+               {
+                  fix[fixnext].lat = fixlat;
+                  fix[fixnext].lon = fixlon;
+                  fix[fixnext].alt = fixalt;
+               }
                fix[fixnext].sats = sats;
                fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
                fix[fixnext].hepe = fixhepe;
@@ -960,22 +1028,22 @@ nmea (char *s)
       if (!speedforce)
          speed = strtof (f[7], NULL);
       // Are we moving?
-      if (speed < hdop * hdop)
+      if (speed < (float) hepea * stoppedepe / 10)
       {
          if (moving)
          {
             fixnow = 1;         // Do fix now
             if (fixdebug)
-               revk_info (TAG, "Not moving %.1fkm/h %.2f HDOP", speed, hdop);
+               revk_info (TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
             moving = 0;         // Stopped moving
             lograte (logslow);
          }
-      } else if (speed > 1 && fixmode > 1 && hdop && speed > (float) refkmh * hdop * hdop)
+      } else if (speed > 1 && fixmode > 1 && hepe && speed >= (float) movingepe * hepea / 10)
       {
          if (!moving)
          {
             if (fixdebug)
-               revk_info (TAG, "Moving %.1fkm/h %.2f HDOP", speed, hdop);
+               revk_info (TAG, "Moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
             moving = 1;         // Started moving
             lograte (logfast);
             fixtimeout = time (0) + periodmoving;
@@ -1718,18 +1786,36 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       int clat = a->lat / 2 + b->lat / 2;
       int clon = a->lon / 2 + b->lon / 2;
       int calt = ((int) a->alt + (int) b->alt) / 2;
+      int cx = a->x / 2 + b->x / 2;
+      int cy = a->y / 2 + b->y / 2;
+      int cz = a->z / 2 + b->z / 2;
       int ctim = ((int) a->tim + (int) b->tim) / 2;
       float slon = 111111.0 * cos (M_PI * clat / 60.0 / 180.0 / DSCALE) / 60.0 / DSCALE;
       inline float x (fix_t * p)
       {
+         if (ecef)
+         {
+            int64_t x = p->x - cx;
+            return (float) x / 1000000.0;
+         }
          return (float) (p->lon - clon) * slon;
       }
       inline float y (fix_t * p)
       {
+         if (ecef)
+         {
+            int64_t y = p->y - cy;
+            return (float) y / 1000000.0;
+         }
          return (float) (p->lat - clat) * 111111.0 / 60.0 / DSCALE;
       }
       inline float z (fix_t * p)
       {
+         if (ecef)
+         {
+            int64_t z = p->z - cz;
+            return (float) z / 1000000.0;
+         }
          if (!(datafix & TAGF_FIX_ALT) || !p->alt)
             return 0;           // Not considering alt
          return (float) (p->alt - calt) * ascale / (float) altscale;    // altscale is adjust for point reduction
@@ -1856,7 +1942,9 @@ gps_task (void *z)
             }
          }
          uint8_t fixtag = TAGF_FIX | datafix;
-         unsigned int fixlen = 10;
+         unsigned int fixlen = (ecef ? 12 + 5 * 3 : 10);
+         if (ecef)
+            fixtag &= ~TAGF_FIX_ALT;    // Alt from ECEF
          for (int n = 0; n < sizeof (tagf_fix); n++)
             if (fixtag & (1 << n))
                fixlen += tagf_fix[n];
@@ -1874,6 +1962,38 @@ gps_task (void *z)
             last = max;         // truncate
          if (last)
          {
+            int64_t rx = 0,
+               ry = 0,
+               rz = 0;
+            if (ecef)
+            {
+               rx = fix[0].x / 1000000LL;       // Ensure whole numbers of metres as referencce
+               ry = fix[0].y / 1000000LL;
+               rz = fix[0].z / 1000000LL;
+               //revk_info (TAG, "rx=%lld ry=%lld rz=%lld   %lld %lld %lld", rx, ry, rz, fix[0].x, fix[0].y, fix[0].z);
+               int32_t v;
+               *p++ = TAGF_ECEFX;
+               v = rx;
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+               *p++ = TAGF_ECEFY;
+               v = ry;
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+               *p++ = TAGF_ECEFZ;
+               v = rz;
+               *p++ = v >> 24;
+               *p++ = v >> 16;
+               *p++ = v >> 8;
+               *p++ = v;
+               rx *= 1000000LL;
+               ry *= 1000000LL;
+               rz *= 1000000LL;
+            }
             if (datamargin)
             {
                *p++ = TAGF_MARGIN;
@@ -1888,19 +2008,43 @@ gps_task (void *z)
             {                   // Don't send first as it is duplicate of last from previous packet
                fix_t *f = &fix[n];
                // Base fix data
-               unsigned int v = f->tim; // Time
+               unsigned int v;
+               v = f->tim;      // Time
                *p++ = v >> 8;
                *p++ = v;
-               v = f->lat;      // Lat
-               *p++ = v >> 24;
-               *p++ = v >> 16;
-               *p++ = v >> 8;
-               *p++ = v;
-               v = f->lon;      // Lon
-               *p++ = v >> 24;
-               *p++ = v >> 16;
-               *p++ = v >> 8;
-               *p++ = v;
+               if (ecef)
+               {
+                  int32_t v = f->x - rx;
+                  *p++ = v >> 24;
+                  *p++ = v >> 16;
+                  *p++ = v >> 8;
+                  *p++ = v;
+                  v = f->y - ry;
+                  *p++ = v >> 24;
+                  *p++ = v >> 16;
+                  *p++ = v >> 8;
+                  *p++ = v;
+                  v = f->z - rz;
+                  *p++ = v >> 24;
+                  *p++ = v >> 16;
+                  *p++ = v >> 8;
+                  *p++ = v;
+                  rx = f->x;
+                  ry = f->y;
+                  rz = f->z;
+               } else
+               {
+                  v = f->lat;   // Lat
+                  *p++ = v >> 24;
+                  *p++ = v >> 16;
+                  *p++ = v >> 8;
+                  *p++ = v;
+                  v = f->lon;   // Lon
+                  *p++ = v >> 24;
+                  *p++ = v >> 16;
+                  *p++ = v >> 8;
+                  *p++ = v;
+               }
                // Optional fix data
                if (fixtag & TAGF_FIX_ALT)
                {

@@ -22,6 +22,117 @@
 #include <openssl/hmac.h>
 #include "main/revkgps.h"
 
+#define WGS84_A 6378137.0
+#define WGS84_IF 298.257223563
+#define WGS84_F (1 / WGS84_IF)
+#define WGS84_B (WGS84_A * (1 - WGS84_F))
+#define WGS84_E (sqrtl(2 * WGS84_F - WGS84_F * WGS84_F))
+
+void
+wgsecef2llh (const long double ecef[3], long double llh[3])
+{
+   /* Distance from polar axis. */
+   const long double p = sqrtl (ecef[0] * ecef[0] + ecef[1] * ecef[1]);
+
+   /* Compute longitude first, this can be done exactly. */
+   if (p != 0)
+   {
+      llh[1] = atan2l (ecef[1], ecef[0]);
+   } else
+   {
+      llh[1] = 0;
+   }
+
+   /* If we are close to the pole then convergence is very slow, treat this is a
+    * special case. */
+   if (p < WGS84_A * 1e-16)
+   {
+      llh[0] = copysign (M_PI_2l, ecef[2]);
+      llh[2] = fabsl (ecef[2]) - WGS84_B;
+      return;
+   }
+
+   /* Caluclate some other constants as defined in the Fukushima paper. */
+   const long double P = p / WGS84_A;
+   const long double e_c = sqrtl (1. - WGS84_E * WGS84_E);
+   const long double Z = fabsl (ecef[2]) * e_c / WGS84_A;
+
+   /* Initial values for S and C correspond to a zero height solution. */
+   long double S = Z;
+   long double C = e_c * P;
+
+   /* Neither S nor C can be negative on the first iteration so
+    * starting prev = -1 will not cause and early exit. */
+   long double prev_C = -1;
+   long double prev_S = -1;
+
+   long double A_n,
+     B_n,
+     D_n,
+     F_n;
+
+   /* Iterate a maximum of 10 times. This should be way more than enough for all
+    * sane inputs */
+   for (int i = 0; i < 10; i++)
+   {
+      /* Calculate some intermediate variables used in the update step based on
+       * the current state. */
+      A_n = sqrtl (S * S + C * C);
+      D_n = Z * A_n * A_n * A_n + WGS84_E * WGS84_E * S * S * S;
+      F_n = P * A_n * A_n * A_n - WGS84_E * WGS84_E * C * C * C;
+      B_n = 1.5 * WGS84_E * S * C * C * (A_n * (P * S - Z * C) - WGS84_E * S * C);
+
+      /* Update step. */
+      S = D_n * F_n - B_n * S;
+      C = F_n * F_n - B_n * C;
+
+      /* The original algorithm as presented in the paper by Fukushima has a
+       * problem with numerical stability. S and C can grow very large or small
+       * and over or underflow a double. In the paper this is acknowledged and
+       * the proposed resolution is to non-dimensionalise the equations for S and
+       * C. However, this does not completely solve the problem. The author caps
+       * the solution to only a couple of iterations and in this period over or
+       * underflow is unlikely but as we require a bit more precision and hence
+       * more iterations so this is still a concern for us.
+       *
+       * As the only thing that is important is the ratio T = S/C, my solution is
+       * to divide both S and C by either S or C. The scaling is chosen such that
+       * one of S or C is scaled to unity whilst the other is scaled to a value
+       * less than one. By dividing by the larger of S or C we ensure that we do
+       * not divide by zero as only one of S or C should ever be zero.
+       *
+       * This incurs an extra division each iteration which the author was
+       * explicityl trying to avoid and it may be that this solution is just
+       * reverting back to the method of iterating on T directly, perhaps this
+       * bears more thought?
+       */
+
+      if (S > C)
+      {
+         C = C / S;
+         S = 1;
+      } else
+      {
+         S = S / C;
+         C = 1;
+      }
+
+      /* Check for convergence and exit early if we have converged. */
+      if (fabsl (S - prev_S) < 1e-16 && fabsl (C - prev_C) < 1e-16)
+      {
+         break;
+      }
+      prev_S = S;
+      prev_C = C;
+   }
+
+   A_n = sqrtl (S * S + C * C);
+   llh[0] = copysign (1.0, ecef[2]) * atanl (S / (e_c * C));
+   llh[2] = (p * e_c * C + fabsl (ecef[2]) * S - WGS84_A * e_c * A_n) / sqrtl (e_c * e_c * C * C + S * S);
+   //fprintf (stderr, "x=%Lf y=%Lf z=%Lf lat=%Lf (%Lf) lon=%Lf (%Lf) alt=%Lf\n", ecef[0], ecef[1], ecef[2], llh[0], llh[0] * 180.0L / M_PIl, llh[1], llh[1] * 180.0L / M_PIl, llh[2]);
+}
+
+
 typedef struct device_s device_t;
 struct device_s
 {
@@ -165,6 +276,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
       float ascale = 1.0 / ASCALE;
       float tempc = -999;
       sql_transaction (sqlp);
+      char ecef = 0;
+      int64_t rx = 0,
+         ry = 0,
+         rz = 0;
       while (p < e && !(*p & TAGF_FIX))
       {                         // Process tags
          unsigned int dlen = 0;
@@ -197,7 +312,19 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             margin = (p[1] << 8) + p[2];
          else if (*p == TAGF_TEMPC)
             tempc = (float) ((signed char *) p)[1] / CSCALE;
-         else if (*p && debug)
+         else if (*p == TAGF_ECEFX)
+         {
+            rx = 1000000LL * (int32_t) ((p[1] << 24) | (p[2] << 16) | (p[3] << 8) | p[4]);
+            ecef = 1;
+         } else if (*p == TAGF_ECEFY)
+         {
+            ry = 1000000LL * (int32_t) ((p[1] << 24) | (p[2] << 16) | (p[3] << 8) | p[4]);
+            ecef = 1;
+         } else if (*p == TAGF_ECEFZ)
+         {
+            rz = 1000000LL * (int32_t) ((p[1] << 24) | (p[2] << 16) | (p[3] << 8) | p[4]);
+            ecef = 1;
+         } else if (*p && debug)
             fprintf (stderr, "Unknown tag %02X\n", *p);
          p += 1 + dlen;
       }
@@ -231,15 +358,58 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   unsigned char *q = p;
                   unsigned short tim = (q[0] << 8) + q[1];
                   q += 2;
+                  sql_string_t f = { };
+                  sql_sprintf (&f, "REPLACE INTO `%#S` SET `device`=%u,`utc`='%U." TPART "'", sqlgps, devid, t + (tim / TSCALE),
+                               tim % TSCALE);
                   if (tim > lastfix)
                      lastfix = tim;
-                  int lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
-                  q += 4;
-                  int lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
-                  q += 4;
-                  sql_string_t f = { };
-                  sql_sprintf (&f, "REPLACE INTO `%#S` SET `device`=%u,`utc`='%U." TPART "',`lat`=%.8lf,`lon`=%.8lf", sqlgps, devid,
-                               t + (tim / TSCALE), tim % TSCALE, (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
+                  if (ecef)
+                  {
+                     rx += (int32_t) ((q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3]);
+                     q += 4;
+                     ry += (int32_t) ((q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3]);
+                     q += 4;
+                     rz += (int32_t) ((q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3]);
+                     q += 4;
+                     int64_t v = rx;
+                     sql_sprintf (&f, ",`ecefx`=");
+                     if (v < 0)
+                     {
+                        v = 0 - v;
+                        sql_sprintf (&f, "-");
+                     }
+                     sql_sprintf (&f, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                     v = ry;
+                     sql_sprintf (&f, ",`ecefy`=");
+                     if (v < 0)
+                     {
+                        v = 0 - v;
+                        sql_sprintf (&f, "-");
+                     }
+                     sql_sprintf (&f, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                     v = rz;
+                     sql_sprintf (&f, ",`ecefz`=");
+                     if (v < 0)
+                     {
+                        v = 0 - v;
+                        sql_sprintf (&f, "-");
+                     }
+                     sql_sprintf (&f, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                     long double ecef[3] =
+                        { (long double) rx / 1000000.0, (long double) ry / 1000000.0, (long double) rz / 1000000.0 };
+                     long double llh[3] = { };
+                     wgsecef2llh (ecef, llh);
+                     sql_sprintf (&f, ",`lat`=%.8Lf",llh[0] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`lon`=%.8Lf",llh[1] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`alt`=%.8Lf",llh[2]);
+                  } else
+                  {
+                     int lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
+                     q += 4;
+                     int lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
+                     q += 4;
+                     sql_sprintf (&f, ",`lat`=%.8lf,`lon`=%.8lf", (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
+                  }
                   if (fixtags & TAGF_FIX_ALT)
                   {
                      short alt = (q[0] << 8) + q[1];

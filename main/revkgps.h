@@ -22,6 +22,9 @@
 #define	TAGF_PERIOD		0x40	// Period covered
 #define	TAGF_MARGIN		0x41	// Defines maximum distance of discarded packets (cm)
 #define	TAGF_FIRST		0x60	// defines first UTC reference available
+#define	TAGF_ECEFX		0x61	// Start ECEFX (m) - if set, fix data is relative ECEF (um)
+#define	TAGF_ECEFY		0x62	// Start ECEFY (m) - if set, fix data is relative ECEF (um)
+#define	TAGF_ECEFZ		0x63	// Start ECEFZ (m) - if set, fix data is relative ECEF (um)
 
 #define	TAGT_PAD		0x00	// Padding
 #define	TAGT_FIX		0x01	// Fix request
