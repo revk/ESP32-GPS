@@ -329,14 +329,20 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             {
                q++;
                if (!strcmp (tag, "ICCID"))
-                  sql_safe_query_free (sqlp,
-                                       sql_printf ("UPDATE `%#S` SET `iccid`=%#.*s WHERE `ID`=%d", sqldevice, (int) (e - q), q,
-                                                   devid));
-               else if (!strcmp (tag, "IMEI"))
-                  sql_safe_query_free (sqlp,
-                                       sql_printf
-                                       ("UPDATE `%#S` SET `imei`=%#.*s WHERE `ID`=%d", sqldevice, (int) (e - q), q, devid));
-               else
+               {
+                  char *iccid = sql_colz (device, "iccid");
+                  if (strlen (iccid) != e - q || memcmp (iccid, q, e - q))
+                     sql_safe_query_free (sqlp,
+                                          sql_printf ("UPDATE `%#S` SET `iccid`=%#.*s WHERE `ID`=%d", sqldevice, (int) (e - q), q,
+                                                      devid));
+               } else if (!strcmp (tag, "IMEI"))
+               {
+                  char *imei = sql_colz (device, "imei");
+                  if (strlen (imei) != e - q || memcmp (imei, q, e - q))
+                     sql_safe_query_free (sqlp,
+                                          sql_printf
+                                          ("UPDATE `%#S` SET `imei`=%#.*s WHERE `ID`=%d", sqldevice, (int) (e - q), q, devid));
+               } else
                   warnx ("Unknown info %s", tag);
             }
          } else if (*p && debug)

@@ -782,7 +782,7 @@ gps_init (void)
    {
       gps_cmd ("$PQBAUD,W,%d", gpsbaud);        // 
       gps_cmd ("$PMTK251,%d", gpsbaud); // Required Baud rate set
-      sleep(1);
+      sleep (1);
       gps_connect (gpsbaud);
    }
    gps_cmd ("$PMTK286,%d", aic ? 1 : 0);        // AIC
@@ -895,6 +895,8 @@ nmea (char *s)
          ecefz += strtoll (p, NULL, 0);
       if (*s == '-')
          ecefz *= -1;
+      if (ecef && (ecefx || ecefy || ecefz))
+         gotfix = 1;
       //revk_info (TAG, "%lld %lld %lld %s %s %s", ecefx, ecefy, ecefz, f[2], f[3], f[4]);
       return;
    }
@@ -987,8 +989,9 @@ nmea (char *s)
                                                                                                                 'E' ? 1 : -1);
          if (!hdopforce)
             hdop = strtof (f[8], NULL);
-         gotfix = 1;
-         if (gpszda && fixtype && fixbase)
+         if (!ecef && (lat || lon))
+            gotfix = 1;
+         if (gpszda && fixtype && fixbase && gotfix)
          {                      // Store fix data
             char *p = f[2];
             int s = DSCALE;
@@ -1871,7 +1874,9 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       h = H;                    // Progress
    fix[0].keep = 1;
    fix[H].keep = 1;
+#if 0
    uint64_t start = esp_timer_get_time ();
+#endif
    while (l < H)
    {
       if (l == h)
@@ -1990,7 +1995,7 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       lost = fix[n].dist;       // Largest lost
       if (lost < rdpmin)
          lost = rdpmin;
-      while (n > 1 && fix[n - 1].dist >= lost)
+      while (n > 1 && fix[n - 1].dist <= lost)
          n--;                   // Same as largest lost, remove..
       kept = fix[n - 1].dist;   // Smallest kept
       lost = fix[n].dist;       // Largest lost
