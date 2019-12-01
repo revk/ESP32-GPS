@@ -421,16 +421,16 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      };
                      long double llh[3] = { };
                      wgsecef2llh (ecef, llh);
-                     sql_sprintf (&f, ",`lat`=%.8Lf", llh[0] * 180.0 / M_PIl);
-                     sql_sprintf (&f, ",`lon`=%.8Lf", llh[1] * 180.0 / M_PIl);
-                     sql_sprintf (&f, ",`alt`=%.8Lf", llh[2]);
+                     sql_sprintf (&f, ",`lat`=%.9Lf", llh[0] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`lon`=%.9Lf", llh[1] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`alt`=%.9Lf", llh[2]);
                   } else
                   {
                      int lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
                      q += 4;
                      int lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
                      q += 4;
-                     sql_sprintf (&f, ",`lat`=%.8lf,`lon`=%.8lf", (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
+                     sql_sprintf (&f, ",`lat`=%.9lf,`lon`=%.9lf", (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
                   }
                   if (fixtags & TAGF_FIX_ALT)
                   {
