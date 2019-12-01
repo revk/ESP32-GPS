@@ -165,6 +165,7 @@ unsigned int MAXTRACK = 1024;   // Large memory history
 float ascale = 1.0 / ASCALE;    // Alt scale default
 volatile time_t fixbase = 0;    // Base time for fixtime
 volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
+volatile time_t fixlast = 0;    // Last fix, used as next fixend/base
 typedef struct fix_s fix_t;
 #define ALTBASE	400             // Making alt unsigned as stored by allowing for -400m
 struct fix_s
@@ -753,10 +754,11 @@ static void
 fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
-   if (!timeforce && gpszda && fixsave < 0 && fixdelete < 0 && (fixnow ||       //
-                                                                fixnext > MAXFIX - FIXALLOW ||  //
-                                                                (now >= fixtimeout) ||  //
-                                                                fixtim > 60000  //
+   if (!timeforce && gpszda && fixsave < 0 && fixdelete < 0 && fixlast > fixbase &&     //
+       (fixnow ||               //
+        fixnext > MAXFIX - FIXALLOW ||  //
+        (now >= fixtimeout) ||  //
+        fixtim > 60000          //
        ))
    {
       if (fixdebug)
@@ -765,12 +767,12 @@ fixcheck (unsigned int fixtim)
             revk_info (TAG, "Fix forced (%u)", fixnext);
          else if (fixnext > MAXFIX - FIXALLOW)
             revk_info (TAG, "Fix space full (%u)", fixnext);
-         else if (fixbase >= fixtimeout)
+         else if (now >= fixtimeout)
             revk_info (TAG, "Fix time expired %u", (unsigned int) (now - fixbase));
          else if (fixtim > 60000)
             revk_info (TAG, "Fix tim too high %u (%u)", fixtim, fixnext);
       }
-      fixend = time (0);
+      fixend = fixlast;
       fixsave = fixnext;        // Save the fixes we have so far (more may accumulate whilst saving)
    }
 }
@@ -1028,6 +1030,7 @@ nmea (char *s)
             if (fixtim / TSCALE + 100 < (gpszda % 86400))
                fixtim += 86400 * TSCALE;        // Day wrap
             fixtim -= (fixbase - gpszda / 86400 * 86400) * TSCALE;
+            fixlast = fixbase + fixtim / TSCALE;
             int fixalt = round ((alt + ALTBASE) / ascale);      // Offset and scale to store in 16 bits
             if (fixalt < 0)
                fixalt = 0;      // Range to 16 bits
@@ -2106,6 +2109,7 @@ gps_task (void *z)
             last = max;         // truncate
          if (last)
          {
+            fix_t save = fix[last];
             int64_t rx = 0,
                ry = 0,
                rz = 0;
@@ -2215,6 +2219,7 @@ gps_task (void *z)
                   *q++ = f->hepe;
                p += fixlen;
             }
+            fix[last] = save;   // We move this back down to start...
          }
          unsigned int len = encode (t, p - t, fixbase);
          if (len)

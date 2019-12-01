@@ -46,6 +46,7 @@ main (int argc, const char *argv[])
    int json = 0;
    int quiet = 0;
    int delete = 0;
+   int minutes=60;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
@@ -61,6 +62,7 @@ main (int argc, const char *argv[])
          {"device", 'D', POPT_ARG_STRING, &device, 0, "Device", "ID"},
          {"from", 'F', POPT_ARG_STRING, &from, 0, "From", "YYYY-MM-DD HH:MM:SS (UTC)"},
          {"to", 'T', POPT_ARG_STRING, &to, 0, "To", "YYYY-MM-DD HH:MM:SS (UTC)"},
+         {"minutes", 'm', POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &minutes, 0, "From minutes ago", "minutes"},
          {"json", 0, POPT_ARG_NONE, &json, 0, "JSON outout"},
          {"quiet", 0, POPT_ARG_NONE, &quiet, 0, "Quiet"},
          {"delete", 0, POPT_ARG_NONE, &delete, 0, "Delete pruned from database"},
@@ -82,7 +84,7 @@ main (int argc, const char *argv[])
       poptFreeContext (optCon);
    }
 
-   time_t tfrom = time (0) - 3600;      // default
+   time_t tfrom = time (0) - minutes*60;      // default
    if (from)
       tfrom = sql_time_utc (from);
    time_t tto = time (0);       // default
