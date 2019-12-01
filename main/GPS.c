@@ -38,7 +38,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
       	bl(atdebug,N)    \
         s8(atuart,2)	\
         u32(atbaud,115200)	\
-        u32(gpsbaud,115200)	\
+        u32(gpsbaud,9600)	\
         s8(attx,-1)	\
         s8(atrx,-1)	\
         s8(atkey,-1)	\
@@ -179,9 +179,9 @@ struct fix_s
       };
       struct
       {
-         int64_t x,
-           y,
-           z;
+         int64_t x:48;
+         int64_t y:48;
+         int64_t z:48;
       };
    };
    uint16_t tim;                // Time (TSCALE)
@@ -387,8 +387,32 @@ sun_position (double t, double latitude, double longitude, double *altitudep, do
 */
 /***************************************************************************/
 
+uint32_t gpsbaudnow = 0;
+      // Init UART for GPS
 void
-gpscmd (const char *fmt, ...)
+gps_connect (unsigned int baud)
+{
+   esp_err_t err;
+   if (gpsbaudnow)
+      uart_driver_delete (gpsuart);
+   uart_config_t uart_config = {
+      .baud_rate = baud,
+      .data_bits = UART_DATA_8_BITS,
+      .parity = UART_PARITY_DISABLE,
+      .stop_bits = UART_STOP_BITS_1,
+      .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+   };
+   if ((err = uart_param_config (gpsuart, &uart_config)))
+      revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
+   else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
+      revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
+   else if ((err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0)))
+      revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+   gpsbaudnow = baud;
+}
+
+void
+gpd_cmd (const char *fmt, ...)
 {                               // Send command to UART
    if (pmtk)
       xSemaphoreTake (ack_semaphore, 1000 * portTICK_PERIOD_MS);        // Wait for ACK from last command
@@ -419,7 +443,7 @@ gpscmd (const char *fmt, ...)
 #define ATBUFSIZE 2000
 char *atbuf = NULL;
 int
-atcmd (const void *cmd, int t1, int t2)
+at_cmd (const void *cmd, int t1, int t2)
 {
    if (attx < 0 || atrx < 0)
       return 0;
@@ -491,12 +515,12 @@ lograte (int rate)
    if (lastrate == rate)
       return;
    if (!rate)
-      gpscmd ("$PMTK185,1");    // Stop log
+      gpd_cmd ("$PMTK185,1");    // Stop log
    else
    {
       if (lastrate <= 0)
-         gpscmd ("$PMTK185,0"); // Start log
-      gpscmd ("$PMTK187,1,%d", rate);
+         gpd_cmd ("$PMTK185,0"); // Start log
+      gpd_cmd ("$PMTK187,1,%d", rate);
    }
    lastrate = rate;
 }
@@ -605,7 +629,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       trackmqtt = 1;
       xSemaphoreGive (track_mutex);
       if (logslow || logfast)
-         gpscmd ("$PMTK183");   // Log status
+         gpd_cmd ("$PMTK183");   // Log status
       if (tracki && (attx < 0 || atrx < 0))
          fixnow = 1;
       if (!auth || *auth <= 3 + 16)
@@ -614,7 +638,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "status"))
    {
-      gpscmd ("$PMTK183");      // Log status
+      gpd_cmd ("$PMTK183");      // Log status
       return "";
    }
    if (!strcmp (tag, "resend"))
@@ -664,61 +688,61 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
 #undef force
    if (!strcmp (tag, "gpstx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
-      gpscmd ("%s", value);
+      gpd_cmd ("%s", value);
       return "";
    }
    if (!strcmp (tag, "attx") && len)
    {                            // Send arbitrary AT command (do not include *XX or CR/LF)
-      atcmd (value, 0, 0);
+      at_cmd (value, 0, 0);
       return "";
    }
    if (!strcmp (tag, "status"))
    {
-      gpscmd ("$PMTK18,1");     // Status log
+      gpd_cmd ("$PMTK18,1");     // Status log
       return "";
    }
    if (!strcmp (tag, "dump"))
    {
-      gpscmd ("$PMTK622,1");    // Dump log
+      gpd_cmd ("$PMTK622,1");    // Dump log
       return "";
    }
    if (!strcmp (tag, "erase"))
    {
-      gpscmd ("$PMTK184,1");    // Erase
+      gpd_cmd ("$PMTK184,1");    // Erase
       return "";
    }
    if (!strcmp (tag, "hot"))
    {
-      gpscmd ("$PMTK101");      // Hot start
+      gpd_cmd ("$PMTK101");      // Hot start
       gpsstarted = 0;
       return "";
    }
    if (!strcmp (tag, "warm"))
    {
-      gpscmd ("$PMTK102");      // Warm start
+      gpd_cmd ("$PMTK102");      // Warm start
       gpsstarted = 0;
       return "";
    }
    if (!strcmp (tag, "cold"))
    {
-      gpscmd ("$PMTK103");      // Cold start
+      gpd_cmd ("$PMTK103");      // Cold start
       gpsstarted = 0;
       return "";
    }
    if (!strcmp (tag, "reset"))
    {
-      gpscmd ("$PMTK104");      // Full cold start (resets to default settings including Baud rate)
+      gpd_cmd ("$PMTK104");      // Full cold start (resets to default settings including Baud rate)
       revk_restart ("GPS has been reset", 1);
       return "";
    }
    if (!strcmp (tag, "sleep"))
    {
-      gpscmd ("$PMTK291,7,0,10000,1");  // Low power (maybe we need to drive EN pin?)
+      gpd_cmd ("$PMTK291,7,0,10000,1");  // Low power (maybe we need to drive EN pin?)
       return "";
    }
    if (!strcmp (tag, "version"))
    {
-      gpscmd ("$PMTK605");      // Version
+      gpd_cmd ("$PMTK605");      // Version
       return "";
    }
    return NULL;
@@ -753,21 +777,28 @@ fixcheck (unsigned int fixtim)
 static void
 gps_init (void)
 {                               // Set up GPS
-   gpscmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
-   gpscmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
-   gpscmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
-   gpscmd ("$PQTXT,W,0,1");     // Disable TXT
-   gpscmd ("$PQECEF,W,%d,1", ecef);     // Enable/Disable ECEF
-   gpscmd ("$PQEPE,W,1,1");     // Enable EPE
-   gpscmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0);  // FR mode
+   if (gpsbaudnow != gpsbaud)
+   {
+      gpsstarted = 0;           // Try again
+      gpd_cmd ("$PMTK251,%d", gpsbaud);  // Baud rate set (at 9600)
+      gps_connect(gpsbaud);
+      return;
+   }
+   gpd_cmd ("$PMTK286,%d", aic ? 1 : 0); // AIC
+   gpd_cmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
+   gpd_cmd ("$PMTK352,%d", qzss ? 0 : 1);        // QZSS (yes, 1 is disable)
+   gpd_cmd ("$PQTXT,W,0,1");     // Disable TXT
+   gpd_cmd ("$PQECEF,W,%d,1", ecef);     // Enable/Disable ECEF
+   gpd_cmd ("$PQEPE,W,1,1");     // Enable EPE
+   gpd_cmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0);  // FR mode
    // Queries - responses prompt settings changes if needed
-   gpscmd ("$PMTK414");         // Q_NMEA_OUTPUT
-   gpscmd ("$PMTK400");         // Q_FIX
-   gpscmd ("$PMTK401");         // Q_DGPS
-   gpscmd ("$PMTK413");         // Q_SBAS
-   gpscmd ("$PMTK869,0");       // Query EASY
+   gpd_cmd ("$PMTK414");         // Q_NMEA_OUTPUT
+   gpd_cmd ("$PMTK400");         // Q_FIX
+   gpd_cmd ("$PMTK401");         // Q_DGPS
+   gpd_cmd ("$PMTK413");         // Q_SBAS
+   gpd_cmd ("$PMTK869,0");       // Query EASY
    if (fixdebug)
-      gpscmd ("$PMTK605");      // Q_RELEASE
+      gpd_cmd ("$PMTK605");      // Q_RELEASE
    gpsstarted = 1;
 }
 
@@ -872,7 +903,7 @@ nmea (char *s)
       {
          if (fixdebug)
             revk_info (TAG, "Setting EASY %s  (%s days)", easy ? "on" : "off", f[3]);
-         gpscmd ("$PMTK869,1,%d", easy ? 1 : 0);
+         gpd_cmd ("$PMTK869,1,%d", easy ? 1 : 0);
       }
       return;
    }
@@ -882,7 +913,7 @@ nmea (char *s)
       {
          if (fixdebug)
             revk_info (TAG, "Setting SBAS %s", sbas ? "on" : "off");
-         gpscmd ("$PMTK313,%d", sbas ? 1 : 0);
+         gpd_cmd ("$PMTK313,%d", sbas ? 1 : 0);
       }
       return;
    }
@@ -892,7 +923,7 @@ nmea (char *s)
       {
          if (fixdebug)
             revk_info (TAG, "Setting DGPS %s", (sbas || waas) ? "on" : "off");
-         gpscmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);
+         gpd_cmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);
       }
       return;
    }
@@ -902,7 +933,7 @@ nmea (char *s)
       {
          if (fixdebug)
             revk_info (TAG, "Setting fix rate %dms", fixms);
-         gpscmd ("$PMTK220,%d", fixms);
+         gpd_cmd ("$PMTK220,%d", fixms);
       }
       return;
    }
@@ -925,7 +956,7 @@ nmea (char *s)
       {                         // Set message rates
          if (fixdebug)
             revk_info (TAG, "Setting message rates");
-         gpscmd ("$PMTK314,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+         gpd_cmd ("$PMTK314,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
                  rates[0], rates[1], rates[2], rates[3], rates[4], rates[5], rates[6], rates[7], rates[8], rates[9], rates[10],
                  rates[11], rates[12], rates[13], rates[14], rates[15], rates[16], rates[17], rates[18], rates[19]);
       }
@@ -1004,9 +1035,7 @@ nmea (char *s)
             if (fixhepe > 255)
                fixhepe = 255;   // Limit
             inline int fixdiff (fix_t * a, fix_t * b)
-            {                   // Different (except for time)
-               if (ecef)
-                  return 7;     // No point on ECEF data
+            {                   // Different (except for time) - lat/lon only
                if (a->lat != b->lat)
                   return 1;
                if (a->lon != b->lon)
@@ -1045,7 +1074,7 @@ nmea (char *s)
                fix[fixnext].sats = sats;
                fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
                fix[fixnext].hepe = fixhepe;
-               if (fixnext > 1 && fixnext > fixsave + 1 && !fixdiff (&fix[fixnext - 1], &fix[fixnext])
+               if (!ecef && fixnext > 1 && fixnext > fixsave + 1 && !fixdiff (&fix[fixnext - 1], &fix[fixnext])
                    && !fixdiff (&fix[fixnext - 2], &fix[fixnext - 1]))
                   fix[fixnext - 1].tim = fixtim;        // Skip intermediate identical fix
                else
@@ -1112,7 +1141,7 @@ nmea (char *s)
       if (!speedforce)
          speed = strtof (f[7], NULL);
       // Are we moving?
-      if (speed <= (float) hepea * stoppedepe / 10)
+      if (movingepe && speed <= (float) hepea * stoppedepe / 10)
       {
          if (moving)
          {
@@ -1481,18 +1510,18 @@ at_task (void *X)
          gpio_set_level (atrst, 1);
       }
       int try = 60;
-      atcmd (NULL, 0, 0);
-      while ((atcmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && !strstr (atbuf, "OK"))) && --try > 0)
+      at_cmd (NULL, 0, 0);
+      while ((at_cmd ("AT", 0, 0) < 0 || (strncmp (atbuf, "AT", 2) && !strstr (atbuf, "OK"))) && --try > 0)
          sleep (1);
       if (try <= 0)
          continue;              // Cause power cycle and try again
-      atcmd ("ATE0", 0, 0);
-      if (atcmd ("ATI", 0, 0) > 0)
+      at_cmd ("ATE0", 0, 0);
+      if (at_cmd ("ATI", 0, 0) > 0)
       {
          if (strstr ((char *) atbuf, "Quectel_M95"))
             m95 = 1;
       }
-      if (atcmd ("AT+GSN", 0, 0) > 0)
+      if (at_cmd ("AT+GSN", 0, 0) > 0)
       {
          char temp[22];
          char *p = atbuf,
@@ -1508,7 +1537,7 @@ at_task (void *X)
             sendinfo = 1;
          }
       }
-      if (atcmd ("AT+CCID", 0, 0) > 0)
+      if (at_cmd ("AT+CCID", 0, 0) > 0)
       {
          char temp[22];
          char *p = atbuf,
@@ -1537,7 +1566,7 @@ at_task (void *X)
             break;              // Power cycle
          do
          {
-            atcmd (NULL, 1000, 0);
+            at_cmd (NULL, 1000, 0);
             if (strstr ((char *) atbuf, "NORMAL POWER DOWN"))
                break;
          }
@@ -1545,13 +1574,13 @@ at_task (void *X)
          if (strstr ((char *) atbuf, "NORMAL POWER DOWN"))
             break;
          next = time (0) + 10;  // retry time
-         if (atcmd (m95 ? "AT+QICLOSE" : "AT+CIPSHUT", 0, 0) < 0)
+         if (at_cmd (m95 ? "AT+QICLOSE" : "AT+CIPSHUT", 0, 0) < 0)
             continue;
          char roam = 0;
          while (--try > 0)
          {
             sleep (1);
-            if (atcmd ("AT+CREG?", 0, 0) < 0)
+            if (at_cmd ("AT+CREG?", 0, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
@@ -1565,7 +1594,7 @@ at_task (void *X)
          }
 #if 0
          {
-            if (atcmd ("AT+COPS=?", 20000, 1000) < 0)   // Operator list
+            if (at_cmd ("AT+COPS=?", 20000, 1000) < 0)   // Operator list
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
@@ -1575,18 +1604,18 @@ at_task (void *X)
          {
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+COPS=1,0,\"%s\"", operator);
-            if (atcmd (temp, 10000, 1000) < 0)
+            if (at_cmd (temp, 10000, 1000) < 0)
                continue;
          }
 #if 0
          if (!strstr ((char *) atbuf, "OK"))
          {
-            if (atcmd ("AT+COPS=0", 10000, 1000) < 0)   // Automatic selection
+            if (at_cmd ("AT+COPS=0", 10000, 1000) < 0)   // Automatic selection
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
          }
-         if (atcmd ("AT+COPS?", 20000, 1000) < 0)       // Operator selected
+         if (at_cmd ("AT+COPS?", 20000, 1000) < 0)       // Operator selected
             continue;
          if (!strstr ((char *) atbuf, "OK"))
             continue;
@@ -1595,20 +1624,20 @@ at_task (void *X)
             char temp[200];
             //snprintf (temp, sizeof (temp), m95 ? "AT+CGDCONT=1,\"IP\",\"%s\"" : "AT+CSTT=\"%s\"", apn);
             snprintf (temp, sizeof (temp), m95 ? "AT+QICSGP=1,\"%s\"" : "AT+CSTT=\"%s\"", apn);
-            if (atcmd (temp, 0, 0) < 0)
+            if (at_cmd (temp, 0, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
          }
          {
-            if (atcmd (m95 ? "AT+CGACT=1,1" : "AT+CIICR", 60000, 0) < 0)
+            if (at_cmd (m95 ? "AT+CGACT=1,1" : "AT+CIICR", 60000, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
          }
          next = time (0) + 300; // Don't hammer mobile data connections
          {
-            if (atcmd (m95 ? "AT+CGPADDR=1" : "AT+CIFSR", 20000, 0) < 0)
+            if (at_cmd (m95 ? "AT+CGPADDR=1" : "AT+CIFSR", 20000, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "."))
                continue;        // Yeh, not an OK after the IP!!! How fucking stupid
@@ -1639,16 +1668,16 @@ at_task (void *X)
                }
             }
             if (p)
-               atcmd ("AT+QIDNSIP=1", 0, 0);    // Domain name
+               at_cmd ("AT+QIDNSIP=1", 0, 0);    // Domain name
          }
-         atcmd (m95 ? "AT+QIHEAD=1" : "AT+CIPHEAD=1", 0, 0);    // Send IPD headers
+         at_cmd (m95 ? "AT+QIHEAD=1" : "AT+CIPHEAD=1", 0, 0);    // Send IPD headers
          try = 10;
          while (--try > 0)
          {
             sleep (1);
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+%s=\"UDP\",\"%s\",%d", m95 ? "QIOPEN" : "CIPSTART", loghost, logport);
-            if (atcmd (temp, 0, 10000) < 0)
+            if (at_cmd (temp, 0, 10000) < 0)
                break;
             if (strstr ((char *) atbuf, "CONNECT FAIL"))
             {
@@ -1675,10 +1704,10 @@ at_task (void *X)
             {
                char temp[30];
                snprintf (temp, sizeof (temp), m95 ? "AT+QISEND=%d" : "AT+CIPSEND=%d", len);
-               if (atcmd (temp, 1000, 0) < 0 || !strstr (atbuf, ">"))
+               if (at_cmd (temp, 1000, 0) < 0 || !strstr (atbuf, ">"))
                   break;        // Failed
                uart_write_bytes (atuart, (void *) buf, len);
-               if (atcmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
+               if (at_cmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
                   break;        // Failed
                ka = now + keepalive;
             }
@@ -1686,15 +1715,15 @@ at_task (void *X)
                continue;        // try again
             if (!trackmqtt && keepalive && now > ka)
             {                   // Keep alives
-               if (atcmd (m95 ? "AT+QIPSEND=1" : "AT+CIPSEND=1", 1000, 0) < 0 || !strstr (atbuf, ">"))
+               if (at_cmd (m95 ? "AT+QIPSEND=1" : "AT+CIPSEND=1", 1000, 0) < 0 || !strstr (atbuf, ">"))
                   break;        // Failed
                uint8_t v = VERSION;
                uart_write_bytes (atuart, (void *) &v, 1);
-               if (atcmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
+               if (at_cmd (NULL, 10000, 0) < 0 || !strstr (atbuf, "SEND OK"))
                   break;        // Failed
                ka = now + keepalive;
             }
-            len = atcmd (NULL, 1000, 0);        // Note, this causes 1 second delay between each message, which seems prudent
+            len = at_cmd (NULL, 1000, 0);        // Note, this causes 1 second delay between each message, which seems prudent
             if (len <= 0)
                continue;
             if (strstr (atbuf, "+PDP: DEACT"))
@@ -1745,7 +1774,7 @@ nmea_task (void *z)
 {
    uint8_t buf[1000],
     *p = buf;
-   uint64_t timeout = esp_timer_get_time () + 60000000;
+   uint64_t timeout = esp_timer_get_time () + 5000000;
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
@@ -1754,8 +1783,14 @@ nmea_task (void *z)
       {
          if (timeout && timeout < esp_timer_get_time ())
          {
-            revk_restart ("GPS silent", 0);
-            timeout = 0;
+            static int rate = 0;
+            const uint32_t rates[] = { 300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 };
+            rate++;
+            if (rate == sizeof (rates) / sizeof (*rates))
+               rate = 0;
+            gps_connect (rates[rate]);
+            revk_info (TAG, "GPS silent, trying %d", gpsbaudnow);
+            timeout = esp_timer_get_time () + 1000000 + fixms;
          }
          continue;
       }
@@ -1779,7 +1814,7 @@ nmea_task (void *z)
                revk_error (TAG, "[%.*s] (%02X)", l - p, p, c);
             else
             {                   // Process line
-               timeout = esp_timer_get_time () + 10000000 + fixms;
+               timeout = esp_timer_get_time () + 1000000 + fixms;
                l[-3] = 0;
                nmea ((char *) p);
             }
@@ -2095,65 +2130,73 @@ gps_task (void *z)
                last = 1;        // Send the one entry (that we will delete)
             for (int n = 0; n < last; n++)
             {                   // Last is not sent, as kept for next batch
+               uint8_t *q = p;
                fix_t *f = &fix[n];
                // Base fix data
                unsigned int v;
                v = f->tim;      // Time
-               *p++ = v >> 8;
-               *p++ = v;
+               *q++ = v >> 8;
+               *q++ = v;
                if (ecef)
                {
                   int32_t v = f->x - rx;
-                  *p++ = v >> 24;
-                  *p++ = v >> 16;
-                  *p++ = v >> 8;
-                  *p++ = v;
+                  if (rx + v != f->x)
+                     continue;  // Overflow
+                  *q++ = v >> 24;
+                  *q++ = v >> 16;
+                  *q++ = v >> 8;
+                  *q++ = v;
                   v = f->y - ry;
-                  *p++ = v >> 24;
-                  *p++ = v >> 16;
-                  *p++ = v >> 8;
-                  *p++ = v;
+                  if (ry + v != f->y)
+                     continue;  // Overflow
+                  *q++ = v >> 24;
+                  *q++ = v >> 16;
+                  *q++ = v >> 8;
+                  *q++ = v;
                   v = f->z - rz;
-                  *p++ = v >> 24;
-                  *p++ = v >> 16;
-                  *p++ = v >> 8;
-                  *p++ = v;
+                  if (rz + v != f->z)
+                     continue;  // Overflow
+                  *q++ = v >> 24;
+                  *q++ = v >> 16;
+                  *q++ = v >> 8;
+                  *q++ = v;
                   rx = f->x;
                   ry = f->y;
                   rz = f->z;
                } else
                {
                   v = f->lat;   // Lat
-                  *p++ = v >> 24;
-                  *p++ = v >> 16;
-                  *p++ = v >> 8;
-                  *p++ = v;
+                  *q++ = v >> 24;
+                  *q++ = v >> 16;
+                  *q++ = v >> 8;
+                  *q++ = v;
                   v = f->lon;   // Lon
-                  *p++ = v >> 24;
-                  *p++ = v >> 16;
-                  *p++ = v >> 8;
-                  *p++ = v;
+                  *q++ = v >> 24;
+                  *q++ = v >> 16;
+                  *q++ = v >> 8;
+                  *q++ = v;
                }
                // Optional fix data
                if (fixtag & TAGF_FIX_ALT)
                {
                   if (!f->alt)
                   {             // No alt
-                     *p++ = 0x80;
-                     *p++ = 0;
+                     *q++ = 0x80;
+                     *q++ = 0;
                   } else
                   {
                      v = (int) f->alt - (int) (ALTBASE / ascale);       // Alt
                      if (v > 32767)
                         v = 32767;      // Fit to signed 16 bits
-                     *p++ = v >> 8;
-                     *p++ = v;
+                     *q++ = v >> 8;
+                     *q++ = v;
                   }
                }
                if (fixtag & TAGF_FIX_SATS)
-                  *p++ = (f->sats & 0x3F) + (f->dgps ? 0x80 : 0);
+                  *q++ = (f->sats & 0x3F) + (f->dgps ? 0x80 : 0);
                if (fixtag & TAGF_FIX_HEPE)
-                  *p++ = f->hepe;
+                  *q++ = f->hepe;
+               p += fixlen;
             }
          }
          unsigned int len = encode (t, p - t, fixbase);
@@ -2283,37 +2326,7 @@ app_main ()
       gpio_set_level (gpsen, 1);
       gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
    }
-   {
-      // Init UART for GPS
-      void connect (unsigned int baud)
-      {
-         uart_config_t uart_config = {
-            .baud_rate = baud,
-            .data_bits = UART_DATA_8_BITS,
-            .parity = UART_PARITY_DISABLE,
-            .stop_bits = UART_STOP_BITS_1,
-            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-         };
-         if ((err = uart_param_config (gpsuart, &uart_config)))
-            revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-         else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
-            revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-         else if ((err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0)))
-            revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
-      }
-      connect (gpsbaud);
-      uint8_t temp;
-      if (gpsbaud != 9600 && (uart_read_bytes (gpsuart, &temp, 1, 1000 / portTICK_PERIOD_MS) <= 0 || temp != '$'))
-      {
-         uart_driver_delete (gpsuart);
-         connect (9600);
-         sleep (1);
-         gpscmd ("$PMTK251,%d", gpsbaud);       // Baud rate set (at 9600)
-         sleep (1);
-         uart_driver_delete (gpsuart);
-         connect (gpsbaud);
-      }
-   }
+   gps_connect (gpsbaud);
    if (attx >= 0 && atrx >= 0 && (atpwr >= 0 || atkey >= 0))
    {
       // Init UART for Mobile
