@@ -526,7 +526,6 @@ encode (SQL * sqlp, unsigned char *buf, unsigned int len)
       }
    }
    sql_free_result (res);
-   buf[len++] = VERSION;        // SIM800 truncates
    return len;
 }
 

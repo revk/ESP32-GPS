@@ -82,6 +82,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u8(movingepe,15)\
 	u8(stoppedepe,5)\
 	b(ecef,N)	\
+	u32(rdpmin,10)  \
 
 
 #define u32(n,d)	uint32_t n;
@@ -436,19 +437,23 @@ atcmd (const void *cmd, int t1, int t2)
       if (l > 0)
       {                         // initial response started
          int l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
-         if (l2 > 0 && t2)
+         if (l2 > 0)
          {                      // End of initial response
             l += l2;
-            l2 = uart_read_bytes (atuart, (void *) atbuf + l, 1, t2 / portTICK_PERIOD_MS);
-            if (l2 > 0)
-            {                   // Secondary response started
-               l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
+            if (t2)
+            {
+               l2 = uart_read_bytes (atuart, (void *) atbuf + l, 1, t2 / portTICK_PERIOD_MS);
                if (l2 > 0)
-                  l += l2;      // End of secondary response
-               else
+               {                // Secondary response started
+                  l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
+                  if (l2 > 0)
+                     l += l2;   // End of secondary response
+                  else if (l2 < 0)
+                     l = l2;
+               } else if (l2 < 0)
                   l = l2;
             }
-         } else
+         } else if (l2 < 0)
             l = l2;
       }
       if (l >= 0)
@@ -495,12 +500,72 @@ lograte (int rate)
    lastrate = rate;
 }
 
+void
+process_udp (uint32_t len, uint8_t * buf)
+{                               // Rx?
+   if (len < HEADLEN + 16 + MACLEN || *buf != VERSION || buf[1] != auth[1] || buf[2] != auth[2] || buf[3] != auth[3])
+      return;
+   time_t now = time (0);
+   time_t ts = (buf[4] << 24) + (buf[5] << 16) + (buf[6] << 8) + buf[7];
+   if (ts <= now + 5 && ts > now - 60)
+   {
+      len = HEADLEN + MACLEN + (len - HEADLEN - MACLEN) / 16 * 16;      // AES block size
+      {                         // HMAC
+         len -= MACLEN;
+         uint8_t mac[32];
+         hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, (void *) buf, len, mac);
+         if (memcmp (mac, buf + len, MACLEN))
+         {
+            revk_error (TAG, "Bad HMAC (%u bytes)", len);
+            len = 0;            // bad HMAC
+         }
+      }
+      {                         // Decrypt
+         uint8_t iv[16] = { };
+         memcpy (iv, buf, HEADLEN > sizeof (iv) ? sizeof (iv) : HEADLEN);
+         esp_aes_context ctx;
+         esp_aes_init (&ctx);
+         esp_aes_setkey (&ctx, auth + 1 + 3, 128);
+         esp_aes_crypt_cbc (&ctx, ESP_AES_DECRYPT, len - HEADLEN, iv, (void *) buf + HEADLEN, (void *) buf + HEADLEN);
+         esp_aes_free (&ctx);
+      }
+      {                         // Process
+         uint8_t *p = (void *) buf + HEADLEN;
+         uint8_t *e = (void *) buf + len;
+         while (p < e)
+         {                      // Process tags
+            unsigned int dlen = 0;
+            if (*p < 0x20)
+               dlen = 0;
+            else if (*p < 0x40)
+               dlen = 1;
+            else if (*p < 0x60)
+               dlen = 2;
+            else if (*p < 0x7F)
+               dlen = 4;
+            else
+               dlen = 3 + (p[2] << 8) + p[3];
+            if (*p == TAGT_FIX)
+               fixnow = 1;
+            else if (*p == TAGT_RESEND)
+               trackreset ((p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4]);
+            p += 1 + dlen;
+         }
+      }
+   }
+}
+
 const char *
 app_command (const char *tag, unsigned int len, const unsigned char *value)
 {
    if (!strcmp (tag, "test"))
    {
       trackmqtt = 1 - trackmqtt;        // Switch for testing
+      return "";
+   }
+   if (!strcmp (tag, "udp"))
+   {
+      process_udp (len, (uint8_t *) value);
       return "";
    }
    if (!strcmp (tag, "contrast"))
@@ -654,8 +719,11 @@ static void
 fixcheck (unsigned int fixtim)
 {
    time_t now = time (0);
-   if (!timeforce && gpszda && fixsave < 0 && fixdelete < 0
-       && (fixnow || fixnext > MAXFIX - FIXALLOW || (now >= fixtimeout) || fixtim >= 65000))
+   if (!timeforce && gpszda && fixsave < 0 && fixdelete < 0 && (fixnow ||       //
+                                                                fixnext > MAXFIX - FIXALLOW ||  //
+                                                                (now >= fixtimeout) ||  //
+                                                                fixtim >= 65000 //
+       ))
    {
       if (fixdebug)
       {
@@ -926,8 +994,10 @@ nmea (char *s)
             int fixhepe = round (hepe * ESCALE);
             if (fixhepe > 255)
                fixhepe = 255;   // Limit
-            int fixdiff (fix_t * a, fix_t * b)
+            inline int fixdiff (fix_t * a, fix_t * b)
             {                   // Different (except for time)
+               if (ecef)
+                  return 7;     // No point on ECEF data
                if (a->lat != b->lat)
                   return 1;
                if (a->lon != b->lon)
@@ -952,6 +1022,11 @@ nmea (char *s)
                   fix[fixnext].x = ecefx;
                   fix[fixnext].y = ecefy;
                   fix[fixnext].z = ecefz;
+                  if (fixnext
+                      && (ecefx != fix[fixnext - 1].x + ((int32_t) (ecefx - fix[fixnext - 1].x))
+                          || ecefy != fix[fixnext - 1].y + ((int32_t) (ecefy - fix[fixnext - 1].y))
+                          || ecefz != fix[fixnext - 1].z + ((int32_t) (ecefz - fix[fixnext - 1].z))))
+                     fixnow = 1;        // Too far to send this fix with previous
                } else
                {
                   fix[fixnext].lat = fixlat;
@@ -1028,7 +1103,7 @@ nmea (char *s)
       if (!speedforce)
          speed = strtof (f[7], NULL);
       // Are we moving?
-      if (speed < (float) hepea * stoppedepe / 10)
+      if (speed <= (float) hepea * stoppedepe / 10)
       {
          if (moving)
          {
@@ -1549,6 +1624,7 @@ at_task (void *X)
             if (p)
                atcmd ("AT+QIDNSIP=1", 0, 0);    // Domain name
          }
+         atcmd (m95 ? "AT+QIHEAD=1" : "AT+CIPHEAD=1", 0, 0);    // Send IPD headers
          try = 10;
          while (--try > 0)
          {
@@ -1611,58 +1687,21 @@ at_task (void *X)
                revk_error (TAG, "No auth to decode message");
                len = 0;         // No auth
             }
-            // Note, it seems to truncate by a byte, FFS
-            if (len >= HEADLEN + 16 + MACLEN && *atbuf == VERSION && atbuf[1] == auth[1] && atbuf[2] == auth[2]
-                && atbuf[3] == auth[3])
-            {                   // Rx?
-               time_t ts = (atbuf[4] << 24) + (atbuf[5] << 16) + (atbuf[6] << 8) + atbuf[7];
-               if (ts <= now + 5 && ts > now - 60)
-               {
-                  len = HEADLEN + MACLEN + (len - HEADLEN - MACLEN) / 16 * 16;  // AES block size
-                  {             // HMAC
-                     len -= MACLEN;
-                     uint8_t mac[32];
-                     hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, (void *) atbuf, len, mac);
-                     if (memcmp (mac, atbuf + len, MACLEN))
-                     {
-                        revk_error (TAG, "Bad HMAC (%u bytes)", len);
-                        len = 0;        // bad HMAC
-                     }
-                  }
-                  {             // Decrypt
-                     uint8_t iv[16] = { };
-                     memcpy (iv, atbuf, HEADLEN > sizeof (iv) ? sizeof (iv) : HEADLEN);
-                     esp_aes_context ctx;
-                     esp_aes_init (&ctx);
-                     esp_aes_setkey (&ctx, auth + 1 + 3, 128);
-                     esp_aes_crypt_cbc (&ctx, ESP_AES_DECRYPT, len - HEADLEN, iv, (void *) atbuf + HEADLEN,
-                                        (void *) atbuf + HEADLEN);
-                     esp_aes_free (&ctx);
-                  }
-                  {             // Process
-                     uint8_t *p = (void *) atbuf + HEADLEN;
-                     uint8_t *e = (void *) atbuf + len;
-                     while (p < e)
-                     {          // Process tags
-                        unsigned int dlen = 0;
-                        if (*p < 0x20)
-                           dlen = 0;
-                        else if (*p < 0x40)
-                           dlen = 1;
-                        else if (*p < 0x60)
-                           dlen = 2;
-                        else if (*p < 0x7F)
-                           dlen = 4;
-                        else
-                           dlen = 3 + (p[2] << 8) + p[3];
-                        if (*p == TAGT_FIX)
-                           fixnow = 1;
-                        else if (*p == TAGT_RESEND)
-                           trackreset ((p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4]);
-                        p += 1 + dlen;
-                     }
-                  }
-               }
+            char *p = atbuf;
+            if (*p == '+')
+               p++;
+            if (!strncmp (p, "IPD", 3))
+            {                   // IP packet
+               p += 3;
+               if (*p == ',')
+                  p++;
+               int l = 0;
+               while (isdigit ((int) *p))
+                  l = l * 10 + (*p++) - '0';
+               if (*p == ':')
+                  p++;
+               if (p + l <= atbuf + len)
+                  process_udp (l, (uint8_t *) p);
             }
          }
          revk_info (TAG, "Mobile disconnected");
@@ -1689,7 +1728,7 @@ nmea_task (void *z)
 {
    uint8_t buf[1000],
     *p = buf;
-   uint64_t timeout = esp_timer_get_time () + 10000000;
+   uint64_t timeout = esp_timer_get_time () + 60000000;
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
@@ -1723,7 +1762,7 @@ nmea_task (void *z)
                revk_error (TAG, "[%.*s] (%02X)", l - p, p, c);
             else
             {                   // Process line
-               timeout = esp_timer_get_time () + 10000000;
+               timeout = esp_timer_get_time () + 10000000 + fixms;
                l[-3] = 0;
                nmea ((char *) p);
             }
@@ -1783,12 +1822,23 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       fix_t *a = &fix[l];
       fix_t *b = &fix[h];
       // Centre - mainly to increase sig bits in floats by removing large fixed offset, but also for longitude metres base
-      int clat = a->lat / 2 + b->lat / 2;
-      int clon = a->lon / 2 + b->lon / 2;
-      int calt = ((int) a->alt + (int) b->alt) / 2;
-      int cx = a->x / 2 + b->x / 2;
-      int cy = a->y / 2 + b->y / 2;
-      int cz = a->z / 2 + b->z / 2;
+      int clat = 0,
+         clon = 0,
+         calt = 0,
+         cx = 0,
+         cy = 0,
+         cz = 0;
+      if (ecef)
+      {
+         cx = a->x / 2 + b->x / 2;
+         cy = a->y / 2 + b->y / 2;
+         cz = a->z / 2 + b->z / 2;
+      } else
+      {
+         clat = a->lat / 2 + b->lat / 2;
+         clon = a->lon / 2 + b->lon / 2;
+         calt = ((int) a->alt + (int) b->alt) / 2;
+      }
       int ctim = ((int) a->tim + (int) b->tim) / 2;
       float slon = 111111.0 * cos (M_PI * clat / 60.0 / 180.0 / DSCALE) / 60.0 / DSCALE;
       inline float x (fix_t * p)
@@ -1874,9 +1924,12 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       if (n > max)
          n = max;
       lost = fix[n].dist;       // Largest lost
-      while (n > 1 && fix[n - 1].dist == lost)
+      if (lost < rdpmin)
+         lost = rdpmin;
+      while (n > 1 && fix[n - 1].dist >= lost)
          n--;                   // Same as largest lost, remove..
       kept = fix[n - 1].dist;   // Smallest kept
+      lost = fix[n].dist;       // Largest lost
       if (n < H)
          fix[n] = fix[H];
       H = n;
@@ -2006,8 +2059,10 @@ gps_task (void *z)
                *p++ = TAGF_PAD; // Pre pad for fix
             *p++ = fixtag;      // Tag for fixes
             *p++ = fixlen;
-            for (int n = 1; n <= last; n++)
-            {                   // Don't send first as it is duplicate of last from previous packet
+            if (!last && fixsave == 1)
+               last = 1;        // Send the one entry (that we will delete)
+            for (int n = 0; n < last; n++)
+            {                   // Last is not sent, as kept for next batch
                fix_t *f = &fix[n];
                // Base fix data
                unsigned int v;
@@ -2081,9 +2136,9 @@ gps_task (void *z)
          if (fixsave == 1)
             fixdelete = 1;      // Delete the one entry and start with no fixes
          else if (fixsave)
-            fixdelete = fixsave - 1;
+            fixdelete = fixsave - 1;    // Keep last entry
          else
-            fixdelete = 0;
+            fixdelete = 0;      // None to delete, but marks save done
          fixsave = -1;
       }
    }
