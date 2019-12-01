@@ -22,10 +22,13 @@
 #define	TAGF_PERIOD		0x40	// Period covered
 #define	TAGF_MARGIN		0x41	// Defines maximum distance of discarded packets (cm)
 #define	TAGF_FIRST		0x60	// defines first UTC reference available
+#define	TAGF_INFO		0x70	// Info, null terminated tag followed by data (e.g. ICCID, IMEI)
+#define	TAGF_ECEF		0x71	// ECEF X/Y/Z whole metres 3 byte signed values
 
 #define	TAGT_PAD		0x00	// Padding
 #define	TAGT_FIX		0x01	// Fix request
 #define	TAGT_RESEND		0x60	// Resend from specified UTC reference
+#define	TAGT_SETTING		0x70	// Setting (null terminated name followed by data)
 
 #define	TAGF_FIX		0x80	// Base fix
 #define	TAGF_FIX_ALT		0x01	// Alt included
