@@ -395,6 +395,7 @@ gps_connect (unsigned int baud)
    esp_err_t err;
    if (gpsbaudnow)
       uart_driver_delete (gpsuart);
+   gpsbaudnow = baud;
    uart_config_t uart_config = {
       .baud_rate = baud,
       .data_bits = UART_DATA_8_BITS,
@@ -408,7 +409,7 @@ gps_connect (unsigned int baud)
       revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
    else if ((err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0)))
       revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
-   gpsbaudnow = baud;
+   uart_write_bytes (gpsuart, "\r\n\r\n", 4);
 }
 
 void
@@ -779,7 +780,9 @@ gps_init (void)
 {                               // Set up GPS
    if (gpsbaudnow != gpsbaud)
    {
+      gps_cmd ("$PQBAUD,W,%d", gpsbaud);        // 
       gps_cmd ("$PMTK251,%d", gpsbaud); // Required Baud rate set
+      sleep(1);
       gps_connect (gpsbaud);
    }
    gps_cmd ("$PMTK286,%d", aic ? 1 : 0);        // AIC
@@ -1182,12 +1185,14 @@ nmea (char *s)
          satsa = n;
       return;
    }
+#if 0
    if (!gpsdebug)
    {                            // Report unknown
       for (int q = 1; q < n; q++)
          f[q][-1] = ',';
       revk_error ("gpsrx", "$%s", f[0]);
    }
+#endif
 }
 
 static void
@@ -1772,7 +1777,7 @@ nmea_task (void *z)
 {
    uint8_t buf[1000],
     *p = buf;
-   uint64_t timeout = esp_timer_get_time () + 5000000;
+   uint64_t timeout = esp_timer_get_time () + 10000000;
    while (1)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
@@ -1781,8 +1786,9 @@ nmea_task (void *z)
       {
          if (timeout && timeout < esp_timer_get_time ())
          {
+            gpsstarted = 0;
             static int rate = 0;
-            const uint32_t rates[] = { 300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 };
+            const uint32_t rates[] = { 4800, 9600, 14400, 19200, 38400, 57600, 115200 };
             rate++;
             if (rate == sizeof (rates) / sizeof (*rates))
                rate = 0;
@@ -1968,8 +1974,10 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
       fix[bestn].keep = 1;      // keep this middle point (used to find the next block to process)
       h = bestn;                // First half recursive
    }
+#if 0
    if (fixdebug)
       revk_info (TAG, "RDP completed in %uus", (unsigned int) (esp_timer_get_time () - start));
+#endif
    // Sort
    unsigned int lost = 0,
       kept = 0;
