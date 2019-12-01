@@ -289,10 +289,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             dlen = 1;
          else if (*p < 0x60)
             dlen = 2;
-         else if (*p < 0x7F)
+         else if (*p < 0x70)
             dlen = 4;
          else
-            dlen = 3 + (p[2] << 8) + p[3];
+            dlen = 1 + p[1];
          if (*p == TAGF_FIRST)
          {                      // New first data
             unsigned int first = (p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4];      // New base
@@ -312,18 +312,33 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             margin = (p[1] << 8) + p[2];
          else if (*p == TAGF_TEMPC)
             tempc = (float) ((signed char *) p)[1] / CSCALE;
-         else if (*p == TAGF_ECEFX)
+         else if (*p == TAGF_ECEF && p[1] == 9)
          {
-            rx = 1000000LL * (int32_t) ((p[1] << 24) | (p[2] << 16) | (p[3] << 8) | p[4]);
+            rx = 1000000LL * (((int32_t) ((p[2] << 24) | (p[3] << 16) | (p[4] << 8))) >> 8);
+            ry = 1000000LL * (((int32_t) ((p[5] << 24) | (p[6] << 16) | (p[7] << 8))) >> 8);
+            rz = 1000000LL * (((int32_t) ((p[8] << 24) | (p[9] << 16) | (p[10] << 8))) >> 8);
             ecef = 1;
-         } else if (*p == TAGF_ECEFY)
-         {
-            ry = 1000000LL * (int32_t) ((p[1] << 24) | (p[2] << 16) | (p[3] << 8) | p[4]);
-            ecef = 1;
-         } else if (*p == TAGF_ECEFZ)
-         {
-            rz = 1000000LL * (int32_t) ((p[1] << 24) | (p[2] << 16) | (p[3] << 8) | p[4]);
-            ecef = 1;
+         } else if (*p == TAGF_INFO && p[1] > 1)
+         {                      // Info
+            char *tag = (char *) p + 2;
+            char *e = tag + p[1];
+            char *q = tag;
+            while (q < e && *q)
+               q++;
+            if (q < e)
+            {
+               q++;
+               if (!strcmp (tag, "ICCID"))
+                  sql_safe_query_free (sqlp,
+                                       sql_printf ("UPDATE `%#S` SET `iccid`=%#.*s WHERE `ID`=%d", sqldevice, (int) (e - q), q,
+                                                   devid));
+               else if (!strcmp (tag, "IMEI"))
+                  sql_safe_query_free (sqlp,
+                                       sql_printf
+                                       ("UPDATE `%#S` SET `imei`=%#.*s WHERE `ID`=%d", sqldevice, (int) (e - q), q, devid));
+               else
+                  warnx ("Unknown info %s", tag);
+            }
          } else if (*p && debug)
             fprintf (stderr, "Unknown tag %02X\n", *p);
          p += 1 + dlen;
@@ -359,8 +374,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   unsigned short tim = (q[0] << 8) + q[1];
                   q += 2;
                   sql_string_t f = { };
-                  sql_sprintf (&f, "REPLACE INTO `%#S` SET `device`=%u,`utc`='%U." TPART "'", sqlgps, devid, t + (tim / TSCALE),
-                               tim % TSCALE);
+                  sql_sprintf (&f,
+                               "REPLACE INTO `%#S` SET `device`=%u,`utc`='%U."
+                               TPART "'", sqlgps, devid, t + (tim / TSCALE), tim % TSCALE);
                   if (tim > lastfix)
                      lastfix = tim;
                   if (ecef)
@@ -399,8 +415,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                         sql_sprintf (&f, "-");
                      }
                      sql_sprintf (&f, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
-                     long double ecef[3] =
-                        { (long double) rx / 1000000.0, (long double) ry / 1000000.0, (long double) rz / 1000000.0 };
+                     long double ecef[3] = { (long double) rx / 1000000.0,
+                        (long double) ry / 1000000.0,
+                        (long double) rz / 1000000.0
+                     };
                      long double llh[3] = { };
                      wgsecef2llh (ecef, llh);
                      sql_sprintf (&f, ",`lat`=%.8Lf", llh[0] * 180.0 / M_PIl);
@@ -454,8 +472,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             sql_sprintf (&s, ",`auth`=%u", id);
          sql_sprintf (&s, " WHERE `ID`=%u", devid);
          sql_safe_query_s (sqlp, &s);
-         sql_sprintf (&s, "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`period`=%u,`received`=NOW(),`fixes`=%u", sqllog, devid, t,
-                      period, fixes);
+         sql_sprintf (&s,
+                      "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`period`=%u,`received`=NOW(),`fixes`=%u",
+                      sqllog, devid, t, period, fixes);
          if (addr)
             sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
          if (margin >= 0 && margin < 65536)
@@ -488,7 +507,10 @@ encode (SQL * sqlp, unsigned char *buf, unsigned int len)
    while ((len & 0xF) != HEADLEN)
       buf[len++] = 0;           // Pad
    unsigned int authid = (buf[1] << 16) + (buf[2] << 8) + buf[3];
-   SQL_RES *res = sql_safe_query_store_free (sqlp, sql_printf ("SELECT * from `%#S` WHERE `ID`=%u", sqlauth, authid));
+   SQL_RES *res = sql_safe_query_store_free (sqlp,
+                                             sql_printf ("SELECT * from `%#S` WHERE `ID`=%u",
+                                                         sqlauth,
+                                                         authid));
    if (sql_fetch_row (res))
    {
       // Encryption
@@ -500,8 +522,8 @@ encode (SQL * sqlp, unsigned char *buf, unsigned int len)
          int n;
          for (n = 0; n < sizeof (key); n++)
             key[n] =
-               (((isalpha (aes[n * 2]) ? 9 : 0) + (aes[n * 2] & 0xF)) << 4) + (isalpha (aes[n * 2 + 1]) ? 9 : 0) +
-               (aes[n * 2 + 1] & 0xF);
+               (((isalpha (aes[n * 2]) ? 9 : 0) +
+                 (aes[n * 2] & 0xF)) << 4) + (isalpha (aes[n * 2 + 1]) ? 9 : 0) + (aes[n * 2 + 1] & 0xF);
          memcpy (iv, buf, HEADLEN > sizeof (iv) ? sizeof (iv) : HEADLEN);
          EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new ();
          EVP_EncryptInit_ex (ctx, EVP_aes_128_cbc (), NULL, key, iv);
@@ -517,8 +539,8 @@ encode (SQL * sqlp, unsigned char *buf, unsigned int len)
          char key[keylen];
          for (int n = 0; n < keylen; n++)
             key[n] =
-               (((isalpha (login[n * 2]) ? 9 : 0) + (login[n * 2] & 0xF)) << 4) + (isalpha (login[n * 2 + 1]) ? 9 : 0) +
-               (login[n * 2 + 1] & 0xF);
+               (((isalpha (login[n * 2]) ? 9 : 0) +
+                 (login[n * 2] & 0xF)) << 4) + (isalpha (login[n * 2 + 1]) ? 9 : 0) + (login[n * 2 + 1] & 0xF);
          unsigned char mac[32] = { };
          HMAC (EVP_sha256 (), key, keylen, buf, len, mac, NULL);
          memcpy (buf + len, mac, MACLEN);
@@ -557,7 +579,9 @@ udp_task (void)
       unsigned char rx[2000];
       struct sockaddr_in6 from;
       socklen_t fromlen = sizeof (from);
-      size_t len = recvfrom (s, rx, sizeof (rx) - 1, 0, (struct sockaddr *) &from, &fromlen);
+      size_t len = recvfrom (s, rx, sizeof (rx) - 1, 0,
+                             (struct sockaddr *) &from,
+                             &fromlen);
       if (len < 0)
          return -1;
       unsigned short port = 0;
@@ -611,25 +635,59 @@ main (int argc, const char *argv[])
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
-         {"sql-conffile", 'c', POPT_ARG_STRING, &sqlconffile, 0, "SQL conf file", "filename"},
-         {"sql-hostname", 'H', POPT_ARG_STRING, &sqlhostname, 0, "SQL hostname", "hostname"},
-         {"sql-database", 'd', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldatabase, 0, "SQL database", "db"},
-         {"sql-username", 'U', POPT_ARG_STRING, &sqlusername, 0, "SQL username", "name"},
-         {"sql-password", 'P', POPT_ARG_STRING, &sqlpassword, 0, "SQL password", "pass"},
-         {"sql-table", 't', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqlgps, 0, "SQL log table", "table"},
-         {"sql-device", 0, POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldevice, 0, "SQL device table", "table"},
-         {"sql-debug", 'v', POPT_ARG_NONE, &sqldebug, 0, "SQL Debug"},
-         {"mqtt-hostname", 'h', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &mqtthostname, 0, "MQTT hostname", "hostname"},
-         {"mqtt-username", 'u', POPT_ARG_STRING, &mqttusername, 0, "MQTT username", "username"},
-         {"mqtt-password", 'p', POPT_ARG_STRING, &mqttpassword, 0, "MQTT password", "password"},
-         {"mqtt-appname", 'a', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &mqttappname, 0, "MQTT appname", "appname"},
-         {"mqtt-id", 0, POPT_ARG_STRING, &mqttid, 0, "MQTT id", "id"},
-         {"locus", 'L', POPT_ARG_NONE, &locus, 0, "Get LOCUS file"},
-         {"resend", 0, POPT_ARG_NONE, &resend, 0, "Ask resend of tracking over MQTT on connect"},
-         {"save", 0, POPT_ARG_NONE, &save, 0, "Save LOCUS file"},
-         {"port", 0, POPT_ARG_STRING, &bindport, 0, "UDP port to bind for collecting tracking"},
-         {"bindhost", 0, POPT_ARG_STRING, &bindhost, 0, "UDP host to bind for collecting tracking"},
-         {"debug", 'V', POPT_ARG_NONE, &debug, 0, "Debug"},
+         {"sql-conffile", 'c', POPT_ARG_STRING,
+          &sqlconffile, 0, "SQL conf file",
+          "filename"},
+         {"sql-hostname", 'H', POPT_ARG_STRING,
+          &sqlhostname, 0, "SQL hostname",
+          "hostname"},
+         {"sql-database", 'd',
+          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
+          &sqldatabase, 0, "SQL database", "db"},
+         {"sql-username", 'U', POPT_ARG_STRING,
+          &sqlusername, 0, "SQL username",
+          "name"},
+         {"sql-password", 'P', POPT_ARG_STRING,
+          &sqlpassword, 0, "SQL password",
+          "pass"},
+         {"sql-table", 't',
+          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqlgps, 0,
+          "SQL log table", "table"},
+         {"sql-device", 0,
+          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldevice,
+          0, "SQL device table", "table"},
+         {"sql-debug", 'v', POPT_ARG_NONE,
+          &sqldebug, 0, "SQL Debug"},
+         {"mqtt-hostname", 'h',
+          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
+          &mqtthostname, 0, "MQTT hostname",
+          "hostname"},
+         {"mqtt-username", 'u', POPT_ARG_STRING,
+          &mqttusername, 0, "MQTT username",
+          "username"},
+         {"mqtt-password", 'p', POPT_ARG_STRING,
+          &mqttpassword, 0, "MQTT password",
+          "password"},
+         {"mqtt-appname", 'a',
+          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
+          &mqttappname, 0, "MQTT appname",
+          "appname"},
+         {"mqtt-id", 0, POPT_ARG_STRING, &mqttid,
+          0, "MQTT id", "id"},
+         {"locus", 'L', POPT_ARG_NONE, &locus, 0,
+          "Get LOCUS file"},
+         {"resend", 0, POPT_ARG_NONE, &resend, 0,
+          "Ask resend of tracking over MQTT on connect"},
+         {"save", 0, POPT_ARG_NONE, &save, 0,
+          "Save LOCUS file"},
+         {"port", 0, POPT_ARG_STRING, &bindport,
+          0,
+          "UDP port to bind for collecting tracking"},
+         {"bindhost", 0, POPT_ARG_STRING,
+          &bindhost, 0,
+          "UDP host to bind for collecting tracking"},
+         {"debug", 'V', POPT_ARG_NONE, &debug, 0,
+          "Debug"},
          POPT_AUTOHELP {}
       };
       optCon = poptGetContext (NULL, argc, argv, optionsTable, 0);
@@ -666,7 +724,8 @@ main (int argc, const char *argv[])
       rc = rc;
       char *sub = NULL;
       asprintf (&sub, "state/%s/#", mqttappname);
-      int e = mosquitto_subscribe (mqtt, NULL, sub, 0);
+      int e = mosquitto_subscribe (mqtt, NULL, sub,
+                                   0);
       if (e)
          errx (1, "MQTT subscribe failed %s (%s)", mosquitto_strerror (e), sub);
       if (debug)
@@ -760,13 +819,17 @@ main (int argc, const char *argv[])
                char *topic;
                if (asprintf (&topic, "command/%s/%s/resend", mqttappname, tag) < 0)
                   errx (1, "malloc");
-               int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
+               int e = mosquitto_publish (mqtt, NULL, topic, 0,
+                                          NULL, 1, 0);
                if (e)
                   errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                free (topic);
             }
             unsigned int devid = 0;
-            SQL_RES *device = sql_safe_query_store_free (&sql, sql_printf ("SELECT * from `%#S` WHERE `tag`=%#s", sqldevice, tag));
+            SQL_RES *device = sql_safe_query_store_free (&sql,
+                                                         sql_printf ("SELECT * from `%#S` WHERE `tag`=%#s",
+                                                                     sqldevice,
+                                                                     tag));
             if (sql_fetch_row (device))
             {
                devid = atoi (sql_colz (device, "ID"));
@@ -785,7 +848,8 @@ main (int argc, const char *argv[])
                   char *topic;
                   if (asprintf (&topic, "command/%s/%s/upgrade", mqttappname, tag) < 0)
                      errx (1, "malloc");
-                  int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
+                  int e = mosquitto_publish (mqtt, NULL, topic, 0,
+                                             NULL, 1, 0);
                   if (e)
                      errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                   free (topic);
@@ -806,7 +870,8 @@ main (int argc, const char *argv[])
                                                        sql_printf
                                                        ("SELECT * from `%#S` WHERE `device`=%#S ORDER BY `ID` DESC LIMIT 1",
                                                         sqlauth,
-                                                        sql_col (device, "ID")));
+                                                        sql_col (device,
+                                                                 "ID")));
             if (sql_fetch_row (auth))
             {
                authid = atoi (sql_colz (auth, "ID"));
@@ -863,10 +928,12 @@ main (int argc, const char *argv[])
                   if (asprintf (&topic, "setting/%s/%s/auth", mqttappname, tag) < 0)
                      errx (1, "malloc");
                   char *value;
-                  if (asprintf (&value, "%06X%s%s", atoi (sql_colz (auth, "ID")), sql_colz (auth, "aes"), sql_colz (auth, "auth")) <
-                      0)
+                  if (asprintf
+                      (&value, "%06X%s%s", atoi (sql_colz (auth, "ID")), sql_colz (auth, "aes"), sql_colz (auth, "auth")) < 0)
                      errx (1, "malloc");
-                  int e = mosquitto_publish (mqtt, NULL, topic, strlen (value), value, 1, 0);
+                  int e = mosquitto_publish (mqtt, NULL, topic,
+                                             strlen (value),
+                                             value, 1, 0);
                   if (e)
                      errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                   free (topic);
@@ -903,7 +970,8 @@ main (int argc, const char *argv[])
       {
          if (!strcmp (type, "udp"))
          {
-            time_t resend = process_udp (&sql, msg->payloadlen, msg->payload, NULL, 0);
+            time_t resend = process_udp (&sql, msg->payloadlen,
+                                         msg->payload, NULL, 0);
             if (resend)
             {
                char temp[22];
@@ -913,7 +981,9 @@ main (int argc, const char *argv[])
                char *topic;
                if (asprintf (&topic, "command/%s/%s/resend", mqttappname, tag) < 0)
                   errx (1, "malloc");
-               int e = mosquitto_publish (mqtt, NULL, topic, strlen (temp), temp, 1, 0);
+               int e = mosquitto_publish (mqtt, NULL, topic,
+                                          strlen (temp), temp,
+                                          1, 0);
                if (e)
                   errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                free (topic);
@@ -954,7 +1024,8 @@ main (int argc, const char *argv[])
                   char *topic;
                   if (asprintf (&topic, "command/%s/%s/dump", mqttappname, tag) < 0)
                      errx (1, "malloc");
-                  int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
+                  int e = mosquitto_publish (mqtt, NULL, topic, 0,
+                                             NULL, 1, 0);
                   if (e)
                      errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                   free (topic);
@@ -1030,9 +1101,10 @@ main (int argc, const char *argv[])
                      while (p + 16 <= e)
                      {
 #if 0
-                        warnx ("%08X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-                               (int) (p - l->data), p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12],
-                               p[13], p[14], p[15]);
+                        warnx
+                           ("%08X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                            (int) (p - l->data), p[0], p[1], p[2],
+                            p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
 #endif
                         if (!((p - l->data) & 0xFFF))
                         {       // Header stuff?
@@ -1057,7 +1129,8 @@ main (int argc, const char *argv[])
                               unsigned int v = p[o] + (p[o + 1] << 8) + (p[o + 2] << 16) + (p[o + 3] << 24);
                               if (v == 0xFFFFFFFF)
                                  return 0;
-                              double d = (1.0 + ((double) (v & 0x7FFFFF)) / 8388607.0) * pow (2, ((int) ((v >> 23) & 0xFF) - 127));
+                              double d = (1.0 + ((double) (v & 0x7FFFFF)) / 8388607.0) * pow (2,
+                                                                                              ((int) ((v >> 23) & 0xFF) - 127));
                               if (v & 0x80000000)
                                  d = -d;
                               return d;
@@ -1091,7 +1164,8 @@ main (int argc, const char *argv[])
                         char *topic;
                         if (asprintf (&topic, "command/%s/%s/erase", mqttappname, tag) < 0)
                            errx (1, "malloc");
-                        int e = mosquitto_publish (mqtt, NULL, topic, 0, NULL, 1, 0);
+                        int e = mosquitto_publish (mqtt, NULL, topic, 0,
+                                                   NULL, 1, 0);
                         if (e)
                            errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), topic);
                         free (topic);

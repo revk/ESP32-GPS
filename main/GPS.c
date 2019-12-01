@@ -138,6 +138,7 @@ int8_t vepeforce = 0;
 int8_t hdopforce = 0;
 int8_t pdopforce = 0;
 int8_t vdopforce = 0;
+int8_t sendinfo = 0;
 volatile int8_t gpsstarted = 0;
 char iccid[22] = { };
 char imei[22] = { };
@@ -541,14 +542,26 @@ process_udp (uint32_t len, uint8_t * buf)
                dlen = 1;
             else if (*p < 0x60)
                dlen = 2;
-            else if (*p < 0x7F)
+            else if (*p < 0x70)
                dlen = 4;
             else
-               dlen = 3 + (p[2] << 8) + p[3];
+               dlen = 1 + p[1];
             if (*p == TAGT_FIX)
                fixnow = 1;
             else if (*p == TAGT_RESEND)
                trackreset ((p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4]);
+            else if (*p == TAGT_SETTING && p[1] > 1)
+            {
+               uint8_t *q = p + 2,
+                  *e = q + p[1];
+               while (q < e && *q)
+                  q++;
+               if (q < e)
+               {
+                  q++;
+                  revk_setting ((char *) p + 2, e - q, q);
+               }
+            }
             p += 1 + dlen;
          }
       }
@@ -593,10 +606,6 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       xSemaphoreGive (track_mutex);
       if (logslow || logfast)
          gpscmd ("$PMTK183");   // Log status
-      if (*iccid)
-         revk_info ("iccid", "%s", iccid);
-      if (*imei)
-         revk_info ("imei", "%s", imei);
       if (tracki && (attx < 0 || atrx < 0))
          fixnow = 1;
       if (!auth || *auth <= 3 + 16)
@@ -1485,31 +1494,39 @@ at_task (void *X)
       }
       if (atcmd ("AT+GSN", 0, 0) > 0)
       {
+         char temp[22];
          char *p = atbuf,
-            *o = imei;
+            *o = temp;
          while (*p && *p < ' ')
             p++;
-         while (isdigit ((int) *p) && o < imei + sizeof (imei) - 1)
+         while (isdigit ((int) *p) && o < temp + sizeof (temp) - 1)
             *o++ = *p++;
          *o = 0;
-         if (*imei)
-            revk_info ("imei", "%s", imei);
+         if (strcmp (temp, imei))
+         {
+            strcpy (imei, temp);
+            sendinfo = 1;
+         }
       }
       if (atcmd ("AT+CCID", 0, 0) > 0)
       {
+         char temp[22];
          char *p = atbuf,
-            *o = iccid;
+            *o = temp;
          while (*p && *p < ' ')
             p++;
-         while (*p && o < iccid + sizeof (iccid) - 1)
+         while (*p && o < temp + sizeof (temp) - 1)
          {
             if (isdigit ((int) *p))
                *o++ = *p;
             p++;
          }
          *o = 0;
-         if (*iccid)
-            revk_info ("iccid", "%s", iccid);
+         if (strcmp (temp, iccid))
+         {
+            strcpy (iccid, temp);
+            sendinfo = 1;
+         }
       }
       time_t next = 0;
       try = 50;
@@ -1985,6 +2002,26 @@ gps_task (void *z)
             *p++ = fixbase >> 8;
             *p++ = fixbase;
          }
+         if (sendinfo)
+         {
+            sendinfo = 0;
+            *p++ = TAGF_INFO;
+            if (*iccid)
+            {
+               uint8_t *l = p++;
+               p += strlen (strcpy ((char *) p, "ICCID")) + 1;
+               p += strlen (strcpy ((char *) p, iccid));
+               *l = (p - l) - 1;
+            }
+            if (*imei)
+            {
+               *p++ = TAGF_INFO;
+               uint8_t *l = p++;
+               p += strlen (strcpy ((char *) p, "IMEI")) + 1;
+               p += strlen (strcpy ((char *) p, imei));
+               *l = (p - l) - 1;
+            }
+         }
          if (datatemp)
          {
             int t = tempc * CSCALE;
@@ -2025,23 +2062,18 @@ gps_task (void *z)
                rx = fix[0].x / 1000000LL;       // Ensure whole numbers of metres as referencce
                ry = fix[0].y / 1000000LL;
                rz = fix[0].z / 1000000LL;
-               //revk_info (TAG, "rx=%lld ry=%lld rz=%lld   %lld %lld %lld", rx, ry, rz, fix[0].x, fix[0].y, fix[0].z);
                int32_t v;
-               *p++ = TAGF_ECEFX;
+               *p++ = TAGF_ECEF;        // Reference ECEF data
+               *p++ = 9;
                v = rx;
-               *p++ = v >> 24;
                *p++ = v >> 16;
                *p++ = v >> 8;
                *p++ = v;
-               *p++ = TAGF_ECEFY;
                v = ry;
-               *p++ = v >> 24;
                *p++ = v >> 16;
                *p++ = v >> 8;
                *p++ = v;
-               *p++ = TAGF_ECEFZ;
                v = rz;
-               *p++ = v >> 24;
                *p++ = v >> 16;
                *p++ = v >> 8;
                *p++ = v;
