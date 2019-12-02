@@ -2,11 +2,6 @@
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 static const char TAG[] = "GPS";
 
-// TODO
-// Settings via UDP?
-// Better roaming operator selection? Maybe signal strength, or retries of each?
-// AT command wait for OK/ERROR
-
 #include "revk.h"
 #include <esp32/aes.h>
 #include <driver/i2c.h>
@@ -21,80 +16,79 @@ static const char TAG[] = "GPS";
 extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * data, size_t data_len, uint8_t * mac);
 
 #define settings	\
-	s8(oledsda,-1)	\
-	s8(oledscl,-1)	\
-	s8(oledaddress,0x3D)	\
-	u8(oledcontrast,127)	\
-	b(oledflip,N)	\
-	bl(gpsdebug,N)	\
-	s8(gpspps,-1)	\
-	s8(gpsuart,1)	\
-	s8(gpsrx,-1)	\
-	s8(gpstx,-1)	\
-	s8(gpsfix,-1)	\
-	s8(gpsen,-1)	\
-	s8(ds18b20,-1)	\
-	u16(mtu,1488)	\
-      	bl(atdebug,N)    \
-        s8(atuart,2)	\
-        u32(atbaud,115200)	\
-        u32(gpsbaud,9600)	\
-        s8(attx,-1)	\
-        s8(atrx,-1)	\
-        s8(atkey,-1)	\
-        s8(atrst,-1)	\
-        s8(atpwr,-1)	\
-	u32(fixms,1000) \
-	bl(fixdump,N)	\
-	bl(fixdebug,N)	\
-	b(battery,Y)	\
-	u32(periodstopped,3600)\
-	u32(stoppedlog,60)\
-	u32(startedlog,10)\
-	u32(periodmoving,120)\
-	u32(keepalive,0)\
-	u32(secondcm,10)\
-        u32(altscale,10)\
-	s(apn,"mobiledata")\
-	s(operator,"")\
-	s(loghost,"mqtt.revk.uk")\
-	u32(logport,6666)\
-	h(auth)		\
-	u8(sun,0)	\
-	u32(logslow,0)	\
-	u32(logfast,0)	\
-	b(navstar,Y)	\
-	b(glonass,Y)	\
-	b(galileo,Y)	\
-	b(waas,Y)	\
-	b(sbas,Y)	\
-	b(qzss,N)	\
-	b(aic,Y)	\
-	b(easy,Y)	\
-	b(mph, Y)	\
-	u8(datafix,0x07)\
-	b(datamargin,Y) \
-	b(datatemp,Y)	\
-	b(walking,N)	\
-	b(flight,N)	\
-	b(balloon,N)	\
-	u8(refkmh,5)	\
-	u8(lightmin,30)	\
-	s8(light,-1)	\
-	u8(movingepe,15)\
-	b(ecef,Y)	\
-	u32(rdpmin,10)  \
-	u32(movinglag,10)\
+	s8(oledsda,-1,		OLED SDA GPIO)	\
+	s8(oledscl,-1,		OLED SCL GPIO)	\
+	s8(oledaddress,0x3D,	OLED I2C Address)	\
+	u8(oledcontrast,127,	OLED Contrast)	\
+	b(oledflip,N,		OLED display flip)	\
+	bl(gpsdebug,N,		GPS debug logging)	\
+	s8(gpspps,-1,		GPS PPS GPIO)	\
+	s8(gpsuart,1,		GPS UART ID)	\
+	s8(gpsrx,-1,		GPS Rx GPIO)	\
+	s8(gpstx,-1,		GPS Tx GPIO)	\
+	s8(gpsfix,-1,		GPS Fix GPIO)	\
+	s8(gpsen,-1,		GPS EN GPIO)	\
+        u32(gpsbaud,9600,	GPS Baud)	\
+	u32(fixms,1000,		GPS fix rate (ms)) \
+	bl(fixdump,N,		GPS Fix log)	\
+	bl(fixdebug,N,		GPS Fix debug log)	\
+	b(navstar,Y,		GPS track NAVSTAR GPS)	\
+	b(glonass,Y,		GPS track GLONASS GPS)	\
+	b(galileo,Y,		GPS track GALILEO GPS)	\
+	b(waas,Y,		GPS enable WAAS)	\
+	b(sbas,Y,		GPS enable SBAS)	\
+	b(qzss,N,		GPS enable QZSS)	\
+	b(aic,Y,		GPS enable AIC)	\
+	b(easy,Y,		GPS enable Easy)	\
+	b(walking,N,		GPS Walking mode)	\
+	b(flight,N,		GPS Flight mode)	\
+	b(balloon,N,		GPS Balloon mode)	\
+	s8(ds18b20,-1,		DS18B20 GPIO)	\
+	u16(mtu,1488,		UDP MTU)	\
+      	bl(atdebug,N,		Modem debug log)    \
+        s8(atuart,2,		Modem UART ID)	\
+        u32(atbaud,115200,	Modem Baud)	\
+        s8(attx,-1,		Modem Tx GPIO)	\
+        s8(atrx,-1,		Modem Rx GPIO)	\
+        s8(atkey,-1,		Modem power key GPIO)	\
+        s8(atrst,-1,		Modem reset GPIO)	\
+        s8(atpwr,-1,		Modem power GPIO)	\
+	s(operator,"",		Modem operator)\
+	s(apn,"mobiledata",	Modem APN)\
+	u32(periodstopped,3600,	Report interval when stopped)\
+	u32(stoppedlog,60,	Fix interval when stopped)\
+	u32(startedlog,10,	Report delay when start moving)\
+	u32(periodmoving,120,	Report interval when moving)\
+	u32(keepalive,0,	UDP keepalive)\
+	u32(secondcm,10,	RDP distance per second (cm))\
+        u32(altscale,10,	RDP scale down (non ECEF mode))\
+	s(loghost,"mqtt.revk.uk", UDP log host)\
+	u32(logport,6666,	UDP log port)\
+	h(auth,			Auth data for UDP AES)		\
+	u8(sun,0,		Sun angle for sunset)	\
+	u32(logslow,0,		Log rate when not moving (0 for no internal GPS log))	\
+	u32(logfast,0,		Log rate when moving (0 for no internal GPS log))	\
+	b(mph, Y,		Speed in mph)	\
+	b(kt, Y,		Speed in kt)	\
+	u8(datafix,0x07,	Report fix fields)\
+	b(datamargin,Y,		Report margin sent) \
+	b(datatemp,Y,		Report temp sent)	\
+	u8(lightmin,30,		Lighting up time (minutes))	\
+	s8(light,-1,		Light control GPIO)	\
+	u8(movingepe,15,	Multiple HEPE for moving /10)\
+	u32(movinglag,10,	Stop moving after this time (seconds))\
+	b(ecef,Y,		Report ECEF)	\
+	u32(rdpmin,10,		Min disttance for RDP (mm))  \
 
 
-#define u32(n,d)	uint32_t n;
-#define u16(n,d)	uint16_t n;
-#define s8(n,d)	int8_t n;
-#define u8(n,d)	uint8_t n;
-#define b(n,d) uint8_t n;
-#define bl(n,d) uint8_t n;
-#define h(n) uint8_t *n;
-#define s(n,d) char * n;
+#define u32(n,d,t)	uint32_t n;
+#define u16(n,d,t)	uint16_t n;
+#define s8(n,d,t)	int8_t n;
+#define u8(n,d,t)	uint8_t n;
+#define b(n,d,t) uint8_t n;
+#define bl(n,d,t) uint8_t n;
+#define h(n,t) uint8_t *n;
+#define s(n,d,t) char * n;
 settings
 #undef u16
 #undef u32
@@ -2250,14 +2244,14 @@ app_main ()
    at_mutex = xSemaphoreCreateMutex (); // Shared command access
    track_mutex = xSemaphoreCreateMutex ();
    revk_init (&app_command);
-#define b(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
-#define bl(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
-#define h(n) revk_register(#n,0,0,&n,NULL,SETTING_BINARY|SETTING_HEX);
-#define u32(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define u16(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s8(n,d) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
-#define u8(n,d) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s(n,d) revk_register(#n,0,0,&n,d,0);
+#define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
+#define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
+#define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINARY|SETTING_HEX);
+#define u32(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
+#define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define s(n,d,t) revk_register(#n,0,0,&n,d,0);
    settings;
 #undef u16
 #undef u32
