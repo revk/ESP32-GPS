@@ -1039,8 +1039,8 @@ nmea (char *s)
             if (fixnext < MAXFIX && fixtim < 65536)
             {
                static time_t fixskip = 0;       // Fix every minute when not moving
-               if (!moving && fixnext > 0 && fixsave < 0 && fixskip > time (0))
-                  fixnext--;
+               if (!moving && fixnext > 1 && fixsave < 0 && fixskip > time (0))
+                  fixnext--; // Overwrite as not moving
                else
                   fixskip = time (0) + stoppedlog;
                fix[fixnext].keep = 0;
