@@ -49,6 +49,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	bl(fixdebug,N)	\
 	b(battery,Y)	\
 	u32(periodstopped,3600)\
+	u32(stoppedlog,60)\
 	u32(periodmoving,120)\
 	u32(keepalive,0)\
 	u32(secondcm,10)\
@@ -1046,7 +1047,7 @@ nmea (char *s)
                if (!moving && fixnext > 0 && fixsave < 0 && fixskip > time (0))
                   fixnext--;
                else
-                  fixskip = time (0) + 60;
+                  fixskip = time (0) + stoppedlog;
                fix[fixnext].keep = 0;
                fix[fixnext].dist = 0;
                fix[fixnext].tim = fixtim;
