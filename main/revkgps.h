@@ -3,8 +3,8 @@
 #define VERSION 0x2A
 #define	HEADLEN	8		// Header length at start
 #define	MACLEN	8		// Length of SHA256HMAC used at end
-#define TSCALE  100             // Per second
-#define TPART   "%02u"
+#define TSCALE  10              // Per second
+#define TPART   "%01u"
 #define	DSCALE	100000		// Per degree
 #define	ASCALE	10		// Per metre
 #define	ESCALE	10		// EPE scale

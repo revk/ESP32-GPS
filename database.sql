@@ -49,7 +49,7 @@ CREATE TABLE `device` (
   `tag` varchar(6) DEFAULT NULL,
   `auth` int(10) unsigned DEFAULT NULL,
   `lastupdateutc` datetime DEFAULT NULL,
-  `lastfixutc` datetime DEFAULT NULL,
+  `lastfixutc` datetime(1) DEFAULT NULL,
   `lastip` datetime DEFAULT NULL,
   `ip` varchar(39) DEFAULT NULL,
   `port` int(10) unsigned DEFAULT NULL,
@@ -75,7 +75,7 @@ DROP TABLE IF EXISTS `gps`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `gps` (
   `ID` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `utc` datetime(2) NOT NULL,
+  `utc` datetime(1) NOT NULL,
   `device` int(10) unsigned NOT NULL,
   `lat` decimal(19,9) DEFAULT NULL,
   `lon` decimal(14,9) DEFAULT NULL,

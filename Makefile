@@ -20,7 +20,7 @@ SQLVER=$(shell mariadb_config --version | sed 'sx\..*xx')
 CCOPTS=${SQLINC} -I. -I/usr/local/ssl/include -D_GNU_SOURCE -g -Wall -funsigned-char -lm
 OPTS=-L/usr/local/ssl/lib ${SQLLIB} ${CCOPTS}
 
-gpslog: gpslog.c SQLlib/sqllib.o
+gpslog: gpslog.c SQLlib/sqllib.o main/revkgps.h
 	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o -lcrypto
 gpsout: gpsout.c SQLlib/sqllib.o
 	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o

@@ -48,7 +48,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	bl(fixdump,N)	\
 	bl(fixdebug,N)	\
 	b(battery,Y)	\
-	u32(periodstopped,600)\
+	u32(periodstopped,3600)\
 	u32(periodmoving,120)\
 	u32(keepalive,0)\
 	u32(secondcm,10)\
@@ -80,9 +80,9 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u8(lightmin,30)	\
 	s8(light,-1)	\
 	u8(movingepe,15)\
-	u8(stoppedepe,5)\
-	b(ecef,N)	\
+	b(ecef,Y)	\
 	u32(rdpmin,10)  \
+	u32(movinglag,10)\
 
 
 #define u32(n,d)	uint32_t n;
@@ -124,7 +124,6 @@ uint8_t satsl = 0;
 uint8_t satsa = 0;
 uint8_t fixtype = 0;
 uint8_t fixmode = 0;
-int8_t moving = 0;              // We are moving
 int8_t mobile = 0;              // Mobile data on line
 int8_t gotfix = 0;
 int8_t lonforce = 0;
@@ -140,6 +139,7 @@ int8_t pdopforce = 0;
 int8_t vdopforce = 0;
 int8_t sendinfo = 0;
 volatile int8_t gpsstarted = 0;
+time_t moving = 0;
 char iccid[22] = { };
 char imei[22] = { };
 
@@ -1030,7 +1030,6 @@ nmea (char *s)
             if (fixtim / TSCALE + 100 < (gpszda % 86400))
                fixtim += 86400 * TSCALE;        // Day wrap
             fixtim -= (fixbase - gpszda / 86400 * 86400) * TSCALE;
-            fixlast = fixbase + fixtim / TSCALE;
             int fixalt = round ((alt + ALTBASE) / ascale);      // Offset and scale to store in 16 bits
             if (fixalt < 0)
                fixalt = 0;      // Range to 16 bits
@@ -1041,24 +1040,13 @@ nmea (char *s)
             int fixhepe = round (hepe * ESCALE);
             if (fixhepe > 255)
                fixhepe = 255;   // Limit
-            inline int fixdiff (fix_t * a, fix_t * b)
-            {                   // Different (except for time) - lat/lon only
-               if (a->lat != b->lat)
-                  return 1;
-               if (a->lon != b->lon)
-                  return 2;
-               if (a->alt != b->alt)
-                  return 3;
-               if (a->sats != b->sats)
-                  return 4;
-               if (a->hepe != b->hepe)
-                  return 5;
-               if (a->dgps != b->dgps)
-                  return 6;
-               return 0;
-            }
-            if (fixnext < MAXFIX && fixtim < 65536 && (fixnext < 2 || moving))
+            if (fixnext < MAXFIX && fixtim < 65536)
             {
+               static time_t fixskip = 0;       // Fix every minute when not moving
+               if (!moving && fixnext > 0 && fixsave < 0 && fixskip > time (0))
+                  fixnext--;
+               else
+                  fixskip = time (0) + 60;
                fix[fixnext].keep = 0;
                fix[fixnext].dist = 0;
                fix[fixnext].tim = fixtim;
@@ -1081,16 +1069,11 @@ nmea (char *s)
                fix[fixnext].sats = sats;
                fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
                fix[fixnext].hepe = fixhepe;
-               if (!ecef && fixnext > 1 && fixnext > fixsave + 1 && !fixdiff (&fix[fixnext - 1], &fix[fixnext])
-                   && !fixdiff (&fix[fixnext - 2], &fix[fixnext - 1]))
-                  fix[fixnext - 1].tim = fixtim;        // Skip intermediate identical fix
-               else
-               {                // Save
-                  if (fixdump)
-                     revk_info (TAG, "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
-                                fixalt, ascale);
-                  fixnext++;
-               }
+               if (fixdump)
+                  revk_info (TAG, "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
+                             fixalt, ascale);
+               fixnext++;
+               fixlast = fixbase + fixtim / TSCALE;
                fixcheck (fixtim);
             }
          }
@@ -1099,14 +1082,15 @@ nmea (char *s)
       {                         // Move back fixes
          unsigned int n,
            p = 0;
-         int diff = fixend - fixbase;
+         int diff = (fixend - fixbase) * TSCALE;
          //if (fixdebug) revk_info(TAG, "Fix deleted %d, adjust %d", fixdelete, diff);
          for (n = fixdelete; n < fixnext; n++)
-         {
-            fix[p] = fix[n];
-            fix[p].tim -= diff * TSCALE;
-            p++;
-         }
+            if (fix[n].tim >= diff)
+            {
+               fix[p] = fix[n];
+               fix[p].tim -= diff;
+               p++;
+            }
          fixbase = fixend;      // New base
          fixnext = p;
          fixdelete = -1;
@@ -1148,26 +1132,23 @@ nmea (char *s)
       if (!speedforce)
          speed = strtof (f[7], NULL);
       // Are we moving?
-      if (movingepe && speed <= (float) hepea * stoppedepe / 10)
-      {
-         if (moving)
-         {
-            fixnow = 1;         // Do fix now
-            if (fixdebug)
-               revk_info (TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
-            moving = 0;         // Stopped moving
-            lograte (logslow);
-         }
-      } else if (speed > 1 && fixmode > 1 && hepe && speed >= (float) movingepe * hepea / 10)
+      if (speed > 1 && fixmode > 1 && hepe && speed >= (float) movingepe * hepea / 10)
       {
          if (!moving)
          {
             if (fixdebug)
                revk_info (TAG, "Moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
-            moving = 1;         // Started moving
             lograte (logfast);
             fixtimeout = time (0) + periodmoving;
          }
+         moving = time (0) + movinglag;
+      } else if (moving && moving < time (0))
+      {
+         fixnow = 1;            // Do fix now
+         if (fixdebug)
+            revk_info (TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
+         moving = 0;            // Stopped moving
+         lograte (logslow);
       }
       return;
    }
@@ -1873,8 +1854,8 @@ fixtimcmp (const void *a, const void *b)
 unsigned int
 rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkeptp)
 {                               // Reduce, non recursive
-	// Data is inclusive l to h
-	// Result leaves l and h in place but removes points in between moving down so that l and successive points are valid
+   // Data is inclusive l to h
+   // Result leaves l and h in place but removes points in between moving down so that l and successive points are valid
    unsigned int l = 0,
       h = H;                    // Progress
    fix[0].keep = 1;
@@ -2024,7 +2005,6 @@ gps_task (void *z)
       sleep (1);
       if (gpsstarted < 0)
          gps_init ();
-      fixcheck (0);
       if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
          fixnow = 0;
