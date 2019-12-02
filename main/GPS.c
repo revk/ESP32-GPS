@@ -58,7 +58,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u32(periodstopped,3600,	Report interval when stopped)\
 	u32(stoppedlog,60,	Fix interval when stopped)\
 	u32(startedlog,10,	Report delay when start moving)\
-	u32(periodmoving,600,	Report interval when moving)\
+	u32(periodmoving,300,	Report interval when moving)\
 	u32(keepalive,0,	UDP keepalive)\
 	u32(secondcm,10,	RDP distance per second (cm))\
         u32(altscale,10,	RDP scale down (non ECEF mode))\
@@ -134,6 +134,7 @@ int8_t hdopforce = 0;
 int8_t pdopforce = 0;
 int8_t vdopforce = 0;
 int8_t sendinfo = 0;
+uint8_t online = 0;
 volatile int8_t gpsstarted = 0;
 time_t moving = 0;
 char iccid[22] = { };
@@ -192,7 +193,7 @@ fix_t *fix = NULL;
 unsigned int fixnext = 0;       // Next fix to store
 volatile int fixsave = -1;      // Time to save fixes (-1 means not, so we do a zero fix at start)
 volatile int fixdelete = -1;    // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
-volatile char *fixnow = NULL;   // Force fix
+volatile const char *fixnow = NULL;     // Force fix
 volatile time_t fixtimeout = 0; // When to do next fix
 
 uint8_t **track = NULL;
@@ -200,9 +201,10 @@ int *tracklen = NULL;
 
 volatile unsigned int tracki = 0,
    tracko = 0;
-volatile char trackmqtt = 0;
+volatile uint8_t trackmqtt = 0;
+volatile uint8_t trackmobile = 0;
+volatile uint8_t trackfirst = 0;
 volatile uint32_t trackbase = 0;        // Send tracking for records after this time
-volatile char trackfirst = 0;
 SemaphoreHandle_t track_mutex = NULL;
 void trackreset (time_t reference);
 
@@ -1145,12 +1147,14 @@ nmea (char *s)
             if (fixdebug)
                revk_info (TAG, "Moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
             lograte (logfast);
-            fixtimeout = time (0) + startedlog;
+            if (trackmqtt || trackmobile)
+               fixtimeout = time (0) + startedlog;      // Do fix quickly
          }
          moving = time (0) + movinglag;
       } else if (moving && moving < time (0))
       {
-         fixnow = "Stopped moving";     // Do fix now
+         if (trackmqtt || trackmobile)
+            fixnow = "Stopped moving";  // Do fix now
          if (fixdebug)
             revk_info (TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
          moving = 0;            // Stopped moving
@@ -1690,6 +1694,7 @@ at_task (void *X)
          mobile = 1;
          try = 50;
          revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
+         trackmobile = 1;
          time_t ka = 0;
          while (1)
          {                      // Connected, send data as needed
@@ -1746,6 +1751,7 @@ at_task (void *X)
                   process_udp (l, (uint8_t *) p);
             }
          }
+         trackmobile = 0;
          revk_info (TAG, "Mobile disconnected");
       }
    }
