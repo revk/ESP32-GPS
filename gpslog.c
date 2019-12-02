@@ -450,8 +450,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   }
                   if (fixtags & TAGF_FIX_SATS)
                   {
-                     int s = (*q & 0x3F);
-                     if (s < 0x3F)
+                     int s = (*q & TAGF_FIX_STATS_MASK);
+                     if (s)
                         sql_sprintf (&f, ",`sats`=%u", s);
                      q++;
                   }

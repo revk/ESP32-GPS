@@ -36,3 +36,6 @@
 #define	TAGF_FIX_HEPE		0x04	// HEPE (ESCALE)
 const uint8_t tagf_fix[7]={2,1,1,0,0,0,0};	// length of tag fix bits
 
+#define	TAGF_FIX_STATS_DGPS	0x80	// Sats field in fix
+#define	TAGF_FIX_STATS_MASK	0x3F
+
