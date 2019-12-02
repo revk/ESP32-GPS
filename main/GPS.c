@@ -50,6 +50,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	b(battery,Y)	\
 	u32(periodstopped,3600)\
 	u32(stoppedlog,60)\
+	u32(startedlog,10)\
 	u32(periodmoving,120)\
 	u32(keepalive,0)\
 	u32(secondcm,10)\
@@ -1140,7 +1141,7 @@ nmea (char *s)
             if (fixdebug)
                revk_info (TAG, "Moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
             lograte (logfast);
-            fixtimeout = time (0) + periodmoving;
+            fixtimeout = time (0) + startedlog;
          }
          moving = time (0) + movinglag;
       } else if (moving && moving < time (0))
