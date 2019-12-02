@@ -58,7 +58,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u32(periodstopped,3600,	Report interval when stopped)\
 	u32(stoppedlog,60,	Fix interval when stopped)\
 	u32(startedlog,10,	Report delay when start moving)\
-	u32(periodmoving,120,	Report interval when moving)\
+	u32(periodmoving,600,	Report interval when moving)\
 	u32(keepalive,0,	UDP keepalive)\
 	u32(secondcm,10,	RDP distance per second (cm))\
         u32(altscale,10,	RDP scale down (non ECEF mode))\
