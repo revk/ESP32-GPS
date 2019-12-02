@@ -1873,6 +1873,8 @@ fixtimcmp (const void *a, const void *b)
 unsigned int
 rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkeptp)
 {                               // Reduce, non recursive
+	// Data is inclusive l to h
+	// Result leaves l and h in place but removes points in between moving down so that l and successive points are valid
    unsigned int l = 0,
       h = H;                    // Progress
    fix[0].keep = 1;
@@ -2109,7 +2111,6 @@ gps_task (void *z)
             last = max;         // truncate
          if (last)
          {
-            fix_t save = fix[last];
             int64_t rx = 0,
                ry = 0,
                rz = 0;
@@ -2219,7 +2220,6 @@ gps_task (void *z)
                   *q++ = f->hepe;
                p += fixlen;
             }
-            fix[last] = save;   // We move this back down to start...
          }
          unsigned int len = encode (t, p - t, fixbase);
          if (len)
