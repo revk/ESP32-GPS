@@ -192,7 +192,7 @@ fix_t *fix = NULL;
 unsigned int fixnext = 0;       // Next fix to store
 volatile int fixsave = -1;      // Time to save fixes (-1 means not, so we do a zero fix at start)
 volatile int fixdelete = -1;    // Delete this many fixes from start on next fix (-1 means not delete), and update trackbase
-volatile char fixnow = 0;       // Force fix
+volatile char *fixnow = NULL;   // Force fix
 volatile time_t fixtimeout = 0; // When to do next fix
 
 uint8_t **track = NULL;
@@ -569,7 +569,7 @@ process_udp (uint32_t len, uint8_t * buf)
             else
                dlen = 1 + p[1];
             if (*p == TAGT_FIX)
-               fixnow = 1;
+               fixnow = "UDP FIX command";
             else if (*p == TAGT_RESEND)
                trackreset ((p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4]);
             else if (*p == TAGT_SETTING && p[1] > 1)
@@ -629,7 +629,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       if (logslow || logfast)
          gps_cmd ("$PMTK183");  // Log status
       if (tracki && (attx < 0 || atrx < 0))
-         fixnow = 1;
+         fixnow = "WiFi/MQTT connect";
       if (!auth || *auth <= 3 + 16)
          revk_error ("auth", "Authentication not set");
       return "";
@@ -650,9 +650,19 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
          trackreset (0);
       return "";
    }
-   if (!strcmp (tag, "fix") || !strcmp (tag, "upgrade") || !strcmp (tag, "restart"))
+   if (!strcmp (tag, "fix"))
    {                            // Force fix dump now
-      fixnow = 1;
+      fixnow = "MQTT fix command";
+      return "";
+   }
+   if (!strcmp (tag, "upgrade"))
+   {                            // Force fix dump now
+      fixnow = "Upgrade";
+      return "";
+   }
+   if (!strcmp (tag, "restart"))
+   {                            // Force fix dump now
+      fixnow = "Restart";
       return "";
    }
    if (!strcmp (tag, "time"))
@@ -760,7 +770,7 @@ fixcheck (unsigned int fixtim)
       if (fixdebug)
       {
          if (fixnow)
-            revk_info (TAG, "Fix forced (%u)", fixnext);
+            revk_info (TAG, "Fix forced %s (%u)", fixnow, fixnext);
          else if (fixnext > MAXFIX - FIXALLOW)
             revk_info (TAG, "Fix space full (%u)", fixnext);
          else if (now >= fixtimeout)
@@ -1040,7 +1050,7 @@ nmea (char *s)
             {
                static time_t fixskip = 0;       // Fix every minute when not moving
                if (!moving && fixnext > 1 && fixsave < 0 && fixskip > time (0))
-                  fixnext--; // Overwrite as not moving
+                  fixnext--;    // Overwrite as not moving
                else
                   fixskip = time (0) + stoppedlog;
                fix[fixnext].keep = 0;
@@ -1055,7 +1065,7 @@ nmea (char *s)
                       && (ecefx != fix[fixnext - 1].x + ((int32_t) (ecefx - fix[fixnext - 1].x))
                           || ecefy != fix[fixnext - 1].y + ((int32_t) (ecefy - fix[fixnext - 1].y))
                           || ecefz != fix[fixnext - 1].z + ((int32_t) (ecefz - fix[fixnext - 1].z))))
-                     fixnow = 1;        // Too far to send this fix with previous
+                     fixnow = "ECEF overflow";  // Too far to send this fix with previous
                } else
                {
                   fix[fixnext].lat = fixlat;
@@ -1140,7 +1150,7 @@ nmea (char *s)
          moving = time (0) + movinglag;
       } else if (moving && moving < time (0))
       {
-         fixnow = 1;            // Do fix now
+         fixnow = "Stopped moving";     // Do fix now
          if (fixdebug)
             revk_info (TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
          moving = 0;            // Stopped moving
@@ -2003,7 +2013,7 @@ gps_task (void *z)
          gps_init ();
       if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
-         fixnow = 0;
+         fixnow = NULL;
          // Reduce fixes
          int last = 0;
          if (fixsave > 0)
