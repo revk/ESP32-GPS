@@ -2124,8 +2124,6 @@ gps_task (void *z)
                *p++ = TAGF_PAD; // Pre pad for fix
             *p++ = fixtag;      // Tag for fixes
             *p++ = fixlen;
-            if (!last && fixsave == 1)
-               last = 1;        // Send the one entry (that we will delete)
             for (int n = 0; n < last; n++)
             {                   // Last is not sent, as kept for next batch
                uint8_t *q = p;
@@ -2206,9 +2204,7 @@ gps_task (void *z)
             xSemaphoreGive (track_mutex);
          }
          fixtimeout = time (0) + (moving ? periodmoving : periodstopped);
-         if (fixsave == 1)
-            fixdelete = 1;      // Delete the one entry and start with no fixes
-         else if (fixsave)
+         if (fixsave)
             fixdelete = fixsave - 1;    // Keep last entry
          else
             fixdelete = 0;      // None to delete, but marks save done
