@@ -28,7 +28,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s8(gpstx,-1,		GPS Tx GPIO)	\
 	s8(gpsfix,-1,		GPS Fix GPIO)	\
 	s8(gpsen,-1,		GPS EN GPIO)	\
-        u32(gpsbaud,9600,	GPS Baud)	\
+        u32(gpsbaud,115200,	GPS Baud)	\
 	u32(fixms,1000,		GPS fix rate (ms)) \
 	bl(fixdump,N,		GPS Fix log)	\
 	bl(fixdebug,N,		GPS Fix debug log)	\
@@ -135,6 +135,8 @@ int8_t pdopforce = 0;
 int8_t vdopforce = 0;
 int8_t sendinfo = 0;
 uint8_t online = 0;
+int gpserrors = 0;
+int gpserrorcount = 0;
 volatile int8_t gpsstarted = 0;
 time_t moving = 0;
 char iccid[22] = { };
@@ -1130,6 +1132,8 @@ nmea (char *s)
          }
          gpszda = v.tv_sec;
          settimeofday (&v, NULL);
+         gpserrors = gpserrorcount;
+         gpserrorcount = 0;
       }
       return;
    }
@@ -1363,7 +1367,11 @@ display_task (void *p)
          s /= 1.852;            // Knots
       else if (!kmh)
          s /= 1.609344;         // Miles per hour
-      if (!moving)
+      if (gpserrors)
+         x = oled_text (5, 0, y, "E:%02d", gpserrors);
+      else if (fixlast + 10 < now)
+         x = oled_text (5, 0, y, "??.?");
+      else if (!moving)
          x = oled_text (5, 0, y, " -.-");
       else if (s >= 999)
          x = oled_text (5, 0, y, "\002---");
@@ -1622,17 +1630,47 @@ at_task (void *X)
          if (!strstr ((char *) atbuf, "OK"))
             continue;
 #endif
+         if (m95)
          {
+            if (at_cmd ("AT+CGATT=1", 60000, 0) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+            if (at_cmd ("AT+QIFGCNT=1", 60000, 0) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
             char temp[200];
-            //snprintf (temp, sizeof (temp), m95 ? "AT+CGDCONT=1,\"IP\",\"%s\"" : "AT+CSTT=\"%s\"", apn);
-            snprintf (temp, sizeof (temp), m95 ? "AT+QICSGP=1,\"%s\"" : "AT+CSTT=\"%s\"", apn);
+            snprintf (temp, sizeof (temp), "AT+QICSGP=1,\"%s\"", apn);
             if (at_cmd (temp, 0, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
-         }
-         {
-            if (at_cmd (m95 ? "AT+CGACT=1,1" : "AT+CIICR", 60000, 0) < 0)
+#if 0
+            if (at_cmd ("AT+QIACT", 60000, 0) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+            if (at_cmd ("AT+QILOCIP", 60000, 0) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+#else
+            if (at_cmd ("AT+CGACT=1,1", 60000, 0) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+#endif
+
+         } else
+         {                      // SIM800
+            char temp[200];
+            snprintf (temp, sizeof (temp), "AT+CSTT=\"%s\"", apn);
+            if (at_cmd (temp, 0, 0) < 0)
+               continue;
+            if (!strstr ((char *) atbuf, "OK"))
+               continue;
+            if (at_cmd ("AT+CIICR", 60000, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "OK"))
                continue;
@@ -1673,26 +1711,30 @@ at_task (void *X)
                at_cmd ("AT+QIDNSIP=1", 0, 0);   // Domain name
          }
          at_cmd (m95 ? "AT+QIHEAD=1" : "AT+CIPHEAD=1", 0, 0);   // Send IPD headers
-         try = 10;
-         while (--try > 0)
          {
-            sleep (1);
+            try = 10;
             char temp[200];
             snprintf (temp, sizeof (temp), "AT+%s=\"UDP\",\"%s\",%d", m95 ? "QIOPEN" : "CIPSTART", loghost, logport);
-            if (at_cmd (temp, 0, 10000) < 0)
-               break;
-            if (strstr ((char *) atbuf, "CONNECT FAIL"))
-            {
-               sleep (1);
+            if (at_cmd (temp, 0, 30000) < 0)
                continue;
+            while (--try > 0)
+            {
+               if (strstr ((char *) atbuf, "CONNECT FAIL") || strstr ((char *) atbuf, "ERROR"))
+               {                // Try again
+                  sleep (1);
+                  if (at_cmd (temp, 0, 30000) < 0)
+                     break;
+                  continue;
+               }
+               if (strstr ((char *) atbuf, "CONNECT OK"))
+                  break;
+               // Wait
+               if (at_cmd (NULL, 30000,0) < 0)
+                  break;
             }
-            if (strstr ((char *) atbuf, "OK"))
-               break;
+            if (!strstr ((char *) atbuf, "CONNECT OK"))
+               continue;
          }
-         if (!try || !strstr ((char *) atbuf, "OK"))
-            continue;
-         if (!strstr ((char *) atbuf, "CONNECT OK"))
-            continue;
          mobile = 1;
          try = 50;
          revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
@@ -1822,10 +1864,12 @@ nmea_task (void *z)
             for (x = p + 1; x < l - 3; x++)
                c ^= *x;
             if (((c >> 4) > 9 ? 7 : 0) + (c >> 4) + '0' != l[-2] || ((c & 0xF) > 9 ? 7 : 0) + (c & 0xF) + '0' != l[-1])
+            {
                revk_error (TAG, "[%.*s] (%02X)", l - p, p, c);
-            else
+               gpserrorcount++;
+            } else
             {                   // Process line
-               timeout = esp_timer_get_time () + 10000000 + fixms;
+               timeout = esp_timer_get_time () + 60000000 + fixms;
                l[-3] = 0;
                nmea ((char *) p);
             }
