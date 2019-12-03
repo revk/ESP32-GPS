@@ -68,8 +68,8 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	u8(sun,0,		Sun angle for sunset)	\
 	u32(logslow,0,		Log rate when not moving (0 for no internal GPS log))	\
 	u32(logfast,0,		Log rate when moving (0 for no internal GPS log))	\
-	b(mph, Y,		Speed in mph)	\
-	b(kt, Y,		Speed in kt)	\
+	b(kt, N,		Speed in kt)	\
+	b(kmh, N,		Speed in kmh)	\
 	u8(datafix,0x07,	Report fix fields)\
 	b(datamargin,Y,		Report margin sent) \
 	b(datatemp,Y,		Report temp sent)	\
@@ -1359,8 +1359,10 @@ display_task (void *p)
       // Speed
       y = 20;
       float s = speed;
-      if (mph)
-         s /= 1.609344;         // miles
+      if (kt)
+         s /= 1.852;            // Knots
+      else if (!kmh)
+         s /= 1.609344;         // Miles per hour
       if (!moving)
          x = oled_text (5, 0, y, " -.-");
       else if (s >= 999)
@@ -1369,7 +1371,7 @@ display_task (void *p)
          x = oled_text (5, 0, y, "\002%3.0f", s);
       else
          x = oled_text (5, 0, y, "%4.1f", s);
-      oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", mph ? "mph" : "km/h");
+      oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", kt ? "kt" : kmh ? "km/h" : "mph");
       if (!moving)
          x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "---");
       else
