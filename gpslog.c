@@ -267,7 +267,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          return "Bad MAC";
       unsigned char *p = data + 8;
       unsigned char *e = data + len;
-      unsigned int period = 0;
+      int period = 0;
+      int expected = 0;
       time_t last = sql_time_utc (sql_colz (device, "lastupdateutc"));
       resend = 0;
       unsigned int lastupdate = 0;
@@ -304,6 +305,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             }
          } else if (*p == TAGF_PERIOD)
             period = (p[1] << 8) + p[2];
+         else if (*p == TAGF_EXPECTED)
+            expected = (p[1] << 8) + p[2];
          else if (*p == TAGF_BALLOON)
             ascale = ALT_BALLOON;
          else if (*p == TAGF_FLIGHT)
@@ -366,6 +369,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             lastupdate = t + period;
          if (lastupdate < last)
             lastupdate = last;
+         long double lat = 0,
+            lon = 0,
+            alt = 0;
          sql_sprintf (&s, "UPDATE `%#S` SET `lastupdateutc`=%#U", sqldevice, lastupdate);
          if (p + 2 <= e && (*p & TAGF_FIX))
          {                      // We have fixes
@@ -427,25 +433,25 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      };
                      long double llh[3] = { };
                      wgsecef2llh (ecef, llh);
-                     sql_sprintf (&f, ",`lat`=%.9Lf", llh[0] * 180.0 / M_PIl);
-                     sql_sprintf (&f, ",`lon`=%.9Lf", llh[1] * 180.0 / M_PIl);
-                     sql_sprintf (&f, ",`alt`=%.9Lf", llh[2]);
+                     sql_sprintf (&f, ",`lat`=%.9Lf", lat = llh[0] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`lon`=%.9Lf", lon = llh[1] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`alt`=%.9Lf", alt = llh[2]);
                   } else
                   {
-                     int lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
+                     lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
                      q += 4;
-                     int lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
+                     lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
                      q += 4;
-                     sql_sprintf (&f, ",`lat`=%.9lf,`lon`=%.9lf", (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
+                     sql_sprintf (&f, ",`lat`=%.9Lf,`lon`=%.9Lf", (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
                   }
                   if (fixtags & TAGF_FIX_ALT)
                   {
-                     short alt = (q[0] << 8) + q[1];
-                     if (alt != -32768 && alt != 32767)
+                     short a = (q[0] << 8) + q[1];
+                     if (a != -32768 && a != 32767)
                      {
-                        float a = (float) alt * ascale;
+                        alt = (float) a *ascale;
                         q += 2;
-                        sql_sprintf (&f, ",`alt`=%.1f", a);
+                        sql_sprintf (&f, ",`alt`=%.1f", alt);
                      }
                   }
                   if (fixtags & TAGF_FIX_SATS)
@@ -467,7 +473,39 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   fixes++;
                }
                if (lastfix >= 0)
+               {
                   sql_sprintf (&s, ",`lastfixutc`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
+                  if (ecef)
+                  {
+                     long long v = rx;
+                     sql_sprintf (&s, ",`ecefx`=");
+                     if (v < 0)
+                     {
+                        sql_sprintf (&s, "-");
+                        v = 0 - v;
+                     }
+                     sql_sprintf (&s, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                     v = ry;
+                     sql_sprintf (&s, ",`ecefy`=");
+                     if (v < 0)
+                     {
+                        sql_sprintf (&s, "-");
+                        v = 0 - v;
+                     }
+                     sql_sprintf (&s, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                     v = rz;
+                     sql_sprintf (&s, ",`ecefz`=");
+                     if (v < 0)
+                     {
+                        sql_sprintf (&s, "-");
+                        v = 0 - v;
+                     }
+                     sql_sprintf (&s, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                  }
+                  sql_sprintf (&s, ",`lat`=%.9Lf", lat);
+                  sql_sprintf (&s, ",`lon`=%.9Lf", lon);
+                  sql_sprintf (&s, ",`alt`=%.9Lf", alt);
+               }
             }
          }
          if (addr)
@@ -476,11 +514,14 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             sql_sprintf (&s, ",`ip`=NULL,`port`=NULL,`lastip`=NULL");
          if (atoi (sql_colz (device, "auth")) != id)
             sql_sprintf (&s, ",`auth`=%u", id);
+         if (expected > 0)
+            sql_sprintf (&s, ",`nextupdateutc`=%#U", t + expected);
          sql_sprintf (&s, " WHERE `ID`=%u", devid);
+         // Log
          sql_safe_query_s (sqlp, &s);
-         sql_sprintf (&s,
-                      "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`period`=%u,`received`=NOW(),`fixes`=%u",
-                      sqllog, devid, t, period, fixes);
+         sql_sprintf (&s, "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`received`=NOW(),`fixes`=%u", sqllog, devid, t, fixes);
+         if (period > 0)
+            sql_sprintf (&s, ",`endutc`=%#T", t + period);
          if (addr)
             sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
          if (margin >= 0 && margin < 65536)

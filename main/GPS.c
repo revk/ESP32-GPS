@@ -57,7 +57,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s(apn,"mobiledata",	Modem APN)\
 	u32(periodstopped,3600,	Report interval when stopped)\
 	u32(stoppedlog,60,	Fix interval when stopped)\
-	u32(startedlog,10,	Report delay when start moving)\
+	u32(startedlog,60,	Report delay when start moving)\
 	u32(periodmoving,300,	Report interval when moving)\
 	u32(keepalive,0,	UDP keepalive)\
 	u32(secondcm,10,	RDP distance per second (cm))\
@@ -884,32 +884,35 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "ECEFPOSVEL") && n >= 7)
    {
-      char *s,
-       *p;
-      if (*(s = p = f[2]) == '-')
-         p++;
-      ecefx = strtoll (p, &p, 0) * 1000000LL;
-      if (*p++ == '.')
-         ecefx += strtoll (p, NULL, 0);
-      if (*s == '-')
-         ecefx *= -1;
-      if (*(s = p = f[3]) == '-')
-         p++;
-      ecefy = strtoll (p, &p, 0) * 1000000LL;
-      if (*p++ == '.')
-         ecefy += strtoll (p, NULL, 0);
-      if (*s == '-')
-         ecefy *= -1;
-      if (*(s = p = f[4]) == '-')
-         p++;
-      ecefz = strtoll (p, &p, 0) * 1000000LL;
-      if (*p++ == '.')
-         ecefz += strtoll (p, NULL, 0);
-      if (*s == '-')
-         ecefz *= -1;
-      if (ecef && (ecefx || ecefy || ecefz))
-         gotfix = 1;
-      //revk_info (TAG, "%lld %lld %lld %s %s %s", ecefx, ecefy, ecefz, f[2], f[3], f[4]);
+      if (strlen (f[2]) > 6 && strlen (f[3]) > 6 && strlen (f[4]) > 6)
+      {
+         char *s,
+          *p;
+         if (*(s = p = f[2]) == '-')
+            p++;
+         ecefx = strtoll (p, &p, 0) * 1000000LL;
+         if (*p++ == '.')
+            ecefx += strtoll (p, NULL, 0);
+         if (*s == '-')
+            ecefx *= -1;
+         if (*(s = p = f[3]) == '-')
+            p++;
+         ecefy = strtoll (p, &p, 0) * 1000000LL;
+         if (*p++ == '.')
+            ecefy += strtoll (p, NULL, 0);
+         if (*s == '-')
+            ecefy *= -1;
+         if (*(s = p = f[4]) == '-')
+            p++;
+         ecefz = strtoll (p, &p, 0) * 1000000LL;
+         if (*p++ == '.')
+            ecefz += strtoll (p, NULL, 0);
+         if (*s == '-')
+            ecefz *= -1;
+         if (ecef && (ecefx || ecefy || ecefz))
+            gotfix = 1;
+         //revk_info (TAG, "%lld %lld %lld %s %s %s", ecefx, ecefy, ecefz, f[2], f[3], f[4]);
+      }
       return;
    }
    if (!strcmp (f[0], "PMTK869") && n >= 4)
@@ -1109,6 +1112,8 @@ nmea (char *s)
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "ZDA") && n >= 5)
    {                            // Time: $GPZDA,093624.000,02,11,2019,,
+      gpserrors = gpserrorcount;
+      gpserrorcount = 0;
       if (strlen (f[1]) == 10 && !timeforce && atoi (f[4]) > 2000)
       {
          struct tm t = { };
@@ -1132,8 +1137,6 @@ nmea (char *s)
          }
          gpszda = v.tv_sec;
          settimeofday (&v, NULL);
-         gpserrors = gpserrorcount;
-         gpserrorcount = 0;
       }
       return;
    }
@@ -1151,14 +1154,12 @@ nmea (char *s)
             if (fixdebug)
                revk_info (TAG, "Moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
             lograte (logfast);
-            if (trackmqtt || trackmobile)
-               fixtimeout = time (0) + startedlog;      // Do fix quickly
+            fixtimeout = time (0) + startedlog; // Do fix quickly
          }
          moving = time (0) + movinglag;
       } else if (moving && moving < time (0))
       {
-         if (trackmqtt || trackmobile)
-            fixnow = "Stopped moving";  // Do fix now
+         fixnow = "Stopped moving";     // Do fix now
          if (fixdebug)
             revk_info (TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
          moving = 0;            // Stopped moving
@@ -1729,7 +1730,7 @@ at_task (void *X)
                if (strstr ((char *) atbuf, "CONNECT OK"))
                   break;
                // Wait
-               if (at_cmd (NULL, 30000,0) < 0)
+               if (at_cmd (NULL, 30000, 0) < 0)
                   break;
             }
             if (!strstr ((char *) atbuf, "CONNECT OK"))
@@ -2065,7 +2066,11 @@ gps_task (void *z)
          gps_init ();
       if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
+         time_t now = time (0);
          fixnow = NULL;
+         fixtimeout = fixend + (moving ? periodmoving : periodstopped);
+         if (fixtimeout < now + 10)
+            fixtimeout = now + 10;      // Sanity check
          // Reduce fixes
          int last = 0;
          if (fixsave > 0)
@@ -2084,6 +2089,12 @@ gps_task (void *z)
             *p++ = TAGF_PERIOD; // Time covered
             *p++ = (fixend - fixbase) >> 8;
             *p++ = (fixend - fixbase);
+         }
+         if (fixtimeout > fixbase)
+         {
+            *p++ = TAGF_EXPECTED;       // Time next expected
+            *p++ = (fixtimeout - fixbase) >> 8;
+            *p++ = (fixtimeout - fixbase);
          }
          if (last && balloon)
             *p++ = TAGF_BALLOON;        // Alt scale flags
@@ -2265,7 +2276,6 @@ gps_task (void *z)
             tracki++;
             xSemaphoreGive (track_mutex);
          }
-         fixtimeout = time (0) + (moving ? periodmoving : periodstopped);
          if (fixsave)
             fixdelete = fixsave - 1;    // Keep last entry
          else
