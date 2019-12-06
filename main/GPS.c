@@ -1266,16 +1266,11 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : tracko == tracki ? "*" : "+", sats,
-                 sats == 1 ? " " : "s", mobile ? tracko == tracki ? "*" : "+" : " ");
-      oled_text (1, CONFIG_OLED_WIDTH - 6 * 4 - 3 * 2, y, "%c%c%c%c%c%c%c",   //
-                 navstar ? gxgsv[0] ? 'P' : '-' : ' ',  // G[P]S (NAVSTAR)
-                 gngsa[0] ? '.' : ' ',  //
-                 glonass ? gxgsv[1] ? 'L' : '-' : ' ',  // G[L]ONASS
-                 gngsa[1] ? '.' : ' ',  //
-                 galileo ? gxgsv[2] ? 'A' : '-' : ' ',  // G[A]LILEO
-                 gngsa[2] ? '.' : ' ',  //
-                 fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');   // DGPS
+      oled_text (1, 0, y, "Fix: %c %2d\002sat%s %c%c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');      // DGPS
+      // Show sats in use as dots
+      for (int t = 0; t < sizeof (gxgsv) / sizeof (*gxgsv); t++)
+         for (x = 0; x < 12; x++)
+            oled_set (CONFIG_OLED_WIDTH - 1 - x * 2, y + 7 - t * 2, gngsa[t] > x ? 15 : gxgsv[t] > x ? 1 : 0);
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
