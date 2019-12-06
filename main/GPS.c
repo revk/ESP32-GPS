@@ -1266,7 +1266,7 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %c %2d\002sat%s %c%c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');      // DGPS
+      oled_text (1, 0, y, "Fix: %c %2d\002sat%s %c %c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');      // DGPS
       // Show sats in use as dots
       for (int t = 0; t < sizeof (gxgsv) / sizeof (*gxgsv); t++)
          for (x = 0; x < 12; x++)
