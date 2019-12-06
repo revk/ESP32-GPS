@@ -15,6 +15,27 @@ static const char TAG[] = "GPS";
 #include "ds18b20.h"
 extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * data, size_t data_len, uint8_t * mac);
 
+// Commands:-
+// test		Toggle test mode which sends to mobile even if on MQTT
+// udp		Send a raw UDP payload as if received via mobile (encrypted)
+// contrast	Set OLED contrast now
+// status	Send a fix status info message
+// resend	Resend from date/time
+// fix		Do a fix update now
+// time		Set the time manually (for testing)
+// lat, lon, alt, course, speed, hdop, pdop, vdop, hepe, vepe: Manually force a value, for testing
+// gpstx	Send a message to the GPS
+// attx		Send a message to the modem
+// locus	Get status of LOCUS log
+// dump		Dump LOCUS log
+// erase	Erase LOCUS log
+// hot		Do hot restart of GPS
+// warm		Do warn restart of GPS
+// cold		Do cold start of GPS
+// reset	Do full reset cold start of GPS
+// sleep	Put GPS to sleep
+// version	Get GPS version
+
 #define settings	\
 	s8(oledsda,-1,		OLED SDA GPIO)	\
 	s8(oledscl,-1,		OLED SCL GPIO)	\
@@ -118,6 +139,8 @@ uint8_t sats = 0;
 uint8_t satsp = 0;
 uint8_t satsl = 0;
 uint8_t satsa = 0;
+uint8_t gngsa[3] = { };
+
 uint8_t fixtype = 0;
 uint8_t fixmode = 0;
 int8_t mobile = 0;              // Mobile data on line
@@ -388,6 +411,15 @@ sun_position (double t, double latitude, double longitude, double *altitudep, do
 */
 /***************************************************************************/
 
+void
+fixstatus (void)
+{
+   revk_info (TAG, "Sats %d (NAVSTAR %d/%d, GLONASS %d/%d, GALILEO %d/%d) %s %s hepe=%.1f vepe=%.1f", sats, gngsa[0], satsp,
+              gngsa[1], satsl, gngsa[2], satsa, fixtype == 0 ? "Invalid" : fixtype ==
+              1 ? "GNSS" : fixtype == 2 ? "DGPS" : fixtype == 6 ? "Estimated" : "?",
+              fixmode == 1 ? "No fix" : fixmode == 2 ? "2D" : fixmode == 3 ? "3D" : "?", hepe, vepe);
+}
+
 uint32_t gpsbaudnow = 0;
       // Init UART for GPS
 void
@@ -640,7 +672,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "status"))
    {
-      gps_cmd ("$PMTK183");     // Log status
+      fixstatus ();
       return "";
    }
    if (!strcmp (tag, "resend"))
@@ -708,14 +740,14 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       at_cmd (value, 0, 0);
       return "";
    }
-   if (!strcmp (tag, "status"))
-   {
-      gps_cmd ("$PMTK18,1");    // Status log
-      return "";
-   }
    if (!strcmp (tag, "dump"))
    {
       gps_cmd ("$PMTK622,1");   // Dump log
+      return "";
+   }
+   if (!strcmp (tag, "locus"))
+   {
+      gps_cmd ("$PMTK183");     // Log status
       return "";
    }
    if (!strcmp (tag, "erase"))
@@ -990,8 +1022,7 @@ nmea (char *s)
          {
             sats = s;
             if (fixdebug)
-               revk_info (TAG, "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d) type=%d mode=%d hepe=%.1f vepe=%.1f", sats, satsp,
-                          satsl, satsa, fixtype, fixmode, hepe, vepe);
+               fixstatus ();
          }
          if (!altforce)
             alt = strtof (f[9], NULL);
@@ -1174,6 +1205,18 @@ nmea (char *s)
          pdop = strtof (f[15], NULL);
       if (!vdopforce)
          vdop = strtof (f[17], NULL);
+      if (n >= 19)
+      {
+         int s = atoi (f[18]);
+         if (s && s <= sizeof (gngsa) / sizeof (*gngsa))
+         {                      // Count active satellites
+            int q = 0;
+            for (int p = 0; p < 12; p++)
+               if (*f[3 + p])
+                  q++;
+            gngsa[s - 1] = q;
+         }
+      }
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSV") && n >= 4)

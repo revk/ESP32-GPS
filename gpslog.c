@@ -805,7 +805,7 @@ main (int argc, const char *argv[])
       free (sub);
       if (locus)
       {
-         asprintf (&sub, "command/%s/*/status", mqttappname);
+         asprintf (&sub, "command/%s/*/locus", mqttappname);
          e = mosquitto_publish (mqtt, NULL, sub, 0, NULL, 1, 0);
          if (e)
             errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), sub);
