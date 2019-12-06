@@ -16,25 +16,25 @@ static const char TAG[] = "GPS";
 extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * data, size_t data_len, uint8_t * mac);
 
 // Commands:-
-// test		Toggle test mode which sends to mobile even if on MQTT
-// udp		Send a raw UDP payload as if received via mobile (encrypted)
-// contrast	Set OLED contrast now
-// status	Send a fix status info message
-// resend	Resend from date/time
-// fix		Do a fix update now
-// time		Set the time manually (for testing)
+// test         Toggle test mode which sends to mobile even if on MQTT
+// udp          Send a raw UDP payload as if received via mobile (encrypted)
+// contrast     Set OLED contrast now
+// status       Send a fix status info message
+// resend       Resend from date/time
+// fix          Do a fix update now
+// time         Set the time manually (for testing)
 // lat, lon, alt, course, speed, hdop, pdop, vdop, hepe, vepe: Manually force a value, for testing
-// gpstx	Send a message to the GPS
-// attx		Send a message to the modem
-// locus	Get status of LOCUS log
-// dump		Dump LOCUS log
-// erase	Erase LOCUS log
-// hot		Do hot restart of GPS
-// warm		Do warn restart of GPS
-// cold		Do cold start of GPS
-// reset	Do full reset cold start of GPS
-// sleep	Put GPS to sleep
-// version	Get GPS version
+// gpstx        Send a message to the GPS
+// attx         Send a message to the modem
+// locus        Get status of LOCUS log
+// dump         Dump LOCUS log
+// erase        Erase LOCUS log
+// hot          Do hot restart of GPS
+// warm         Do warn restart of GPS
+// cold         Do cold start of GPS
+// reset        Do full reset cold start of GPS
+// sleep        Put GPS to sleep
+// version      Get GPS version
 
 #define settings	\
 	s8(oledsda,-1,		OLED SDA GPIO)	\
@@ -136,9 +136,7 @@ float vdop = 0;
 float course = 0;
 float hepea = 0;                // Slower average
 uint8_t sats = 0;
-uint8_t satsp = 0;
-uint8_t satsl = 0;
-uint8_t satsa = 0;
+uint8_t gxgsv[3] = { };
 uint8_t gngsa[3] = { };
 
 uint8_t fixtype = 0;
@@ -406,7 +404,7 @@ sun_position (double t, double latitude, double longitude, double *altitudep, do
 
 [2] Astronomical Formulae for Calculators, Jean Meeus, Page 44
 
-[3] Ben Mack, 'Tate - louvre angle calcs take 3', 10/12/1999
+[3] Ben Mack, ' Tate - louvre angle calcs take 3 ', 10/12/1999
 
 */
 /***************************************************************************/
@@ -414,8 +412,8 @@ sun_position (double t, double latitude, double longitude, double *altitudep, do
 void
 fixstatus (void)
 {
-   revk_info (TAG, "Sats %d (NAVSTAR %d/%d, GLONASS %d/%d, GALILEO %d/%d) %s %s hepe=%.1f vepe=%.1f", sats, gngsa[0], satsp,
-              gngsa[1], satsl, gngsa[2], satsa, fixtype == 0 ? "Invalid" : fixtype ==
+   revk_info (TAG, "Sats %d (NAVSTAR %d/%d, GLONASS %d/%d, GALILEO %d/%d) %s %s hepe=%.1f vepe=%.1f", sats, gngsa[0], gxgsv[0],
+              gngsa[1], gxgsv[1], gngsa[2], gxgsv[2], fixtype == 0 ? "Invalid" : fixtype ==
               1 ? "GNSS" : fixtype == 2 ? "DGPS" : fixtype == 6 ? "Estimated" : "?",
               fixmode == 1 ? "No fix" : fixmode == 2 ? "2D" : fixmode == 3 ? "3D" : "?", hepe, vepe);
 }
@@ -1223,11 +1221,11 @@ nmea (char *s)
    {
       int n = atoi (f[3]);
       if (f[0][1] == 'P')
-         satsp = n;
+         gxgsv[0] = n;
       else if (f[0][1] == 'L')
-         satsl = n;
+         gxgsv[1] = n;
       else if (f[0][1] == 'A')
-         satsa = n;
+         gxgsv[2] = n;
       return;
    }
 #if 0
@@ -1270,10 +1268,13 @@ display_task (void *p)
       y -= 10;
       oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : tracko == tracki ? "*" : "+", sats,
                  sats == 1 ? " " : "s", mobile ? tracko == tracki ? "*" : "+" : " ");
-      oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c",   //
-                 navstar ? satsp ? 'P' : '-' : ' ',     // G[P]S (NAVSTAR(
-                 glonass ? satsl ? 'L' : '-' : ' ',     // G[L]ANOSS
-                 galileo ? satsa ? 'A' : '-' : ' ',     // G[A]LILEO
+      oled_text (1, CONFIG_OLED_WIDTH - 6 * 4 - 3 * 2, y, "%c%c%c%c%c%c%c",   //
+                 navstar ? gxgsv[0] ? 'P' : '-' : ' ',  // G[P]S (NAVSTAR)
+                 gngsa[0] ? '.' : ' ',  //
+                 glonass ? gxgsv[1] ? 'L' : '-' : ' ',  // G[L]ONASS
+                 gngsa[1] ? '.' : ' ',  //
+                 galileo ? gxgsv[2] ? 'A' : '-' : ' ',  // G[A]LILEO
+                 gngsa[2] ? '.' : ' ',  //
                  fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');   // DGPS
       y -= 3;                   // Line
       y -= 8;
@@ -1720,12 +1721,14 @@ at_task (void *X)
                continue;
          }
          next = time (0) + 300; // Don't hammer mobile data connections
+
          {
             if (at_cmd (m95 ? "AT+CGPADDR=1" : "AT+CIFSR", 20000, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "."))
                continue;        // Yeh, not an OK after the IP!!! How fucking stupid
          }
+
          if (m95)
          {
             char *p = loghost;
@@ -1779,6 +1782,7 @@ at_task (void *X)
             if (!strstr ((char *) atbuf, "CONNECT OK"))
                continue;
          }
+
          mobile = 1;
          try = 50;
          revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
@@ -1839,6 +1843,7 @@ at_task (void *X)
                   process_udp (l, (uint8_t *) p);
             }
          }
+
          trackmobile = 0;
          revk_info (TAG, "Mobile disconnected");
       }
