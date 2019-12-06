@@ -463,7 +463,7 @@ at_cmd (const void *cmd, int t1, int t2)
       l = uart_read_bytes (atuart, (void *) atbuf, 1, (t1 ? : 100) / portTICK_PERIOD_MS);
       if (l > 0)
       {                         // initial response started
-         int l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
+         int l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 20 / portTICK_PERIOD_MS);
          if (l2 > 0)
          {                      // End of initial response
             l += l2;

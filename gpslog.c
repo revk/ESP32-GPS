@@ -21,6 +21,7 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include "main/revkgps.h"
+#include "ostn02.h"
 
 #define WGS84_A 6378137.0
 #define WGS84_IF 298.257223563
@@ -371,7 +372,11 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             lastupdate = last;
          long double lat = 0,
             lon = 0,
-            alt = 0;
+            alt = 0,
+            E = -1,
+            N = -1,
+            H = -1;
+	 unsigned int hepe=0;
          sql_sprintf (&s, "UPDATE `%#S` SET `lastupdateutc`=%#U", sqldevice, lastupdate);
          if (p + 2 <= e && (*p & TAGF_FIX))
          {                      // We have fixes
@@ -436,6 +441,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      sql_sprintf (&f, ",`lat`=%.9Lf", lat = llh[0] * 180.0 / M_PIl);
                      sql_sprintf (&f, ",`lon`=%.9Lf", lon = llh[1] * 180.0 / M_PIl);
                      sql_sprintf (&f, ",`alt`=%.9Lf", alt = llh[2]);
+                     if (OSTN02_LL2EN (lat, lon, &E, &N, &H) <= 0)
+                        E = 0;
+                     else
+                        sql_sprintf (&f, ",`E`=%.9Lf,`N`=%.9Lf", E, N);
                   } else
                   {
                      lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
@@ -443,6 +452,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
                      q += 4;
                      sql_sprintf (&f, ",`lat`=%.9Lf,`lon`=%.9Lf", (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
+                     if (OSTN02_LL2EN (lat, lon, &E, &N, &H) <= 0)
+                        E = -1;
+                     else
+                        sql_sprintf (&f, ",`E`=%.9Lf,`N`=%.9Lf", E, N);
                   }
                   if (fixtags & TAGF_FIX_ALT)
                   {
@@ -463,9 +476,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   }
                   if (fixtags & TAGF_FIX_HEPE)
                   {
-                     int e = *q;
-                     if (e)
-                        sql_sprintf (&f, ",`hepe`=%u." EPART, e / ESCALE, e % ESCALE);
+                     hepe = *q;
+                     if (hepe)
+                        sql_sprintf (&f, ",`hepe`=%u." EPART, hepe / ESCALE, hepe % ESCALE);
                      q++;
                   }
                   sql_safe_query_s (sqlp, &f);
@@ -505,6 +518,10 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   sql_sprintf (&s, ",`lat`=%.9Lf", lat);
                   sql_sprintf (&s, ",`lon`=%.9Lf", lon);
                   sql_sprintf (&s, ",`alt`=%.9Lf", alt);
+                  if (E >= 0)
+                     sql_sprintf (&s, ",`E`=%.9Lf,`N`=%.9Lf", E, N);
+		  if(hepe)
+                        sql_sprintf (&s, ",`hepe`=%u." EPART, hepe / ESCALE, hepe % ESCALE);
                }
             }
          }
@@ -604,7 +621,8 @@ int
 udp_task (void)
 {
    int s = -1;
- const struct addrinfo hints = { ai_flags: AI_PASSIVE, ai_socktype: SOCK_DGRAM, ai_family:AF_INET6 };
+ const struct addrinfo hints = { ai_flags: AI_PASSIVE, ai_socktype: SOCK_DGRAM, ai_family:AF_INET6
+   };
    struct addrinfo *res;
    if (getaddrinfo (bindhost, bindport, &hints, &res))
       err (1, "getaddrinfo");
@@ -940,16 +958,16 @@ main (int argc, const char *argv[])
                         sprintf (hex + n * 2, "%02X", auth[n]);
                      sql_transaction (&sql);
                      sql_string_t s = { };
-                     sql_sprintf (&s, "INSERT INTO `%#S` SET `issued`=NOW(),`device`=%u,`aes`=%#.32s,`auth`=%#.32s", sqlauth, devid,
-                                  hex + 6, hex + 6 + 32);
+                     sql_sprintf (&s, "INSERT INTO `%#S` SET `issued`=NOW(),`device`=%u,`aes`=%#.32s,`auth`=%#.32s",
+                                  sqlauth, devid, hex + 6, hex + 6 + 32);
                      if (authid)
                         sql_sprintf (&s, ",`replaces`=%u", authid);
                      sql_safe_query_s (&sql, &s);
                      authid = sql_insert_id (&sql);
                      if (authid > 0xFFFFFF
                          && sql_query_free (&sql,
-                                            sql_printf ("UPDATE `%#S` SET `ID`=%u WHERE `ID`=%u", sqlauth, authid & 0xFFFFFF,
-                                                        authid)))
+                                            sql_printf ("UPDATE `%#S` SET `ID`=%u WHERE `ID`=%u", sqlauth,
+                                                        authid & 0xFFFFFF, authid)))
                         sql_safe_rollback (&sql);       // Really should not happen
                      else
                      {
