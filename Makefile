@@ -5,6 +5,8 @@
 
 PROJECT_NAME := GPS
 
+makeall: gpslog gpsout all
+
 include $(IDF_PATH)/make/project.mk
 
 update:

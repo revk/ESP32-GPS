@@ -23,6 +23,11 @@
 #include "main/revkgps.h"
 #include "ostn02.h"
 
+#define MQTTCONF "/etc/.mqtt.conf"      // Default MQTT config file if exists and readable
+// Config file format is list of hosts (if not host specified in command then uses first one in config file, else localhost)
+// First line is [hostname]
+// Then keywords like username: and the username. You can set username, password, port, cafile
+
 #define WGS84_A 6378137.0
 #define WGS84_IF 298.257223563
 #define WGS84_F (1 / WGS84_IF)
@@ -376,7 +381,7 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             E = -1,
             N = -1,
             H = -1;
-	 unsigned int hepe=0;
+         unsigned int hepe = 0;
          sql_sprintf (&s, "UPDATE `%#S` SET `lastupdateutc`=%#U", sqldevice, lastupdate);
          if (p + 2 <= e && (*p & TAGF_FIX))
          {                      // We have fixes
@@ -520,8 +525,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   sql_sprintf (&s, ",`alt`=%.9Lf", alt);
                   if (E >= 0)
                      sql_sprintf (&s, ",`E`=%.9Lf,`N`=%.9Lf", E, N);
-		  if(hepe)
-                        sql_sprintf (&s, ",`hepe`=%u." EPART, hepe / ESCALE, hepe % ESCALE);
+                  if (hepe)
+                     sql_sprintf (&s, ",`hepe`=%u." EPART, hepe / ESCALE, hepe % ESCALE);
                }
             }
          }
@@ -689,71 +694,45 @@ udp_task (void)
 int
 main (int argc, const char *argv[])
 {
-   const char *mqtthostname = "localhost";
+   const char *mqtthostname = NULL;
    const char *mqttusername = NULL;
    const char *mqttpassword = NULL;
    const char *mqttappname = "GPS";
    const char *mqttid = NULL;
+   const char *mqttconf = NULL;
+   const char *mqttcafile = NULL;
+   int mqttport = 0;
    int save = 0;
    int resend = 0;
    int locus = 0;               // Flash log download
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
-         {"sql-conffile", 'c', POPT_ARG_STRING,
-          &sqlconffile, 0, "SQL conf file",
-          "filename"},
-         {"sql-hostname", 'H', POPT_ARG_STRING,
-          &sqlhostname, 0, "SQL hostname",
-          "hostname"},
-         {"sql-database", 'd',
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
-          &sqldatabase, 0, "SQL database", "db"},
-         {"sql-username", 'U', POPT_ARG_STRING,
-          &sqlusername, 0, "SQL username",
-          "name"},
-         {"sql-password", 'P', POPT_ARG_STRING,
-          &sqlpassword, 0, "SQL password",
-          "pass"},
-         {"sql-table", 't',
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqlgps, 0,
-          "SQL log table", "table"},
-         {"sql-device", 0,
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldevice,
-          0, "SQL device table", "table"},
-         {"sql-debug", 'v', POPT_ARG_NONE,
-          &sqldebug, 0, "SQL Debug"},
-         {"mqtt-hostname", 'h',
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
-          &mqtthostname, 0, "MQTT hostname",
-          "hostname"},
-         {"mqtt-username", 'u', POPT_ARG_STRING,
-          &mqttusername, 0, "MQTT username",
-          "username"},
-         {"mqtt-password", 'p', POPT_ARG_STRING,
-          &mqttpassword, 0, "MQTT password",
-          "password"},
-         {"mqtt-appname", 'a',
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
-          &mqttappname, 0, "MQTT appname",
-          "appname"},
-         {"mqtt-id", 0, POPT_ARG_STRING, &mqttid,
-          0, "MQTT id", "id"},
-         {"locus", 'L', POPT_ARG_NONE, &locus, 0,
-          "Get LOCUS file"},
-         {"resend", 0, POPT_ARG_NONE, &resend, 0,
-          "Ask resend of tracking over MQTT on connect"},
-         {"save", 0, POPT_ARG_NONE, &save, 0,
-          "Save LOCUS file"},
-         {"port", 0, POPT_ARG_STRING, &bindport,
-          0,
-          "UDP port to bind for collecting tracking"},
-         {"bindhost", 0, POPT_ARG_STRING,
-          &bindhost, 0,
-          "UDP host to bind for collecting tracking"},
-         {"debug", 'V', POPT_ARG_NONE, &debug, 0,
-          "Debug"},
+	      /* *INDENT-OFF* */
+         {"sql-conffile", 'c', POPT_ARG_STRING, &sqlconffile, 0, "SQL conf file", "filename"},
+         {"sql-hostname", 'H', POPT_ARG_STRING, &sqlhostname, 0, "SQL hostname", "hostname"},
+         {"sql-database", 'd', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldatabase, 0, "SQL database", "db"},
+         {"sql-username", 'U', POPT_ARG_STRING, &sqlusername, 0, "SQL username", "name"},
+         {"sql-password", 'P', POPT_ARG_STRING, &sqlpassword, 0, "SQL password", "pass"},
+         {"sql-table", 't', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqlgps, 0, "SQL log table", "table"},
+         {"sql-device", 0, POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldevice, 0, "SQL device table", "table"},
+         {"sql-debug", 'v', POPT_ARG_NONE, &sqldebug, 0, "SQL Debug"},
+         {"mqtt-config", 'c', POPT_ARG_STRING, &mqttconf, 0, "MQTT config", "filename"},
+         {"mqtt-hostname", 'h', POPT_ARG_STRING, &mqtthostname, 0, "MQTT hostname", "hostname"},
+         {"mqtt-username", 'u', POPT_ARG_STRING, &mqttusername, 0, "MQTT username", "username"},
+         {"mqtt-password", 'p', POPT_ARG_STRING, &mqttpassword, 0, "MQTT password", "password"},
+         {"mqtt-ca", 'C', POPT_ARG_STRING, &mqttcafile, 0, "MQTT CA", "filename"},
+         {"mqtt-port", 0, POPT_ARG_INT, &mqttport, 0, "MQTT port", "port"},
+         {"mqtt-id", 0, POPT_ARG_STRING, &mqttid, 0, "MQTT id", "id"},
+         {"mqtt-appname", 'a', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &mqttappname, 0, "MQTT appname", "appname"},
+         {"locus", 'L', POPT_ARG_NONE, &locus, 0, "Get LOCUS file"},
+         {"resend", 0, POPT_ARG_NONE, &resend, 0, "Ask resend of tracking over MQTT on connect"},
+         {"save", 0, POPT_ARG_NONE, &save, 0, "Save LOCUS file"},
+         {"port", 0, POPT_ARG_STRING, &bindport, 0, "UDP port to bind for collecting tracking"},
+         {"bindhost", 0, POPT_ARG_STRING, &bindhost, 0, "UDP host to bind for collecting tracking"},
+         {"debug", 'V', POPT_ARG_NONE, &debug, 0, "Debug"},
          POPT_AUTOHELP {}
+	    /* *INDENT-ON* */
       };
       optCon = poptGetContext (NULL, argc, argv, optionsTable, 0);
       int c;
@@ -772,7 +751,52 @@ main (int argc, const char *argv[])
       if (!child)
          return udp_task ();
    }
+   if (!mqttconf && !access (MQTTCONF, R_OK))
+      mqttconf = MQTTCONF;
+   if (mqttconf)
+   {
+      FILE *f = fopen (mqttconf, "r");
+      if (!f)
+         err (1, "Cannot open %s", mqttconf);
+      char line[1000];
+      int skip = 1;
+      while (fgets (line, sizeof (line), f))
+      {
+         char *v = line + strlen (line);
+         while (v > line && v[-1] < ' ')
+            v--;
+         *v = 0;
+         if (*line == '[' && (v = strchr (line, ']')))
+         {                      // Host name (pick first if no host specified)
+            if (!skip)
+               break;           // Done
+            *v = 0;
+            skip = 0;
+            if (!mqtthostname)
+               mqtthostname = strdup (line + 1);
+            else
+               skip = strcasecmp (line + 1, mqtthostname);
+         }
+         if (skip)
+            continue;
+         v = strchr (line, ':');
+         if (!v)
+            continue;
+         *v++ = 0;
+         if (!mqttusername && !strcasecmp (line, "username"))
+            mqttusername = strdup (v);
+         else if (!mqttpassword && !strcasecmp (line, "password"))
+            mqttpassword = strdup (v);
+         else if (!mqttcafile && !strcasecmp (line, "cafile"))
+            mqttcafile = strdup (v);
+         else if (!mqttport && !strcasecmp (line, "port"))
+            mqttport = atoi (v);
+      }
+      fclose (f);
+   }
    SQL sql;
+   if (debug)
+      fprintf (stderr, "Connecting to %s port %d\n", mqtthostname ? : "localhost", mqttport ? : mqttcafile ? 8883 : 1883);
    int e = mosquitto_lib_init ();
    if (e)
       errx (1, "MQTT init failed %s", mosquitto_strerror (e));
@@ -1251,11 +1275,12 @@ main (int argc, const char *argv[])
       }
       free (val);
    }
-
+   if (mqttcafile && (e = mosquitto_tls_set (mqtt, mqttcafile, NULL, NULL, NULL, NULL)))
+      warnx ("MQTT cert failed (%s) %s", mqttcafile, mosquitto_strerror (e));
    mosquitto_connect_callback_set (mqtt, connect);
    mosquitto_disconnect_callback_set (mqtt, disconnect);
    mosquitto_message_callback_set (mqtt, message);
-   e = mosquitto_connect (mqtt, mqtthostname, 1883, 60);
+   e = mosquitto_connect (mqtt, mqtthostname ? : "localhost", mqttport ? : mqttcafile ? 8883 : 1883, 60);
    if (e)
       errx (1, "MQTT connect failed (%s) %s", mqtthostname, mosquitto_strerror (e));
    sql_real_connect (&sql, sqlhostname, sqlusername, sqlpassword, sqldatabase, 0, NULL, 0, 1, sqlconffile);
