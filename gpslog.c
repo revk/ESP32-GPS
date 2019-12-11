@@ -21,6 +21,12 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include "main/revkgps.h"
+#include "ostn02.h"
+
+#define MQTTCONF "/etc/.mqtt.conf"      // Default MQTT config file if exists and readable
+// Config file format is list of hosts (if not host specified in command then uses first one in config file, else localhost)
+// First line is [hostname]
+// Then keywords like username: and the username. You can set username, password, port, cafile
 
 #define WGS84_A 6378137.0
 #define WGS84_IF 298.257223563
@@ -267,7 +273,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
          return "Bad MAC";
       unsigned char *p = data + 8;
       unsigned char *e = data + len;
-      unsigned int period = 0;
+      int period = 0;
+      int expected = 0;
       time_t last = sql_time_utc (sql_colz (device, "lastupdateutc"));
       resend = 0;
       unsigned int lastupdate = 0;
@@ -304,6 +311,8 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             }
          } else if (*p == TAGF_PERIOD)
             period = (p[1] << 8) + p[2];
+         else if (*p == TAGF_EXPECTED)
+            expected = (p[1] << 8) + p[2];
          else if (*p == TAGF_BALLOON)
             ascale = ALT_BALLOON;
          else if (*p == TAGF_FLIGHT)
@@ -366,6 +375,13 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             lastupdate = t + period;
          if (lastupdate < last)
             lastupdate = last;
+         long double lat = 0,
+            lon = 0,
+            alt = 0,
+            E = -1,
+            N = -1,
+            H = -1;
+         unsigned int hepe = 0;
          sql_sprintf (&s, "UPDATE `%#S` SET `lastupdateutc`=%#U", sqldevice, lastupdate);
          if (p + 2 <= e && (*p & TAGF_FIX))
          {                      // We have fixes
@@ -427,25 +443,33 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                      };
                      long double llh[3] = { };
                      wgsecef2llh (ecef, llh);
-                     sql_sprintf (&f, ",`lat`=%.9Lf", llh[0] * 180.0 / M_PIl);
-                     sql_sprintf (&f, ",`lon`=%.9Lf", llh[1] * 180.0 / M_PIl);
-                     sql_sprintf (&f, ",`alt`=%.9Lf", llh[2]);
+                     sql_sprintf (&f, ",`lat`=%.9Lf", lat = llh[0] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`lon`=%.9Lf", lon = llh[1] * 180.0 / M_PIl);
+                     sql_sprintf (&f, ",`alt`=%.9Lf", alt = llh[2]);
+                     if (OSTN02_LL2EN (lat, lon, &E, &N, &H) <= 0)
+                        E = 0;
+                     else
+                        sql_sprintf (&f, ",`E`=%.9Lf,`N`=%.9Lf", E, N);
                   } else
                   {
-                     int lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
+                     lat = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
                      q += 4;
-                     int lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
+                     lon = (q[0] << 24) + (q[1] << 16) + (q[2] << 8) + q[3];
                      q += 4;
-                     sql_sprintf (&f, ",`lat`=%.9lf,`lon`=%.9lf", (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
+                     sql_sprintf (&f, ",`lat`=%.9Lf,`lon`=%.9Lf", (double) lat / 60.0 / DSCALE, (double) lon / 60.0 / DSCALE);
+                     if (OSTN02_LL2EN (lat, lon, &E, &N, &H) <= 0)
+                        E = -1;
+                     else
+                        sql_sprintf (&f, ",`E`=%.9Lf,`N`=%.9Lf", E, N);
                   }
                   if (fixtags & TAGF_FIX_ALT)
                   {
-                     short alt = (q[0] << 8) + q[1];
-                     if (alt != -32768 && alt != 32767)
+                     short a = (q[0] << 8) + q[1];
+                     if (a != -32768 && a != 32767)
                      {
-                        float a = (float) alt * ascale;
+                        alt = (float) a *ascale;
                         q += 2;
-                        sql_sprintf (&f, ",`alt`=%.1f", a);
+                        sql_sprintf (&f, ",`alt`=%.1f", alt);
                      }
                   }
                   if (fixtags & TAGF_FIX_SATS)
@@ -457,9 +481,9 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   }
                   if (fixtags & TAGF_FIX_HEPE)
                   {
-                     int e = *q;
-                     if (e)
-                        sql_sprintf (&f, ",`hepe`=%u." EPART, e / ESCALE, e % ESCALE);
+                     hepe = *q;
+                     if (hepe)
+                        sql_sprintf (&f, ",`hepe`=%u." EPART, hepe / ESCALE, hepe % ESCALE);
                      q++;
                   }
                   sql_safe_query_s (sqlp, &f);
@@ -467,7 +491,43 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
                   fixes++;
                }
                if (lastfix >= 0)
+               {
                   sql_sprintf (&s, ",`lastfixutc`='%U." TPART "'", t + (lastfix / TSCALE), lastfix % TSCALE);
+                  if (ecef)
+                  {
+                     long long v = rx;
+                     sql_sprintf (&s, ",`ecefx`=");
+                     if (v < 0)
+                     {
+                        sql_sprintf (&s, "-");
+                        v = 0 - v;
+                     }
+                     sql_sprintf (&s, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                     v = ry;
+                     sql_sprintf (&s, ",`ecefy`=");
+                     if (v < 0)
+                     {
+                        sql_sprintf (&s, "-");
+                        v = 0 - v;
+                     }
+                     sql_sprintf (&s, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                     v = rz;
+                     sql_sprintf (&s, ",`ecefz`=");
+                     if (v < 0)
+                     {
+                        sql_sprintf (&s, "-");
+                        v = 0 - v;
+                     }
+                     sql_sprintf (&s, "%lld.%06lld", v / 1000000LL, v % 1000000LL);
+                  }
+                  sql_sprintf (&s, ",`lat`=%.9Lf", lat);
+                  sql_sprintf (&s, ",`lon`=%.9Lf", lon);
+                  sql_sprintf (&s, ",`alt`=%.9Lf", alt);
+                  if (E >= 0)
+                     sql_sprintf (&s, ",`E`=%.9Lf,`N`=%.9Lf", E, N);
+                  if (hepe)
+                     sql_sprintf (&s, ",`hepe`=%u." EPART, hepe / ESCALE, hepe % ESCALE);
+               }
             }
          }
          if (addr)
@@ -476,11 +536,14 @@ process_udp (SQL * sqlp, unsigned int len, unsigned char *data, const char *addr
             sql_sprintf (&s, ",`ip`=NULL,`port`=NULL,`lastip`=NULL");
          if (atoi (sql_colz (device, "auth")) != id)
             sql_sprintf (&s, ",`auth`=%u", id);
+         if (expected > 0)
+            sql_sprintf (&s, ",`nextupdateutc`=%#U", t + expected);
          sql_sprintf (&s, " WHERE `ID`=%u", devid);
+         // Log
          sql_safe_query_s (sqlp, &s);
-         sql_sprintf (&s,
-                      "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`period`=%u,`received`=NOW(),`fixes`=%u",
-                      sqllog, devid, t, period, fixes);
+         sql_sprintf (&s, "INSERT INTO `%#S` SET `device`=%u,`utc`=%#T,`received`=NOW(),`fixes`=%u", sqllog, devid, t, fixes);
+         if (period > 0)
+            sql_sprintf (&s, ",`endutc`=%#T", t + period);
          if (addr)
             sql_sprintf (&s, ",`ip`=%#s,`port`=%u", addr, port);
          if (margin >= 0 && margin < 65536)
@@ -563,7 +626,8 @@ int
 udp_task (void)
 {
    int s = -1;
- const struct addrinfo hints = { ai_flags: AI_PASSIVE, ai_socktype: SOCK_DGRAM, ai_family:AF_INET6 };
+ const struct addrinfo hints = { ai_flags: AI_PASSIVE, ai_socktype: SOCK_DGRAM, ai_family:AF_INET6
+   };
    struct addrinfo *res;
    if (getaddrinfo (bindhost, bindport, &hints, &res))
       err (1, "getaddrinfo");
@@ -630,71 +694,45 @@ udp_task (void)
 int
 main (int argc, const char *argv[])
 {
-   const char *mqtthostname = "localhost";
+   const char *mqtthostname = NULL;
    const char *mqttusername = NULL;
    const char *mqttpassword = NULL;
    const char *mqttappname = "GPS";
    const char *mqttid = NULL;
+   const char *mqttconf = NULL;
+   const char *mqttcafile = NULL;
+   int mqttport = 0;
    int save = 0;
    int resend = 0;
    int locus = 0;               // Flash log download
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
-         {"sql-conffile", 'c', POPT_ARG_STRING,
-          &sqlconffile, 0, "SQL conf file",
-          "filename"},
-         {"sql-hostname", 'H', POPT_ARG_STRING,
-          &sqlhostname, 0, "SQL hostname",
-          "hostname"},
-         {"sql-database", 'd',
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
-          &sqldatabase, 0, "SQL database", "db"},
-         {"sql-username", 'U', POPT_ARG_STRING,
-          &sqlusername, 0, "SQL username",
-          "name"},
-         {"sql-password", 'P', POPT_ARG_STRING,
-          &sqlpassword, 0, "SQL password",
-          "pass"},
-         {"sql-table", 't',
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqlgps, 0,
-          "SQL log table", "table"},
-         {"sql-device", 0,
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldevice,
-          0, "SQL device table", "table"},
-         {"sql-debug", 'v', POPT_ARG_NONE,
-          &sqldebug, 0, "SQL Debug"},
-         {"mqtt-hostname", 'h',
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
-          &mqtthostname, 0, "MQTT hostname",
-          "hostname"},
-         {"mqtt-username", 'u', POPT_ARG_STRING,
-          &mqttusername, 0, "MQTT username",
-          "username"},
-         {"mqtt-password", 'p', POPT_ARG_STRING,
-          &mqttpassword, 0, "MQTT password",
-          "password"},
-         {"mqtt-appname", 'a',
-          POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT,
-          &mqttappname, 0, "MQTT appname",
-          "appname"},
-         {"mqtt-id", 0, POPT_ARG_STRING, &mqttid,
-          0, "MQTT id", "id"},
-         {"locus", 'L', POPT_ARG_NONE, &locus, 0,
-          "Get LOCUS file"},
-         {"resend", 0, POPT_ARG_NONE, &resend, 0,
-          "Ask resend of tracking over MQTT on connect"},
-         {"save", 0, POPT_ARG_NONE, &save, 0,
-          "Save LOCUS file"},
-         {"port", 0, POPT_ARG_STRING, &bindport,
-          0,
-          "UDP port to bind for collecting tracking"},
-         {"bindhost", 0, POPT_ARG_STRING,
-          &bindhost, 0,
-          "UDP host to bind for collecting tracking"},
-         {"debug", 'V', POPT_ARG_NONE, &debug, 0,
-          "Debug"},
+	      /* *INDENT-OFF* */
+         {"sql-conffile", 'c', POPT_ARG_STRING, &sqlconffile, 0, "SQL conf file", "filename"},
+         {"sql-hostname", 'H', POPT_ARG_STRING, &sqlhostname, 0, "SQL hostname", "hostname"},
+         {"sql-database", 'd', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldatabase, 0, "SQL database", "db"},
+         {"sql-username", 'U', POPT_ARG_STRING, &sqlusername, 0, "SQL username", "name"},
+         {"sql-password", 'P', POPT_ARG_STRING, &sqlpassword, 0, "SQL password", "pass"},
+         {"sql-table", 't', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqlgps, 0, "SQL log table", "table"},
+         {"sql-device", 0, POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &sqldevice, 0, "SQL device table", "table"},
+         {"sql-debug", 'v', POPT_ARG_NONE, &sqldebug, 0, "SQL Debug"},
+         {"mqtt-config", 'c', POPT_ARG_STRING, &mqttconf, 0, "MQTT config", "filename"},
+         {"mqtt-hostname", 'h', POPT_ARG_STRING, &mqtthostname, 0, "MQTT hostname", "hostname"},
+         {"mqtt-username", 'u', POPT_ARG_STRING, &mqttusername, 0, "MQTT username", "username"},
+         {"mqtt-password", 'p', POPT_ARG_STRING, &mqttpassword, 0, "MQTT password", "password"},
+         {"mqtt-ca", 'C', POPT_ARG_STRING, &mqttcafile, 0, "MQTT CA", "filename"},
+         {"mqtt-port", 0, POPT_ARG_INT, &mqttport, 0, "MQTT port", "port"},
+         {"mqtt-id", 0, POPT_ARG_STRING, &mqttid, 0, "MQTT id", "id"},
+         {"mqtt-appname", 'a', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &mqttappname, 0, "MQTT appname", "appname"},
+         {"locus", 'L', POPT_ARG_NONE, &locus, 0, "Get LOCUS file"},
+         {"resend", 0, POPT_ARG_NONE, &resend, 0, "Ask resend of tracking over MQTT on connect"},
+         {"save", 0, POPT_ARG_NONE, &save, 0, "Save LOCUS file"},
+         {"port", 0, POPT_ARG_STRING, &bindport, 0, "UDP port to bind for collecting tracking"},
+         {"bindhost", 0, POPT_ARG_STRING, &bindhost, 0, "UDP host to bind for collecting tracking"},
+         {"debug", 'V', POPT_ARG_NONE, &debug, 0, "Debug"},
          POPT_AUTOHELP {}
+	    /* *INDENT-ON* */
       };
       optCon = poptGetContext (NULL, argc, argv, optionsTable, 0);
       int c;
@@ -713,7 +751,52 @@ main (int argc, const char *argv[])
       if (!child)
          return udp_task ();
    }
+   if (!mqttconf && !access (MQTTCONF, R_OK))
+      mqttconf = MQTTCONF;
+   if (mqttconf)
+   {
+      FILE *f = fopen (mqttconf, "r");
+      if (!f)
+         err (1, "Cannot open %s", mqttconf);
+      char line[1000];
+      int skip = 1;
+      while (fgets (line, sizeof (line), f))
+      {
+         char *v = line + strlen (line);
+         while (v > line && v[-1] < ' ')
+            v--;
+         *v = 0;
+         if (*line == '[' && (v = strchr (line, ']')))
+         {                      // Host name (pick first if no host specified)
+            if (!skip)
+               break;           // Done
+            *v = 0;
+            skip = 0;
+            if (!mqtthostname)
+               mqtthostname = strdup (line + 1);
+            else
+               skip = strcasecmp (line + 1, mqtthostname);
+         }
+         if (skip)
+            continue;
+         v = strchr (line, ':');
+         if (!v)
+            continue;
+         *v++ = 0;
+         if (!mqttusername && !strcasecmp (line, "username"))
+            mqttusername = strdup (v);
+         else if (!mqttpassword && !strcasecmp (line, "password"))
+            mqttpassword = strdup (v);
+         else if (!mqttcafile && !strcasecmp (line, "cafile"))
+            mqttcafile = strdup (v);
+         else if (!mqttport && !strcasecmp (line, "port"))
+            mqttport = atoi (v);
+      }
+      fclose (f);
+   }
    SQL sql;
+   if (debug)
+      fprintf (stderr, "Connecting to %s port %d\n", mqtthostname ? : "localhost", mqttport ? : mqttcafile ? 8883 : 1883);
    int e = mosquitto_lib_init ();
    if (e)
       errx (1, "MQTT init failed %s", mosquitto_strerror (e));
@@ -746,7 +829,7 @@ main (int argc, const char *argv[])
       free (sub);
       if (locus)
       {
-         asprintf (&sub, "command/%s/*/status", mqttappname);
+         asprintf (&sub, "command/%s/*/locus", mqttappname);
          e = mosquitto_publish (mqtt, NULL, sub, 0, NULL, 1, 0);
          if (e)
             errx (1, "MQTT publish failed %s (%s)", mosquitto_strerror (e), sub);
@@ -899,16 +982,16 @@ main (int argc, const char *argv[])
                         sprintf (hex + n * 2, "%02X", auth[n]);
                      sql_transaction (&sql);
                      sql_string_t s = { };
-                     sql_sprintf (&s, "INSERT INTO `%#S` SET `issued`=NOW(),`device`=%u,`aes`=%#.32s,`auth`=%#.32s", sqlauth, devid,
-                                  hex + 6, hex + 6 + 32);
+                     sql_sprintf (&s, "INSERT INTO `%#S` SET `issued`=NOW(),`device`=%u,`aes`=%#.32s,`auth`=%#.32s",
+                                  sqlauth, devid, hex + 6, hex + 6 + 32);
                      if (authid)
                         sql_sprintf (&s, ",`replaces`=%u", authid);
                      sql_safe_query_s (&sql, &s);
                      authid = sql_insert_id (&sql);
                      if (authid > 0xFFFFFF
                          && sql_query_free (&sql,
-                                            sql_printf ("UPDATE `%#S` SET `ID`=%u WHERE `ID`=%u", sqlauth, authid & 0xFFFFFF,
-                                                        authid)))
+                                            sql_printf ("UPDATE `%#S` SET `ID`=%u WHERE `ID`=%u", sqlauth,
+                                                        authid & 0xFFFFFF, authid)))
                         sql_safe_rollback (&sql);       // Really should not happen
                      else
                      {
@@ -1192,11 +1275,12 @@ main (int argc, const char *argv[])
       }
       free (val);
    }
-
+   if (mqttcafile && (e = mosquitto_tls_set (mqtt, mqttcafile, NULL, NULL, NULL, NULL)))
+      warnx ("MQTT cert failed (%s) %s", mqttcafile, mosquitto_strerror (e));
    mosquitto_connect_callback_set (mqtt, connect);
    mosquitto_disconnect_callback_set (mqtt, disconnect);
    mosquitto_message_callback_set (mqtt, message);
-   e = mosquitto_connect (mqtt, mqtthostname, 1883, 60);
+   e = mosquitto_connect (mqtt, mqtthostname ? : "localhost", mqttport ? : mqttcafile ? 8883 : 1883, 60);
    if (e)
       errx (1, "MQTT connect failed (%s) %s", mqtthostname, mosquitto_strerror (e));
    sql_real_connect (&sql, sqlhostname, sqlusername, sqlpassword, sqldatabase, 0, NULL, 0, 1, sqlconffile);

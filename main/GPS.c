@@ -15,6 +15,27 @@ static const char TAG[] = "GPS";
 #include "ds18b20.h"
 extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * data, size_t data_len, uint8_t * mac);
 
+// Commands:-
+// test         Toggle test mode which sends to mobile even if on MQTT
+// udp          Send a raw UDP payload as if received via mobile (encrypted)
+// contrast     Set OLED contrast now
+// status       Send a fix status info message
+// resend       Resend from date/time
+// fix          Do a fix update now
+// time         Set the time manually (for testing)
+// lat, lon, alt, course, speed, hdop, pdop, vdop, hepe, vepe: Manually force a value, for testing
+// gpstx        Send a message to the GPS
+// attx         Send a message to the modem
+// locus        Get status of LOCUS log
+// dump         Dump LOCUS log
+// erase        Erase LOCUS log
+// hot          Do hot restart of GPS
+// warm         Do warn restart of GPS
+// cold         Do cold start of GPS
+// reset        Do full reset cold start of GPS
+// sleep        Put GPS to sleep
+// version      Get GPS version
+
 #define settings	\
 	s8(oledsda,-1,		OLED SDA GPIO)	\
 	s8(oledscl,-1,		OLED SCL GPIO)	\
@@ -57,7 +78,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 	s(apn,"mobiledata",	Modem APN)\
 	u32(periodstopped,3600,	Report interval when stopped)\
 	u32(stoppedlog,60,	Fix interval when stopped)\
-	u32(startedlog,10,	Report delay when start moving)\
+	u32(startedlog,60,	Report delay when start moving)\
 	u32(periodmoving,300,	Report interval when moving)\
 	u32(keepalive,0,	UDP keepalive)\
 	u32(secondcm,10,	RDP distance per second (cm))\
@@ -115,9 +136,9 @@ float vdop = 0;
 float course = 0;
 float hepea = 0;                // Slower average
 uint8_t sats = 0;
-uint8_t satsp = 0;
-uint8_t satsl = 0;
-uint8_t satsa = 0;
+uint8_t gxgsv[3] = { };
+uint8_t gngsa[3] = { };
+
 uint8_t fixtype = 0;
 uint8_t fixmode = 0;
 int8_t mobile = 0;              // Mobile data on line
@@ -383,10 +404,19 @@ sun_position (double t, double latitude, double longitude, double *altitudep, do
 
 [2] Astronomical Formulae for Calculators, Jean Meeus, Page 44
 
-[3] Ben Mack, 'Tate - louvre angle calcs take 3', 10/12/1999
+[3] Ben Mack, ' Tate - louvre angle calcs take 3 ', 10/12/1999
 
 */
 /***************************************************************************/
+
+void
+fixstatus (void)
+{
+   revk_info (TAG, "Sats %d (NAVSTAR %d/%d, GLONASS %d/%d, GALILEO %d/%d) %s %s hepe=%.1f vepe=%.1f", sats, gngsa[0], gxgsv[0],
+              gngsa[1], gxgsv[1], gngsa[2], gxgsv[2], fixtype == 0 ? "Invalid" : fixtype ==
+              1 ? "GNSS" : fixtype == 2 ? "DGPS" : fixtype == 6 ? "Estimated" : "?",
+              fixmode == 1 ? "No fix" : fixmode == 2 ? "2D" : fixmode == 3 ? "3D" : "?", hepe, vepe);
+}
 
 uint32_t gpsbaudnow = 0;
       // Init UART for GPS
@@ -463,7 +493,7 @@ at_cmd (const void *cmd, int t1, int t2)
       l = uart_read_bytes (atuart, (void *) atbuf, 1, (t1 ? : 100) / portTICK_PERIOD_MS);
       if (l > 0)
       {                         // initial response started
-         int l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 10 / portTICK_PERIOD_MS);
+         int l2 = uart_read_bytes (atuart, (void *) atbuf + l, ATBUFSIZE - l - 1, 20 / portTICK_PERIOD_MS);
          if (l2 > 0)
          {                      // End of initial response
             l += l2;
@@ -640,7 +670,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "status"))
    {
-      gps_cmd ("$PMTK183");     // Log status
+      fixstatus ();
       return "";
    }
    if (!strcmp (tag, "resend"))
@@ -708,14 +738,14 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       at_cmd (value, 0, 0);
       return "";
    }
-   if (!strcmp (tag, "status"))
-   {
-      gps_cmd ("$PMTK18,1");    // Status log
-      return "";
-   }
    if (!strcmp (tag, "dump"))
    {
       gps_cmd ("$PMTK622,1");   // Dump log
+      return "";
+   }
+   if (!strcmp (tag, "locus"))
+   {
+      gps_cmd ("$PMTK183");     // Log status
       return "";
    }
    if (!strcmp (tag, "erase"))
@@ -884,32 +914,35 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "ECEFPOSVEL") && n >= 7)
    {
-      char *s,
-       *p;
-      if (*(s = p = f[2]) == '-')
-         p++;
-      ecefx = strtoll (p, &p, 0) * 1000000LL;
-      if (*p++ == '.')
-         ecefx += strtoll (p, NULL, 0);
-      if (*s == '-')
-         ecefx *= -1;
-      if (*(s = p = f[3]) == '-')
-         p++;
-      ecefy = strtoll (p, &p, 0) * 1000000LL;
-      if (*p++ == '.')
-         ecefy += strtoll (p, NULL, 0);
-      if (*s == '-')
-         ecefy *= -1;
-      if (*(s = p = f[4]) == '-')
-         p++;
-      ecefz = strtoll (p, &p, 0) * 1000000LL;
-      if (*p++ == '.')
-         ecefz += strtoll (p, NULL, 0);
-      if (*s == '-')
-         ecefz *= -1;
-      if (ecef && (ecefx || ecefy || ecefz))
-         gotfix = 1;
-      //revk_info (TAG, "%lld %lld %lld %s %s %s", ecefx, ecefy, ecefz, f[2], f[3], f[4]);
+      if (strlen (f[2]) > 6 && strlen (f[3]) > 6 && strlen (f[4]) > 6)
+      {
+         char *s,
+          *p;
+         if (*(s = p = f[2]) == '-')
+            p++;
+         ecefx = strtoll (p, &p, 0) * 1000000LL;
+         if (*p++ == '.')
+            ecefx += strtoll (p, NULL, 0);
+         if (*s == '-')
+            ecefx *= -1;
+         if (*(s = p = f[3]) == '-')
+            p++;
+         ecefy = strtoll (p, &p, 0) * 1000000LL;
+         if (*p++ == '.')
+            ecefy += strtoll (p, NULL, 0);
+         if (*s == '-')
+            ecefy *= -1;
+         if (*(s = p = f[4]) == '-')
+            p++;
+         ecefz = strtoll (p, &p, 0) * 1000000LL;
+         if (*p++ == '.')
+            ecefz += strtoll (p, NULL, 0);
+         if (*s == '-')
+            ecefz *= -1;
+         if (ecef && (ecefx || ecefy || ecefz))
+            gotfix = 1;
+         //revk_info (TAG, "%lld %lld %lld %s %s %s", ecefx, ecefy, ecefz, f[2], f[3], f[4]);
+      }
       return;
    }
    if (!strcmp (f[0], "PMTK869") && n >= 4)
@@ -987,8 +1020,7 @@ nmea (char *s)
          {
             sats = s;
             if (fixdebug)
-               revk_info (TAG, "Sats %d (NAVSTAR %d, GLONASS %d, GALILEO %d) type=%d mode=%d hepe=%.1f vepe=%.1f", sats, satsp,
-                          satsl, satsa, fixtype, fixmode, hepe, vepe);
+               fixstatus ();
          }
          if (!altforce)
             alt = strtof (f[9], NULL);
@@ -1109,6 +1141,8 @@ nmea (char *s)
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "ZDA") && n >= 5)
    {                            // Time: $GPZDA,093624.000,02,11,2019,,
+      gpserrors = gpserrorcount;
+      gpserrorcount = 0;
       if (strlen (f[1]) == 10 && !timeforce && atoi (f[4]) > 2000)
       {
          struct tm t = { };
@@ -1132,8 +1166,6 @@ nmea (char *s)
          }
          gpszda = v.tv_sec;
          settimeofday (&v, NULL);
-         gpserrors = gpserrorcount;
-         gpserrorcount = 0;
       }
       return;
    }
@@ -1151,14 +1183,12 @@ nmea (char *s)
             if (fixdebug)
                revk_info (TAG, "Moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
             lograte (logfast);
-            if (trackmqtt || trackmobile)
-               fixtimeout = time (0) + startedlog;      // Do fix quickly
+            fixtimeout = time (0) + startedlog; // Do fix quickly
          }
          moving = time (0) + movinglag;
       } else if (moving && moving < time (0))
       {
-         if (trackmqtt || trackmobile)
-            fixnow = "Stopped moving";  // Do fix now
+         fixnow = "Stopped moving";     // Do fix now
          if (fixdebug)
             revk_info (TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
          moving = 0;            // Stopped moving
@@ -1173,17 +1203,29 @@ nmea (char *s)
          pdop = strtof (f[15], NULL);
       if (!vdopforce)
          vdop = strtof (f[17], NULL);
+      if (n >= 19)
+      {
+         int s = atoi (f[18]);
+         if (s && s <= sizeof (gngsa) / sizeof (*gngsa))
+         {                      // Count active satellites
+            int q = 0;
+            for (int p = 0; p < 12; p++)
+               if (*f[3 + p])
+                  q++;
+            gngsa[s - 1] = q;
+         }
+      }
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSV") && n >= 4)
    {
       int n = atoi (f[3]);
       if (f[0][1] == 'P')
-         satsp = n;
+         gxgsv[0] = n;
       else if (f[0][1] == 'L')
-         satsl = n;
+         gxgsv[1] = n;
       else if (f[0][1] == 'A')
-         satsa = n;
+         gxgsv[2] = n;
       return;
    }
 #if 0
@@ -1224,13 +1266,11 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %s %2d\002sat%s %s", revk_offline ()? " " : tracko == tracki ? "*" : "+", sats,
-                 sats == 1 ? " " : "s", mobile ? tracko == tracki ? "*" : "+" : " ");
-      oled_text (1, CONFIG_OLED_WIDTH - 6 * 4, y, "%c%c%c%c",   //
-                 navstar ? satsp ? 'P' : '-' : ' ',     // G[P]S (NAVSTAR(
-                 glonass ? satsl ? 'L' : '-' : ' ',     // G[L]ANOSS
-                 galileo ? satsa ? 'A' : '-' : ' ',     // G[A]LILEO
-                 fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');   // DGPS
+      oled_text (1, 0, y, "Fix: %c %2d\002sat%s %c %c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');      // DGPS
+      // Show sats in use as dots
+      for (int t = 0; t < sizeof (gxgsv) / sizeof (*gxgsv); t++)
+         for (x = 0; x < 12; x++)
+            oled_set (CONFIG_OLED_WIDTH - 1 - x * 2, y + 7 - t * 2, gngsa[t] > x ? 15 : gxgsv[t] > x ? 1 : 0);
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
@@ -1676,12 +1716,14 @@ at_task (void *X)
                continue;
          }
          next = time (0) + 300; // Don't hammer mobile data connections
+
          {
             if (at_cmd (m95 ? "AT+CGPADDR=1" : "AT+CIFSR", 20000, 0) < 0)
                continue;
             if (!strstr ((char *) atbuf, "."))
                continue;        // Yeh, not an OK after the IP!!! How fucking stupid
          }
+
          if (m95)
          {
             char *p = loghost;
@@ -1729,12 +1771,13 @@ at_task (void *X)
                if (strstr ((char *) atbuf, "CONNECT OK"))
                   break;
                // Wait
-               if (at_cmd (NULL, 30000,0) < 0)
+               if (at_cmd (NULL, 30000, 0) < 0)
                   break;
             }
             if (!strstr ((char *) atbuf, "CONNECT OK"))
                continue;
          }
+
          mobile = 1;
          try = 50;
          revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
@@ -1795,6 +1838,7 @@ at_task (void *X)
                   process_udp (l, (uint8_t *) p);
             }
          }
+
          trackmobile = 0;
          revk_info (TAG, "Mobile disconnected");
       }
@@ -2065,7 +2109,11 @@ gps_task (void *z)
          gps_init ();
       if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
+         time_t now = time (0);
          fixnow = NULL;
+         fixtimeout = fixend + (moving ? periodmoving : periodstopped);
+         if (fixtimeout < now + 10)
+            fixtimeout = now + 10;      // Sanity check
          // Reduce fixes
          int last = 0;
          if (fixsave > 0)
@@ -2084,6 +2132,12 @@ gps_task (void *z)
             *p++ = TAGF_PERIOD; // Time covered
             *p++ = (fixend - fixbase) >> 8;
             *p++ = (fixend - fixbase);
+         }
+         if (fixtimeout > fixbase)
+         {
+            *p++ = TAGF_EXPECTED;       // Time next expected
+            *p++ = (fixtimeout - fixbase) >> 8;
+            *p++ = (fixtimeout - fixbase);
          }
          if (last && balloon)
             *p++ = TAGF_BALLOON;        // Alt scale flags
@@ -2265,7 +2319,6 @@ gps_task (void *z)
             tracki++;
             xSemaphoreGive (track_mutex);
          }
-         fixtimeout = time (0) + (moving ? periodmoving : periodstopped);
          if (fixsave)
             fixdelete = fixsave - 1;    // Keep last entry
          else

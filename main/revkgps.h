@@ -19,8 +19,9 @@
 #define	TAGF_BALLOON		0x01	// Alt is in balloon mode (ALT_BALLOON metres per unit)
 #define	TAGF_FLIGHT		0x02	// Alt is in flight mode (ALT_FLIGHT metres per unit)
 #define	TAGF_TEMPC		0x20	// Temp, degrees
-#define	TAGF_PERIOD		0x40	// Period covered
+#define	TAGF_PERIOD		0x40	// Period covered (from base)
 #define	TAGF_MARGIN		0x41	// Defines maximum distance of discarded packets (cm)
+#define	TAGF_EXPECTED		0x42	// Defines when next expected (offset from base)
 #define	TAGF_FIRST		0x60	// defines first UTC reference available
 #define	TAGF_INFO		0x70	// Info, null terminated tag followed by data (e.g. ICCID, IMEI)
 #define	TAGF_ECEF		0x71	// ECEF X/Y/Z whole metres 3 byte signed values
