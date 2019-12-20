@@ -1481,11 +1481,11 @@
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="7.2620599"
-     inkscape:cx="138.1033"
-     inkscape:cy="154.63844"
+     inkscape:zoom="3.63103"
+     inkscape:cx="68.033202"
+     inkscape:cy="143.62229"
      inkscape:document-units="mm"
-     inkscape:current-layer="layer1"
+     inkscape:current-layer="layer4"
      inkscape:document-rotation="0"
      showgrid="true"
      fit-margin-top="0"
@@ -1494,7 +1494,7 @@
      fit-margin-bottom="0"
      inkscape:window-width="1600"
      inkscape:window-height="1209"
-     inkscape:window-x="638"
+     inkscape:window-x="0"
      inkscape:window-y="23"
      inkscape:window-maximized="0"
      inkscape:snap-perpendicular="true"
@@ -2762,6 +2762,22 @@
            r="1.75" />
       </g>
     </g>
+    <text
+       xml:space="preserve"
+       style="font-size:0.705556px;line-height:1.25;font-family:FiveByNineJTD;-inkscape-font-specification:'FiveByNineJTD Normal';stroke-width:0.264583"
+       x="-0.5098983"
+       y="-0.030741377"
+       id="text1519"><tspan
+         sodipodi:role="line"
+         id="tspan1517"
+         x="-0.5098983"
+         y="-0.030741377"
+         style="stroke-width:0.264583">Box RS 513-5375</tspan><tspan
+         sodipodi:role="line"
+         x="-0.5098983"
+         y="0.85120362"
+         style="stroke-width:0.264583"
+         id="tspan1521">Hammond 1551K 80x40x20</tspan></text>
   </g>
   <g
      style="display:inline"
