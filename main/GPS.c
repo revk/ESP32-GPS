@@ -1430,7 +1430,7 @@ display_task (void *p)
          if (tempc < -9.9 || tempc > 99.9)
             x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "--");
          else
-            x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2.0f", tempc);
+            x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2f", tempc);
       }
       oled_unlock ();
    }
