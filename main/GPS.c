@@ -186,6 +186,7 @@ float ascale = 1.0 / ASCALE;    // Alt scale default
 volatile time_t fixbase = 0;    // Base time for fixtime
 volatile time_t fixend = 0;     // End time for period covered (set on fixsend set, fixbase set to this on fixdelete done)
 volatile time_t fixlast = 0;    // Last fix, used as next fixend/base
+volatile time_t fixok = 0;      // Last fix seen
 typedef struct fix_s fix_t;
 #define ALTBASE	400             // Making alt unsigned as stored by allowing for -400m
 struct fix_s
@@ -1014,6 +1015,7 @@ nmea (char *s)
    {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
       if (strlen (f[1]) >= 10 && strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
       {
+         fixok = time (0);
          fixtype = atoi (f[6]);
          int s = atoi (f[7]);
          if (s != sats)
@@ -1266,7 +1268,7 @@ display_task (void *p)
          oled_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %c %2d\002sat%s %c %c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');      // DGPS
+      oled_text (1, 0, y, "Fix: %c %2d\002sat%s %c %c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');     // DGPS
       // Show sats in use as dots
       for (int t = 0; t < sizeof (gxgsv) / sizeof (*gxgsv); t++)
          for (x = 0; x < 12; x++)
@@ -1409,7 +1411,7 @@ display_task (void *p)
          s /= 1.609344;         // Miles per hour
       if (gpserrors)
          x = oled_text (5, 0, y, "E:%02d", gpserrors);
-      else if (fixlast + 10 < now)
+      else if (fixok + 10 < now)
          x = oled_text (5, 0, y, "??.?");
       else if (!moving)
          x = oled_text (5, 0, y, " -.-");
