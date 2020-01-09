@@ -26,6 +26,10 @@ module pcb(s=0)
         esp32(s,18.75,-0.870,180);
         bat1220(s,14.4,33.4,0);
         oled(s,1,1,180,screw=1,smd=true);
+        if(!s)
+        translate([43,9.795,3])
+        rotate([0,90,0])
+        cylinder(d=6,h=10);
     }
 }
 
