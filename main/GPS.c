@@ -917,6 +917,7 @@ nmea (char *s)
    {
       if (strlen (f[2]) > 6 && strlen (f[3]) > 6 && strlen (f[4]) > 6)
       {
+         fixok = time (0);
          char *s,
           *p;
          if (*(s = p = f[2]) == '-')
