@@ -176,11 +176,11 @@ float tempc = -999;
 time_t gpszda = 0;              // Last ZDA
 
 unsigned int MAXFIX = 6000;     // Large memory max fix
-#define MAXFIXLOW	 700    // Small memory max fix
+#define MAXFIXLOW	 650    // Small memory max fix
 #define	FIXALLOW	 100    // Allow time to process fixes
 #define MAXDATA (mtu-28)        // SIM800 says 1472 allowed but only 1460 works FFS
 unsigned int MAXTRACK = 1024;   // Large memory history
-#define	MAXTRACKLOW	50      // Small memory history
+#define	MAXTRACKLOW	40      // Small memory history
 
 float ascale = 1.0 / ASCALE;    // Alt scale default
 volatile time_t fixbase = 0;    // Base time for fixtime
