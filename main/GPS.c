@@ -176,11 +176,11 @@ float tempc = -999;
 time_t gpszda = 0;              // Last ZDA
 
 unsigned int MAXFIX = 6000;     // Large memory max fix
-#define MAXFIXLOW	 700    // Small memory max fix
+#define MAXFIXLOW	 650    // Small memory max fix
 #define	FIXALLOW	 100    // Allow time to process fixes
 #define MAXDATA (mtu-28)        // SIM800 says 1472 allowed but only 1460 works FFS
 unsigned int MAXTRACK = 1024;   // Large memory history
-#define	MAXTRACKLOW	50      // Small memory history
+#define	MAXTRACKLOW	40      // Small memory history
 
 float ascale = 1.0 / ASCALE;    // Alt scale default
 volatile time_t fixbase = 0;    // Base time for fixtime
@@ -917,6 +917,7 @@ nmea (char *s)
    {
       if (strlen (f[2]) > 6 && strlen (f[3]) > 6 && strlen (f[4]) > 6)
       {
+         fixok = time (0);
          char *s,
           *p;
          if (*(s = p = f[2]) == '-')
@@ -1013,7 +1014,7 @@ nmea (char *s)
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && n >= 14)
    {                            // Fix: $GPGGA,093644.000,5125.1569,N,00046.9708,W,1,09,1.06,100.3,M,47.2,M,,
-      if (strlen (f[1]) >= 10 && strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
+      if (strlen (f[1]) >= 10)
       {
          fixok = time (0);
          fixtype = atoi (f[6]);
@@ -1027,98 +1028,102 @@ nmea (char *s)
          if (!altforce)
             alt = strtof (f[9], NULL);
          gsep = strtof (f[10], NULL);
-         if (!latforce)
-            lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtof (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
-         if (!lonforce)
-            lon =
-               ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtof (f[4] + 3, NULL) / 60) * (f[5][0] ==
-                                                                                                                'E' ? 1 : -1);
-         if (!hdopforce)
-            hdop = strtof (f[8], NULL);
-         if (!ecef && (lat || lon))
-            gotfix = 1;
-         if (gpszda && fixtype && fixbase && gotfix)
-         {                      // Store fix data
-            char *p = f[2];
-            int s = DSCALE;
-            int fixlat = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * s;
-            p += 5;
-            while (s > 1 && isdigit ((int) *p))
-            {
-               s /= 10;
-               fixlat += s * (*p++ - '0');
-            }
-            if (f[3][0] == 'S')
-               fixlat = 0 - fixlat;
-            s = DSCALE;
-            p = f[4];
-            int fixlon = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 60 + (p[3] - '0') * 10 + p[4] - '0') * s;
-            p += 6;
-            while (s > 1 && isdigit ((int) *p))
-            {
-               s /= 10;
-               fixlon += s * (*p++ - '0');
-            }
-            if (f[5][0] == 'W')
-               fixlon = 0 - fixlon;
-            s = TSCALE;
-            p = f[1];
-            unsigned int fixtim =
-               ((((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * 60 + (p[4] - '0') * 10 + p[5] - '0') * s;
-            p += 7;
-            while (s > 1 && isdigit ((int) *p))
-            {
-               s /= 10;
-               fixtim += s * (*p++ - '0');
-            }
-            if (fixtim / TSCALE + 100 < (gpszda % 86400))
-               fixtim += 86400 * TSCALE;        // Day wrap
-            fixtim -= (fixbase - gpszda / 86400 * 86400) * TSCALE;
-            int fixalt = round ((alt + ALTBASE) / ascale);      // Offset and scale to store in 16 bits
-            if (fixalt < 0)
-               fixalt = 0;      // Range to 16 bits
-            else if (fixalt > 65535)
-               fixalt = 65535;
-            if (fixmode < 3)
-               fixalt = 0;
-            int fixhepe = round (hepe * ESCALE);
-            if (fixhepe > 255)
-               fixhepe = 255;   // Limit
-            if (fixnext < MAXFIX && fixtim < 65536)
-            {
-               static time_t fixskip = 0;       // Fix every minute when not moving
-               if (!moving && fixnext > 1 && fixsave < 0 && fixskip > time (0))
-                  fixnext--;    // Overwrite as not moving
-               else
-                  fixskip = time (0) + stoppedlog;
-               fix[fixnext].keep = 0;
-               fix[fixnext].dist = 0;
-               fix[fixnext].tim = fixtim;
-               if (ecef)
+         if (strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
+         {
+            if (!latforce)
+               lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtof (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
+            if (!lonforce)
+               lon =
+                  ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtof (f[4] + 3, NULL) / 60) * (f[5][0] ==
+                                                                                                                   'E' ? 1 : -1);
+            if (!hdopforce)
+               hdop = strtof (f[8], NULL);
+            if (!ecef && (lat || lon))
+               gotfix = 1;
+            if (gpszda && fixtype && fixbase && gotfix)
+            {                   // Store fix data
+               char *p = f[2];
+               int s = DSCALE;
+               int fixlat = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * s;
+               p += 5;
+               while (s > 1 && isdigit ((int) *p))
                {
-                  fix[fixnext].x = ecefx;
-                  fix[fixnext].y = ecefy;
-                  fix[fixnext].z = ecefz;
-                  if (fixnext
-                      && (ecefx != fix[fixnext - 1].x + ((int32_t) (ecefx - fix[fixnext - 1].x))
-                          || ecefy != fix[fixnext - 1].y + ((int32_t) (ecefy - fix[fixnext - 1].y))
-                          || ecefz != fix[fixnext - 1].z + ((int32_t) (ecefz - fix[fixnext - 1].z))))
-                     fixnow = "ECEF overflow";  // Too far to send this fix with previous
-               } else
-               {
-                  fix[fixnext].lat = fixlat;
-                  fix[fixnext].lon = fixlon;
-                  fix[fixnext].alt = fixalt;
+                  s /= 10;
+                  fixlat += s * (*p++ - '0');
                }
-               fix[fixnext].sats = sats;
-               fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
-               fix[fixnext].hepe = fixhepe;
-               if (fixdump)
-                  revk_info (TAG, "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
-                             fixalt, ascale);
-               fixnext++;
-               fixlast = fixbase + fixtim / TSCALE;
-               fixcheck (fixtim);
+               if (f[3][0] == 'S')
+                  fixlat = 0 - fixlat;
+               s = DSCALE;
+               p = f[4];
+               int fixlon = (((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 60 + (p[3] - '0') * 10 + p[4] - '0') * s;
+               p += 6;
+               while (s > 1 && isdigit ((int) *p))
+               {
+                  s /= 10;
+                  fixlon += s * (*p++ - '0');
+               }
+               if (f[5][0] == 'W')
+                  fixlon = 0 - fixlon;
+               s = TSCALE;
+               p = f[1];
+               unsigned int fixtim =
+                  ((((p[0] - '0') * 10 + p[1] - '0') * 60 + (p[2] - '0') * 10 + p[3] - '0') * 60 + (p[4] - '0') * 10 + p[5] -
+                   '0') * s;
+               p += 7;
+               while (s > 1 && isdigit ((int) *p))
+               {
+                  s /= 10;
+                  fixtim += s * (*p++ - '0');
+               }
+               if (fixtim / TSCALE + 100 < (gpszda % 86400))
+                  fixtim += 86400 * TSCALE;     // Day wrap
+               fixtim -= (fixbase - gpszda / 86400 * 86400) * TSCALE;
+               int fixalt = round ((alt + ALTBASE) / ascale);   // Offset and scale to store in 16 bits
+               if (fixalt < 0)
+                  fixalt = 0;   // Range to 16 bits
+               else if (fixalt > 65535)
+                  fixalt = 65535;
+               if (fixmode < 3)
+                  fixalt = 0;
+               int fixhepe = round (hepe * ESCALE);
+               if (fixhepe > 255)
+                  fixhepe = 255;        // Limit
+               if (fixnext < MAXFIX && fixtim < 65536)
+               {
+                  static time_t fixskip = 0;    // Fix every minute when not moving
+                  if (!moving && fixnext > 1 && fixsave < 0 && fixskip > time (0))
+                     fixnext--; // Overwrite as not moving
+                  else
+                     fixskip = time (0) + stoppedlog;
+                  fix[fixnext].keep = 0;
+                  fix[fixnext].dist = 0;
+                  fix[fixnext].tim = fixtim;
+                  if (ecef)
+                  {
+                     fix[fixnext].x = ecefx;
+                     fix[fixnext].y = ecefy;
+                     fix[fixnext].z = ecefz;
+                     if (fixnext
+                         && (ecefx != fix[fixnext - 1].x + ((int32_t) (ecefx - fix[fixnext - 1].x))
+                             || ecefy != fix[fixnext - 1].y + ((int32_t) (ecefy - fix[fixnext - 1].y))
+                             || ecefz != fix[fixnext - 1].z + ((int32_t) (ecefz - fix[fixnext - 1].z))))
+                        fixnow = "ECEF overflow";       // Too far to send this fix with previous
+                  } else
+                  {
+                     fix[fixnext].lat = fixlat;
+                     fix[fixnext].lon = fixlon;
+                     fix[fixnext].alt = fixalt;
+                  }
+                  fix[fixnext].sats = sats;
+                  fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
+                  fix[fixnext].hepe = fixhepe;
+                  if (fixdump)
+                     revk_info (TAG, "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
+                                fixalt, ascale);
+                  fixnext++;
+                  fixlast = fixbase + fixtim / TSCALE;
+                  fixcheck (fixtim);
+               }
             }
          }
       }
