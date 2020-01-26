@@ -263,17 +263,36 @@ void sun_position (double t, double latitude, double longitude, double *altitude
 #define SUN_ASTRONOMICAL_TWILIGHT       (-18.0)
 
 time_t
+timegm (struct tm *tm)
+{                               // Fucking linux time functions
+   /* days before the month */
+   static const unsigned short moff[12] = {
+      0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
+   };
+
+   /* minimal sanity checking not to access outside of the array */
+   if (!tm || (unsigned) tm->tm_mon >= 12)
+      return (time_t) - 1;
+
+   int y = tm->tm_year + 1900 - (tm->tm_mon < 2);
+   int nleapdays = y / 4 - y / 100 + y / 400 - ((1970 - 1) / 4 - (1970 - 1) / 100 + (1970 - 1) / 400);
+   time_t t = ((((time_t) (tm->tm_year - (1970 - 1900)) * 365 +
+                 moff[tm->tm_mon] + tm->tm_mday - 1 + nleapdays) * 24 + tm->tm_hour) * 60 + tm->tm_min) * 60 + tm->tm_sec;
+   return (t < 0 ? (time_t) - 1 : t);
+}
+
+time_t
 sun_rise (int y, int m, int d, double latitude, double longitude, double sun_altitude)
 {
  struct tm tm = { tm_mon: m - 1, tm_year: y - 1900, tm_mday: d, tm_hour:6 - longitude / 15 };
-   return sun_find_crossing (mktime (&tm), latitude, longitude, sun_altitude);
+   return sun_find_crossing (timegm (&tm), latitude, longitude, sun_altitude);
 }
 
 time_t
 sun_set (int y, int m, int d, double latitude, double longitude, double sun_altitude)
 {
  struct tm tm = { tm_mon: m - 1, tm_year: y - 1900, tm_mday: d, tm_hour:18 - longitude / 15 };
-   return sun_find_crossing (mktime (&tm), latitude, longitude, sun_altitude);
+   return sun_find_crossing (timegm (&tm), latitude, longitude, sun_altitude);
 }
 
 time_t
@@ -1161,7 +1180,7 @@ nmea (char *s)
          t.tm_min = (f[1][2] - '0') * 10 + f[1][3] - '0';
          t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
          v.tv_usec = atoi (f[1] + 7) * 1000;
-         v.tv_sec = mktime (&t);
+         v.tv_sec = timegm (&t);
          if (!gpszda)
          {
             sntp_stop ();
@@ -1322,14 +1341,15 @@ display_task (void *p)
          y -= 22;
          double sunalt,
            sunazi;
+         gmtime_r (&now, &t);
          sun_position (now, lat, lon, &sunalt, &sunazi);
-         int o = 0;
+         int o = -1;
          time_t rise,
            set;
          do
             rise = sun_rise (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
          while (rise <= now && o < 200);
-         o = 0;
+         o = -1;
          do
             set = sun_set (t.tm_year + 1900, t.tm_mon + 1, t.tm_mday + o++, lat, lon, sun ? : SUN_SET);
          while (set + lightmin * 60 <= now && o < 200);
@@ -2435,8 +2455,6 @@ app_main ()
       gpio_set_direction (gpspps, GPIO_MODE_INPUT);
    if (gpsfix >= 0)
       gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
-   if (gpspps >= 0)
-      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
    if (gpsen >= 0)
    {                            // Enable
       gpio_set_level (gpsen, 1);
