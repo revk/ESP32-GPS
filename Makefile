@@ -4,13 +4,34 @@
 #
 
 PROJECT_NAME := GPS
+SUFFIX := $(shell components/ESP32-RevK/suffix)
 
-makeall: gpslog gpsout all
+all:	gpslog gpsout
+	@echo Make: build/$(PROJECT_NAME)$(SUFFIX).bin
+	@idf.py build
+	@cp build/$(PROJECT_NAME).bin build/$(PROJECT_NAME)$(SUFFIX).bin
+	@echo Done: build/$(PROJECT_NAME)$(SUFFIX).bin
 
-include $(IDF_PATH)/make/project.mk
+flash:
+	idf.py flash
+
+monitor:
+	idf.py monitor
+
+clean:
+	idf.py clean
+
+menuconfig:
+	idf.py menuconfig
+
+#include $(IDF_PATH)/make/project.mk
+
+pull:
+	git pull
+	git submodule update --recursive
 
 update:
-	git submodule update --init --recursive --remote
+	git submodule update --init --remote --merge --recursive
 	git commit -a -m "Library update"
 
 SQLlib/sqllib.o: SQLlib/sqllib.c
@@ -29,4 +50,18 @@ endif
 	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o -lcrypto ostn02.c OSTN02_OSGM02_GB.c
 gpsout: gpsout.c SQLlib/sqllib.o
 	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o
+
+PCBCase/case: PCBCase/case.c
+	make -C PCBCase
+
+scad: KiCad/L86.scad
+stl: KiCad/L86.stl
+
+%.stl: %.scad
+	echo "Making $@"
+	/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD $< -o $@
+	echo "Made $@"
+
+KiCad/L86.scad: KiCad/L86.kicad_pcb PCBCase/case Makefile
+	PCBCase/case -o $@ $< --edge=2
 

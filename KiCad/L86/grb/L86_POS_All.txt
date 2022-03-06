@@ -1,0 +1,21 @@
+### Module positions - created on 2022-03-06 07:27
+### Printed by pcb_positions plugin
+## Unit = mm, Angle = deg.
+## Pcb Height 30.100mm, Pcb Width 38.600mm [based on Edge bounding box]
+## Side : ALL
+## Board Aux Origin: 0.000mm ,0.000mm
+# Ref         Val                 Package                       PosX       PosY       Pin1_PosX  Pin1_PosY    Rot     Side      Type
+U2            QR                  QR-GPS                        100.0000   -103.0000  0.0000     0.0000      180.0    bottom    VIRTUAL
+Logo1         AJK                 AJK                           99.4000    -95.1000   0.0000     0.0000      180.0    bottom    VIRTUAL
+U1            L86-M33             L86-M33                       100.0000   -100.0000  107.7500   -106.3500     0.0    top       SMD
+J1            Conn_01x06          Molex_MiniSPOX_H6RA           117.0000   -100.0000  117.0000   -106.2500    90.0    top       THD
+## End
+## 12 SMD pads
+## 6 TH pads
+## 78 Virtual pads
+## 1 Top TH modules
+## 0 Bot TH modules
+## 1 Top SMD modules
+## 0 Bot SMD modules
+## 0 Top Virtual modules
+## 2 Bot Virtual modules
