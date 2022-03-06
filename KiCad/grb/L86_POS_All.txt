@@ -1,4 +1,4 @@
-### Module positions - created on 2022-03-06 08:48
+### Module positions - created on 2022-03-06 13:34
 ### Printed by pcb_positions plugin
 ## Unit = mm, Angle = deg.
 ## Pcb Height 30.100mm, Pcb Width 38.600mm [based on Edge bounding box]
@@ -10,7 +10,7 @@ U1            L86-M33             L86-M33                       100.0000   -100.
 Logo1         AJK                 AJK                           99.4000    -95.3750   0.0000     0.0000      180.0    bottom    VIRTUAL
 U2            QR                  QR-GPS                        100.0000   -103.0000  0.0000     0.0000      180.0    bottom    VIRTUAL
 ## End
-## 12 SMD pads
+## 13 SMD pads
 ## 6 TH pads
 ## 78 Virtual pads
 ## 1 Top TH modules
