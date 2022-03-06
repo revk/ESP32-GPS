@@ -16,3 +16,6 @@
 [submodule "components/esp32-owb"]
 	path = components/esp32-owb
 	url = https://github.com/DavidAntliff/esp32-owb
+[submodule "components/ESP32-OLED-RGB"]
+	path = components/ESP32-OLED-RGB
+	url = https://github.com/revk/ESP32-OLED-RGB
