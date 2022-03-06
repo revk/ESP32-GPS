@@ -1,0 +1,14 @@
+### Module positions - created on 2022-03-06 18:19
+### Printed by pcb_positions plugin
+## Unit = mm, Angle = deg.
+## Pcb Height 67.100mm, Pcb Width 44.600mm [based on Edge bounding box]
+## Side : bottom
+## Board Aux Origin: 0.000mm ,0.000mm
+# Ref         Val                 Package                       PosX       PosY       Pin1_PosX  Pin1_PosY    Rot     Side      Type
+D3            Schottky            Hidden                        61.2550    -142.2200  0.0000     0.0000      180.0    bottom    SMD
+L1            6.8uH               Hidden                        63.3750    -142.2300  0.0000     0.0000      180.0    bottom    SMD
+C2            0.1uF               Hidden                        67.6150    -142.2300  0.0000     0.0000      180.0    bottom    SMD
+C3            2.2uF               Hidden                        65.4950    -142.2300  0.0000     0.0000      180.0    bottom    SMD
+C4            10uF                Hidden                        62.8850    -125.1150  0.0000     0.0000      180.0    bottom    SMD
+BT1           Battery_Cell        BatteryHolder_Keystone_3002.. 100.0000   -95.7500   112.8000   -95.7500    180.0    bottom    SMD
+## End
