@@ -54,8 +54,8 @@ gpsout: gpsout.c SQLlib/sqllib.o
 PCBCase/case: PCBCase/case.c
 	make -C PCBCase
 
-scad: KiCad/L86.scad
-stl: KiCad/L86.stl
+scad: KiCad/L86.scad KiCad/Display.scad
+stl: KiCad/L86.stl KiCad/Display.stl
 
 %.stl: %.scad
 	echo "Making $@"
@@ -65,3 +65,5 @@ stl: KiCad/L86.stl
 KiCad/L86.scad: KiCad/L86.kicad_pcb PCBCase/case Makefile
 	PCBCase/case -o $@ $< --edge=2
 
+KiCad/Display.scad: KiCad/Display.kicad_pcb PCBCase/case Makefile
+	PCBCase/case -o $@ $< --edge=2
