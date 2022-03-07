@@ -1,10 +1,11 @@
-### Module positions - created on 2022-03-06 18:19
+### Module positions - created on 2022-03-07 07:03
 ### Printed by pcb_positions plugin
 ## Unit = mm, Angle = deg.
 ## Pcb Height 67.100mm, Pcb Width 44.600mm [based on Edge bounding box]
 ## Side : ALL
 ## Board Aux Origin: 0.000mm ,0.000mm
 # Ref         Val                 Package                       PosX       PosY       Pin1_PosX  Pin1_PosY    Rot     Side      Type
+J1            DC                  DC                            96.5000    -145.4000  96.5000    -145.4000     0.0    top       THD
 U3            FT231XQ             QFN-20-1EP_4x4mm_P0.5mm_EP2.. 87.7500    -136.3500  85.8500    -135.3500     0.0    top       SMD
 R1            10k                 R_0603                        117.5000   -140.2500  117.5000   -141.0750    90.0    top       SMD
 R5            27R                 R_0603                        87.2500    -141.2500  87.2500    -142.0750    90.0    top       SMD
@@ -24,24 +25,23 @@ R6            4k7                 R_0603                        92.5000    -141.
 R11           220R                R_0603                        85.5000    -121.0000  84.6750    -121.0000     0.0    top       SMD
 C1            0.1uF               C_0603                        91.5000    -136.5000  91.5000    -137.2750    90.0    top       SMD
 R2            5K1                 R_0603                        85.5000    -143.7500  86.3250    -143.7500   180.0    top       SMD
-J1            DC                  Molex_MiniSPOX_H2RA           96.5000    -145.4000  95.2500    -145.4000     0.0    top       THD
 U1            L86-M33             L86-M33                       100.0000   -100.0000  93.4500    -107.9500   -90.0    top       SMD
-R8            10M 1% or 0R        R_0603                        99.5000    -124.4000  100.3250   -124.4000   180.0    top       SMD
-D3            Schottky            Hidden                        61.2550    -142.2200  0.0000     0.0000      180.0    bottom    SMD
-U5            QR                  QR-SS                         88.0000    -149.0000  0.0000     0.0000        0.0    bottom    VIRTUAL
-L1            6.8uH               Hidden                        63.3750    -142.2300  0.0000     0.0000      180.0    bottom    SMD
-C2            0.1uF               Hidden                        67.6150    -142.2300  0.0000     0.0000      180.0    bottom    SMD
-C3            2.2uF               Hidden                        65.4950    -142.2300  0.0000     0.0000      180.0    bottom    SMD
-C4            10uF                Hidden                        62.8850    -125.1150  0.0000     0.0000      180.0    bottom    SMD
-BT1           Battery_Cell        BatteryHolder_Keystone_3002.. 100.0000   -95.7500   112.8000   -95.7500    180.0    bottom    SMD
 Logo2         AJK                 AJK                           109.4000   -125.6000  0.0000     0.0000        0.0    top       VIRTUAL
+R8            10M 1% or 0R        R_0603                        99.5000    -124.4000  100.3250   -124.4000   180.0    top       SMD
+D3            Schottky            Hidden                        100.3300   -131.0700  0.0000     0.0000        0.0    top       SMD
+U5            QR                  QR-SS                         88.0000    -149.0000  0.0000     0.0000        0.0    bottom    VIRTUAL
+L1            6.8uH               Hidden                        101.9500   -127.9000  0.0000     0.0000        0.0    top       SMD
+C2            0.1uF               Hidden                        95.9500    -128.1500  0.0000     0.0000       90.0    top       SMD
+C3            2.2uF               Hidden                        97.2000    -131.4500  0.0000     0.0000       90.0    top       SMD
+C4            10uF                Hidden                        103.4500   -131.4500  0.0000     0.0000       90.0    top       SMD
+BT1           Battery_Cell        BatteryHolder_Keystone_3002.. 100.0000   -95.7500   112.8000   -95.7500    180.0    bottom    SMD
 ## End
 ## 199 SMD pads
 ## 13 TH pads
 ## 80 Virtual pads
 ## 2 Top TH modules
 ## 0 Bot TH modules
-## 20 Top SMD modules
-## 6 Bot SMD modules
+## 25 Top SMD modules
+## 1 Bot SMD modules
 ## 1 Top Virtual modules
 ## 1 Bot Virtual modules

@@ -1,4 +1,4 @@
-### Module positions - created on 2022-03-06 18:19
+### Module positions - created on 2022-03-07 07:03
 ### Printed by pcb_positions plugin
 ## Unit = mm, Angle = deg.
 ## Pcb Height 67.100mm, Pcb Width 44.600mm [based on Edge bounding box]
@@ -25,4 +25,9 @@ C1            0.1uF               C_0603                        91.5000    -136.
 R2            5K1                 R_0603                        85.5000    -143.7500  86.3250    -143.7500   180.0    top       SMD
 U1            L86-M33             L86-M33                       100.0000   -100.0000  93.4500    -107.9500   -90.0    top       SMD
 R8            10M 1% or 0R        R_0603                        99.5000    -124.4000  100.3250   -124.4000   180.0    top       SMD
+D3            Schottky            Hidden                        100.3300   -131.0700  0.0000     0.0000        0.0    top       SMD
+L1            6.8uH               Hidden                        101.9500   -127.9000  0.0000     0.0000        0.0    top       SMD
+C2            0.1uF               Hidden                        95.9500    -128.1500  0.0000     0.0000       90.0    top       SMD
+C3            2.2uF               Hidden                        97.2000    -131.4500  0.0000     0.0000       90.0    top       SMD
+C4            10uF                Hidden                        103.4500   -131.4500  0.0000     0.0000       90.0    top       SMD
 ## End
