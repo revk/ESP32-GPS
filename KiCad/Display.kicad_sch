@@ -543,7 +543,7 @@
       (property "Value" "DC" (id 1) (at 2.54 -1.27 0)
         (effects (font (size 1.27 1.27)))
       )
-      (property "Footprint" "RevK:DC" (id 2) (at 0 2.54 0)
+      (property "Footprint" "" (id 2) (at 0 2.54 0)
         (effects (font (size 1.27 1.27)) hide)
       )
       (property "Datasheet" "" (id 3) (at 0 2.54 0)
@@ -2777,7 +2777,7 @@
     (uuid 6632bf4c-766d-4d12-b7a8-80288e5f09e3)
     (property "Reference" "J1" (id 0) (at 121.92 129.6502 0))
     (property "Value" "DC" (id 1) (at 121.92 132.1871 0))
-    (property "Footprint" "RevK:DC" (id 2) (at 121.92 132.08 0)
+    (property "Footprint" "RevK:Molex_MiniSPOX_H2RA" (id 2) (at 121.92 132.08 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "~" (id 3) (at 121.92 132.08 0)
@@ -2967,10 +2967,10 @@
     (property "Value" "Battery_Cell" (id 1) (at 101.981 146.9902 0)
       (effects (font (size 1.27 1.27)) (justify left))
     )
-    (property "Footprint" "Battery:BatteryHolder_Keystone_3002_1x2032" (id 2) (at 99.06 145.796 90)
+    (property "Footprint" "RevK:Battery-Holder-2032" (id 2) (at 99.06 145.796 90)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "Datasheet" "~" (id 3) (at 99.06 145.796 90)
+    (property "Datasheet" "https://www.mouser.co.uk/datasheet/2/238/LNNC_S_A0002913840_1-2550745.pdf" (id 3) (at 99.06 145.796 90)
       (effects (font (size 1.27 1.27)) hide)
     )
     (pin "1" (uuid abe7cc69-5044-4c3f-892b-d4fcff6e4c8c))
@@ -3190,7 +3190,7 @@
       (reference "#PWR027") (unit 1) (value "+3.3V") (footprint "")
     )
     (path "/d2acb68c-44d4-4480-8eda-51e505a3f6f6"
-      (reference "BT1") (unit 1) (value "Battery_Cell") (footprint "Battery:BatteryHolder_Keystone_3002_1x2032")
+      (reference "BT1") (unit 1) (value "Battery_Cell") (footprint "RevK:Battery-Holder-2032")
     )
     (path "/00000000-0000-0000-0000-000060910a6c"
       (reference "C1") (unit 1) (value "0.1uF") (footprint "RevK:C_0603")
@@ -3214,7 +3214,7 @@
       (reference "D3") (unit 1) (value "Schottky") (footprint "RevK:Hidden")
     )
     (path "/6632bf4c-766d-4d12-b7a8-80288e5f09e3"
-      (reference "J1") (unit 1) (value "DC") (footprint "RevK:DC")
+      (reference "J1") (unit 1) (value "DC") (footprint "RevK:Molex_MiniSPOX_H2RA")
     )
     (path "/00000000-0000-0000-0000-000060cc7ad1"
       (reference "J2") (unit 1) (value "USB-C") (footprint "RevK:USC16-TR-Round")
