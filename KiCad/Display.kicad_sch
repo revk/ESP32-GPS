@@ -2970,7 +2970,7 @@
     (property "Footprint" "RevK:Battery-Holder-2032" (id 2) (at 99.06 145.796 90)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "Datasheet" "https://www.mouser.co.uk/datasheet/2/238/LNNC_S_A0002913840_1-2550745.pdf" (id 3) (at 99.06 145.796 90)
+    (property "Datasheet" "~" (id 3) (at 99.06 145.796 90)
       (effects (font (size 1.27 1.27)) hide)
     )
     (pin "1" (uuid abe7cc69-5044-4c3f-892b-d4fcff6e4c8c))
