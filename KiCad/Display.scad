@@ -1,6 +1,6 @@
 // Generated case design for KiCad/Display.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2022-03-11 09:18:11
+// Generated 2022-03-11 09:53:43
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -80,7 +80,7 @@ module m2(pushed=false,hulled=false)
 b(0,0,0,1.6,0.8,0.25);
 b(0,0,0,1.2,0.8,0.55);
 b(0,0,0,0.8,0.8,0.95);
-if(pushed)b(0,0,0,1,1,20);
+if(!hulled&&pushed)b(0,0,0,1,1,20);
 }
 
 module m3(pushed=false,hulled=false)

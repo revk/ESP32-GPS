@@ -1,6 +1,6 @@
 // Generated case design for KiCad/Glider.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2022-03-11 09:18:11
+// Generated 2022-03-11 09:53:43
 // title:	GPS / Glider control board
 // date:	${DATE}
 // rev:	1
@@ -14,7 +14,7 @@ margin=0.500000;
 overlap=2.000000;
 lip=0.000000;
 casebase=5.000000;
-casetop=10.400000;
+casetop=5.000000;
 casewall=3.000000;
 fit=0.000000;
 edge=2.000000;
@@ -108,7 +108,7 @@ module m2(pushed=false,hulled=false)
 b(0,0,0,1.6,0.8,0.25);
 b(0,0,0,1.2,0.8,0.55);
 b(0,0,0,0.8,0.8,0.95);
-if(pushed)b(0,0,0,1,1,20);
+if(!hulled&&pushed)b(0,0,0,1,1,20);
 }
 
 module m3(pushed=false,hulled=false)
