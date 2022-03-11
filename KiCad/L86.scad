@@ -1,6 +1,6 @@
 // Generated case design for KiCad/L86.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2022-03-11 09:55:22
+// Generated 2022-03-11 10:20:36
 //
 
 // Globals
