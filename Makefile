@@ -5,6 +5,7 @@
 
 PROJECT_NAME := GPS
 SUFFIX := $(shell components/ESP32-RevK/suffix)
+MODELS := Display Glider L86
 
 all:
 	@echo Make: build/$(PROJECT_NAME)$(SUFFIX).bin
@@ -69,8 +70,8 @@ gpsout: gpsout.c SQLlib/sqllib.o
 PCBCase/case: PCBCase/case.c
 	make -C PCBCase
 
-scad: KiCad/L86.scad KiCad/Display.scad
-stl: KiCad/L86.stl KiCad/Display.stl
+scad:	$(patsubst %,KiCad/%.scad,$(MODELS))
+stl:	$(patsubst %,KiCad/%.stl,$(MODELS))
 
 %.stl: %.scad
 	echo "Making $@"
@@ -81,4 +82,7 @@ KiCad/L86.scad: KiCad/L86.kicad_pcb PCBCase/case Makefile
 	PCBCase/case -o $@ $< --edge=2 --top=8 --base=2.6
 
 KiCad/Display.scad: KiCad/Display.kicad_pcb PCBCase/case Makefile
+	PCBCase/case -o $@ $< --edge=2 --top=10.4 --base=5
+
+KiCad/Glider.scad: KiCad/Glider.kicad_pcb PCBCase/case Makefile
 	PCBCase/case -o $@ $< --edge=2 --top=10.4 --base=5
