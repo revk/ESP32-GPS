@@ -1,6 +1,6 @@
 // Generated case design for KiCad/Display.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2022-03-11 09:53:43
+// Generated 2022-03-11 09:55:22
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -13,7 +13,7 @@
 margin=0.500000;
 overlap=2.000000;
 lip=0.000000;
-casebase=5.000000;
+casebase=2.000000;
 casetop=10.400000;
 casewall=3.000000;
 fit=0.000000;

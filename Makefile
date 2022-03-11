@@ -79,10 +79,10 @@ stl:	$(patsubst %,KiCad/%.stl,$(MODELS))
 	echo "Made $@"
 
 KiCad/L86.scad: KiCad/L86.kicad_pcb PCBCase/case Makefile
-	PCBCase/case -o $@ $< --edge=2 --top=8 --base=2.6
+	PCBCase/case -o $@ $< --edge=2 --top=8 --base=2
 
 KiCad/Display.scad: KiCad/Display.kicad_pcb PCBCase/case Makefile
-	PCBCase/case -o $@ $< --edge=2 --top=10.4 --base=5
+	PCBCase/case -o $@ $< --edge=2 --top=10.4 --base=2.6
 
 KiCad/Glider.scad: KiCad/Glider.kicad_pcb PCBCase/case Makefile
-	PCBCase/case -o $@ $< --edge=2 --top=5 --base=5
+	PCBCase/case -o $@ $< --edge=2 --top=5 --base=2
