@@ -85,4 +85,4 @@ KiCad/Display.scad: KiCad/Display.kicad_pcb PCBCase/case Makefile
 	PCBCase/case -o $@ $< --edge=2 --top=10.4 --base=5
 
 KiCad/Glider.scad: KiCad/Glider.kicad_pcb PCBCase/case Makefile
-	PCBCase/case -o $@ $< --edge=2 --top=10.4 --base=5
+	PCBCase/case -o $@ $< --edge=2 --top=5 --base=5
