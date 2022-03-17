@@ -2,15 +2,15 @@
 <export version="E">
   <design>
     <source>/Users/adrian/git/GPS/KiCad/Display.kicad_sch</source>
-    <date>Sunday, 06 March 2022 at 18:18:58</date>
+    <date>Thursday, 17 March 2022 at 07:55:50</date>
     <tool>Eeschema (6.0.2-0)</tool>
-    <textvar name="DATE">2022-03-06</textvar>
+    <textvar name="DATE">2022-03-09</textvar>
     <sheet number="1" name="/" tstamps="/">
       <title_block>
         <title>GPS reference</title>
         <company>Adrian Kennard Andrews &amp; Arnold Ltd</company>
         <rev>1</rev>
-        <date>2022-03-06</date>
+        <date>2022-03-09</date>
         <source>Display.kicad_sch</source>
         <comment number="1" value="@TheRealRevK"/>
         <comment number="2" value="www.me.uk"/>
@@ -27,7 +27,7 @@
   <components>
     <comp ref="BT1">
       <value>Battery_Cell</value>
-      <footprint>Battery:BatteryHolder_Keystone_3002_1x2032</footprint>
+      <footprint>RevK:Battery-Holder-2032</footprint>
       <libsource lib="Device" part="Battery_Cell" description="Single-cell battery"/>
       <property name="Sheetname" value=""/>
       <property name="Sheetfile" value="Display.kicad_sch"/>
@@ -84,7 +84,7 @@
     </comp>
     <comp ref="D1">
       <value>D</value>
-      <footprint>Diode_SMD:D_1206_3216Metric</footprint>
+      <footprint>RevK:D_1206</footprint>
       <libsource lib="Device" part="D" description="Diode"/>
       <property name="Sheetname" value=""/>
       <property name="Sheetfile" value="Display.kicad_sch"/>
@@ -226,7 +226,7 @@
       <tstamps>3d1cc92b-d081-4f42-b8be-de2b995d0a9f</tstamps>
     </comp>
     <comp ref="R8">
-      <value>10M 1% or 0R</value>
+      <value>100k 1% or 0R</value>
       <footprint>RevK:R_0603</footprint>
       <libsource lib="Device" part="R" description="Resistor"/>
       <property name="Sheetname" value=""/>
@@ -262,7 +262,7 @@
       <tstamps>00000000-0000-0000-0000-000060fbba7f</tstamps>
     </comp>
     <comp ref="R12">
-      <value>3M 1% or NF</value>
+      <value>30k 1% or NF</value>
       <footprint>RevK:R_0603</footprint>
       <libsource lib="Device" part="R" description="Resistor"/>
       <property name="Sheetname" value=""/>
@@ -409,15 +409,6 @@
         <pin num="2" name="" type="passive"/>
       </pins>
     </libpart>
-    <libpart lib="RevK" part="AA">
-      <description>A&amp;A Logo</description>
-      <fields>
-        <field name="Reference">Logo</field>
-        <field name="Value">AA</field>
-        <field name="Footprint">RevK:AA</field>
-        <field name="Note">Non part, PCB printed</field>
-      </fields>
-    </libpart>
     <libpart lib="RevK" part="AJK">
       <fields>
         <field name="Reference">Logo</field>
@@ -430,7 +421,6 @@
       <fields>
         <field name="Reference">J</field>
         <field name="Value">DC</field>
-        <field name="Footprint">RevK:DC</field>
       </fields>
       <pins>
         <pin num="1" name="GND" type="power_out"/>
@@ -600,7 +590,6 @@
         <pin num="5" name="CS" type="input"/>
         <pin num="6" name="DC" type="input"/>
         <pin num="7" name="RST" type="input"/>
-        <pin num="S" name="SCREWS" type="passive"/>
       </pins>
     </libpart>
     <libpart lib="RevK" part="QR">
@@ -707,7 +696,6 @@
       <node ref="J2" pin="B12" pinfunction="GND" pintype="passive"/>
       <node ref="J2" pin="S1" pinfunction="SHIELD" pintype="passive"/>
       <node ref="M1" pin="2" pinfunction="GND" pintype="power_in"/>
-      <node ref="M1" pin="S" pinfunction="SCREWS" pintype="passive"/>
       <node ref="R12" pin="1" pintype="passive"/>
       <node ref="R2" pin="2" pintype="passive"/>
       <node ref="R3" pin="1" pintype="passive"/>

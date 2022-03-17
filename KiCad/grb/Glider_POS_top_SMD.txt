@@ -1,4 +1,4 @@
-### Module positions - created on 2022-03-06 08:12
+### Module positions - created on 2022-03-17 07:55
 ### Printed by pcb_positions plugin
 ## Unit = mm, Angle = deg.
 ## Pcb Height 24.600mm, Pcb Width 36.100mm [based on Edge bounding box]
@@ -23,11 +23,11 @@ U2            L96-M33             L96-M33                       89.6000    -124.
 R1            10k                 R_0603                        108.0700   -127.2500  108.0700   -126.4250   -90.0    top       SMD
 R4            4k7                 R_0603                        104.6000   -133.4000  103.7750   -133.4000     0.0    top       SMD
 U1            ESP32-PICO-MINI-02  ESP32-PICO-MINI-02            114.4567   -124.3500  118.4567   -118.4500   -90.0    top       SMD
-R12           3M 1% or NF         R_0603                        99.1750    -118.5000  100.0000   -118.5000   180.0    top       SMD
+R12           30k 1% or NF        R_0603                        99.1750    -118.5000  100.0000   -118.5000   180.0    top       SMD
 U3            FT231XQ             QFN-20-1EP_4x4mm_P0.5mm_EP2.. 104.7500   -130.0000  105.7500   -128.1000   -90.0    top       SMD
 U4            LMR16006+FB         RegulatorBlockFB              102.1000   -120.8000  101.1500   -122.1500     0.0    top       SMD
 R5            10k                 R_0603                        107.4000   -133.4000  106.5750   -133.4000     0.0    top       SMD
 R6            470K                R_0603                        86.6500    -133.3000  87.4750    -133.3000   180.0    top       SMD
-R8            10M 1% or 0R        R_0603                        98.3500    -120.5000  98.3500    -121.3250    90.0    top       SMD
+R8            100k 1% or 0R       R_0603                        98.3500    -120.5000  98.3500    -121.3250    90.0    top       SMD
 R7            100K                R_0603                        89.3000    -133.3000  90.1250    -133.3000   180.0    top       SMD
 ## End

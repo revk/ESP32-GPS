@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <export version="E">
   <design>
-    <source>/Users/adrian/git/GPS/Glider.kicad_sch</source>
-    <date>Sunday, 06 March 2022 at 08:13:07</date>
+    <source>/Users/adrian/git/GPS/KiCad/Glider.kicad_sch</source>
+    <date>Thursday, 17 March 2022 at 07:55:15</date>
     <tool>Eeschema (6.0.2-0)</tool>
     <textvar name="DATE">2022-03-03</textvar>
     <sheet number="1" name="/" tstamps="/">
@@ -111,7 +111,7 @@
     <comp ref="J1">
       <value>DC</value>
       <footprint>RevK:Molex_MiniSPOX_H2RA</footprint>
-      <libsource lib="Connector_Generic" part="Conn_01x02" description="Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <libsource lib="RevK" part="DC" description=""/>
       <property name="Sheetname" value=""/>
       <property name="Sheetfile" value="Glider.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -130,7 +130,7 @@
       <value>USB-C</value>
       <footprint>RevK:USC16-TR-Round</footprint>
       <datasheet>https://www.usb.org/sites/default/files/documents/usb_type-c.zip</datasheet>
-      <libsource lib="Connector" part="USB_C_Receptacle_USB2.0" description="USB 2.0-only Type-C Receptacle connector"/>
+      <libsource lib="RevK" part="USB-C" description="USB 2.0-only Type-C Receptacle connector"/>
       <property name="Sheetname" value=""/>
       <property name="Sheetfile" value="Glider.kicad_sch"/>
       <sheetpath names="/" tstamps="/"/>
@@ -217,7 +217,7 @@
       <tstamps>2ad870e8-b762-47ec-ab02-a3ca2603f2d2</tstamps>
     </comp>
     <comp ref="R8">
-      <value>10M 1% or 0R</value>
+      <value>100k 1% or 0R</value>
       <footprint>RevK:R_0603</footprint>
       <libsource lib="Device" part="R" description="Resistor"/>
       <property name="Sheetname" value=""/>
@@ -253,7 +253,7 @@
       <tstamps>00000000-0000-0000-0000-000060fbba7f</tstamps>
     </comp>
     <comp ref="R12">
-      <value>3M 1% or NF</value>
+      <value>30k 1% or NF</value>
       <footprint>RevK:R_0603</footprint>
       <libsource lib="Device" part="R" description="Resistor"/>
       <property name="Sheetname" value=""/>
@@ -330,53 +330,6 @@
     </comp>
   </components>
   <libparts>
-    <libpart lib="Connector" part="USB_C_Receptacle_USB2.0">
-      <description>USB 2.0-only Type-C Receptacle connector</description>
-      <docs>https://www.usb.org/sites/default/files/documents/usb_type-c.zip</docs>
-      <footprints>
-        <fp>USB*C*Receptacle*</fp>
-      </footprints>
-      <fields>
-        <field name="Reference">J</field>
-        <field name="Value">USB_C_Receptacle_USB2.0</field>
-        <field name="Datasheet">https://www.usb.org/sites/default/files/documents/usb_type-c.zip</field>
-      </fields>
-      <pins>
-        <pin num="A1" name="GND" type="passive"/>
-        <pin num="A4" name="VBUS" type="passive"/>
-        <pin num="A5" name="CC1" type="bidirectional"/>
-        <pin num="A6" name="D+" type="bidirectional"/>
-        <pin num="A7" name="D-" type="bidirectional"/>
-        <pin num="A8" name="SBU1" type="bidirectional"/>
-        <pin num="A9" name="VBUS" type="passive"/>
-        <pin num="A12" name="GND" type="passive"/>
-        <pin num="B1" name="GND" type="passive"/>
-        <pin num="B4" name="VBUS" type="passive"/>
-        <pin num="B5" name="CC2" type="bidirectional"/>
-        <pin num="B6" name="D+" type="bidirectional"/>
-        <pin num="B7" name="D-" type="bidirectional"/>
-        <pin num="B8" name="SBU2" type="bidirectional"/>
-        <pin num="B9" name="VBUS" type="passive"/>
-        <pin num="B12" name="GND" type="passive"/>
-        <pin num="S1" name="SHIELD" type="passive"/>
-      </pins>
-    </libpart>
-    <libpart lib="Connector_Generic" part="Conn_01x02">
-      <description>Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)</description>
-      <docs>~</docs>
-      <footprints>
-        <fp>Connector*:*_1x??_*</fp>
-      </footprints>
-      <fields>
-        <field name="Reference">J</field>
-        <field name="Value">Conn_01x02</field>
-        <field name="Datasheet">~</field>
-      </fields>
-      <pins>
-        <pin num="1" name="Pin_1" type="passive"/>
-        <pin num="2" name="Pin_2" type="passive"/>
-      </pins>
-    </libpart>
     <libpart lib="Connector_Generic" part="Conn_01x06">
       <description>Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)</description>
       <docs>~</docs>
@@ -521,6 +474,17 @@
         <field name="Note">Non part, PCB printed</field>
       </fields>
     </libpart>
+    <libpart lib="RevK" part="DC">
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">DC</field>
+        <field name="Footprint">RevK:DC</field>
+      </fields>
+      <pins>
+        <pin num="1" name="GND" type="power_out"/>
+        <pin num="2" name="DC" type="power_out"/>
+      </pins>
+    </libpart>
     <libpart lib="RevK" part="ESP32-PICO-MINI-02">
       <fields>
         <field name="Reference">U</field>
@@ -609,7 +573,7 @@
         <pin num="7" name="CBUS2" type="bidirectional"/>
         <pin num="8" name="USBDP" type="bidirectional"/>
         <pin num="9" name="USBDM" type="bidirectional"/>
-        <pin num="10" name="3V3OUT" type="power_out"/>
+        <pin num="10" name="3V3OUT" type="passive"/>
         <pin num="11" name="~{RESET}" type="input"/>
         <pin num="12" name="VCC" type="power_in"/>
         <pin num="13" name="GND" type="power_in"/>
@@ -701,11 +665,40 @@
         <field name="Note">Non part, PCB printed</field>
       </fields>
     </libpart>
+    <libpart lib="RevK" part="USB-C">
+      <description>USB 2.0-only Type-C Receptacle connector</description>
+      <docs>https://www.usb.org/sites/default/files/documents/usb_type-c.zip</docs>
+      <footprints>
+        <fp>USB*C*Receptacle*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">USB-C</field>
+        <field name="Footprint">RevK:USC16-TR-Round</field>
+        <field name="Datasheet">https://www.usb.org/sites/default/files/documents/usb_type-c.zip</field>
+      </fields>
+      <pins>
+        <pin num="A1" name="GND" type="power_out"/>
+        <pin num="A4" name="VBUS" type="power_out"/>
+        <pin num="A5" name="CC1" type="bidirectional"/>
+        <pin num="A6" name="D+" type="bidirectional"/>
+        <pin num="A7" name="D-" type="bidirectional"/>
+        <pin num="A8" name="SBU1" type="no_connect"/>
+        <pin num="A9" name="VBUS" type="passive"/>
+        <pin num="A12" name="GND" type="passive"/>
+        <pin num="B1" name="GND" type="passive"/>
+        <pin num="B4" name="VBUS" type="passive"/>
+        <pin num="B5" name="CC2" type="bidirectional"/>
+        <pin num="B6" name="D+" type="bidirectional"/>
+        <pin num="B7" name="D-" type="bidirectional"/>
+        <pin num="B8" name="SBU2" type="no_connect"/>
+        <pin num="B9" name="VBUS" type="passive"/>
+        <pin num="B12" name="GND" type="passive"/>
+        <pin num="S1" name="SHIELD" type="passive"/>
+      </pins>
+    </libpart>
   </libparts>
   <libraries>
-    <library logical="Connector">
-      <uri>/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols//Connector.kicad_sym</uri>
-    </library>
     <library logical="Connector_Generic">
       <uri>/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols//Connector_Generic.kicad_sym</uri>
     </library>
@@ -727,7 +720,7 @@
       <node ref="R8" pin="1" pintype="passive"/>
       <node ref="U1" pin="3" pinfunction="3V3" pintype="power_in"/>
       <node ref="U2" pin="9" pinfunction="VCC" pintype="power_in"/>
-      <node ref="U3" pin="10" pinfunction="3V3OUT" pintype="power_out"/>
+      <node ref="U3" pin="10" pinfunction="3V3OUT" pintype="passive"/>
       <node ref="U3" pin="11" pinfunction="~{RESET}" pintype="input"/>
       <node ref="U3" pin="12" pinfunction="VCC" pintype="power_in"/>
       <node ref="U3" pin="20" pinfunction="VCCIO" pintype="power_in"/>
@@ -758,7 +751,7 @@
     </net>
     <net code="7" name="DC">
       <node ref="D1" pin="1" pinfunction="K" pintype="passive"/>
-      <node ref="J1" pin="2" pinfunction="Pin_2" pintype="passive"/>
+      <node ref="J1" pin="2" pinfunction="DC" pintype="power_out"/>
       <node ref="R6" pin="2" pintype="passive"/>
       <node ref="U4" pin="1" pinfunction="SHDN" pintype="input"/>
       <node ref="U4" pin="2" pinfunction="VIN" pintype="power_in"/>
@@ -774,8 +767,8 @@
     </net>
     <net code="10" name="GND">
       <node ref="C1" pin="2" pintype="passive"/>
-      <node ref="J1" pin="1" pinfunction="Pin_1" pintype="passive"/>
-      <node ref="J3" pin="A1" pinfunction="GND" pintype="passive"/>
+      <node ref="J1" pin="1" pinfunction="GND" pintype="power_out"/>
+      <node ref="J3" pin="A1" pinfunction="GND" pintype="power_out"/>
       <node ref="J3" pin="A12" pinfunction="GND" pintype="passive"/>
       <node ref="J3" pin="B1" pinfunction="GND" pintype="passive"/>
       <node ref="J3" pin="B12" pinfunction="GND" pintype="passive"/>
@@ -926,7 +919,7 @@
     </net>
     <net code="35" name="VBUS">
       <node ref="D1" pin="2" pinfunction="A" pintype="passive"/>
-      <node ref="J3" pin="A4" pinfunction="VBUS" pintype="passive"/>
+      <node ref="J3" pin="A4" pinfunction="VBUS" pintype="power_out"/>
       <node ref="J3" pin="A9" pinfunction="VBUS" pintype="passive"/>
       <node ref="J3" pin="B4" pinfunction="VBUS" pintype="passive"/>
       <node ref="J3" pin="B9" pinfunction="VBUS" pintype="passive"/>
@@ -945,10 +938,10 @@
       <node ref="D3" pin="" pintype="no_connect"/>
     </net>
     <net code="40" name="unconnected-(J3-PadA8)">
-      <node ref="J3" pin="A8" pinfunction="SBU1" pintype="bidirectional+no_connect"/>
+      <node ref="J3" pin="A8" pinfunction="SBU1" pintype="no_connect"/>
     </net>
     <net code="41" name="unconnected-(J3-PadB8)">
-      <node ref="J3" pin="B8" pinfunction="SBU2" pintype="bidirectional+no_connect"/>
+      <node ref="J3" pin="B8" pinfunction="SBU2" pintype="no_connect"/>
     </net>
     <net code="42" name="unconnected-(L1-Pad~)">
       <node ref="L1" pin="" pintype="no_connect"/>
