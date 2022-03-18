@@ -18,7 +18,7 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 // Commands:-
 // test         Toggle test mode which sends to mobile even if on MQTT
 // udp          Send a raw UDP payload as if received via mobile (encrypted)
-// contrast     Set OLED contrast now
+// contrast     Set GFX contrast now
 // status       Send a fix status info message
 // resend       Resend from date/time
 // fix          Do a fix update now
@@ -37,11 +37,13 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 // version      Get GPS version
 
 #define settings	\
-	s8(gfxsda,-1,		OLED SDA GPIO)	\
-	s8(gfxscl,-1,		OLED SCL GPIO)	\
-	s8(gfxaddress,0x3D,	OLED I2C Address)	\
-	u8(gfxcontrast,127,	OLED Contrast)	\
-	b(gfxflip,N,		OLED display flip)	\
+	u8(gfxmosi,,		Display MOSI)    \
+        u8(gfxsck,,		Display SCK)     \
+        u8(gfxcs,,		Display CS)      \
+        u8(gfxdc,,		Display DC)      \
+        u8(gfxrst,,		Display RST)     \
+        u8(gfxflip,,		Display flip)    \
+        u8(gfxcontrast,,	Display contrast)     \
 	bl(gpsdebug,N,		GPS debug logging)	\
 	s8(gpspps,-1,		GPS PPS GPIO)	\
 	s8(gpsuart,1,		GPS UART ID)	\
@@ -1280,7 +1282,7 @@ display_task (void *p)
       } else
          sleep (1);
       gfx_lock ();
-      int y = CONFIG_OLED_HEIGHT,
+      int y = CONFIG_GFX_HEIGHT,
          x = 0;
       time_t now = time (0) + 1;
       struct tm t;
@@ -1296,14 +1298,14 @@ display_task (void *p)
       // Show sats in use as dots
       for (int t = 0; t < sizeof (gxgsv) / sizeof (*gxgsv); t++)
          for (x = 0; x < 12; x++)
-            gfx_set (CONFIG_OLED_WIDTH - 1 - x * 2, y + 7 - t * 2, gngsa[t] > x ? 15 : gxgsv[t] > x ? 1 : 0);
+            gfx_set (CONFIG_GFX_WIDTH - 1 - x * 2, y + 7 - t * 2, gngsa[t] > x ? 15 : gxgsv[t] > x ? 1 : 0);
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
          gfx_text (1, 0, y, "Lat: %11.6f", lat);
       else
          gfx_text (1, 0, y, "%16s", "");
-      gfx_text (1, CONFIG_OLED_WIDTH - 3 * 6, y, fixmode > 1 ? hepe ? "EPE" : "DOP" : "   ");
+      gfx_text (1, CONFIG_GFX_WIDTH - 3 * 6, y, fixmode > 1 ? hepe ? "EPE" : "DOP" : "   ");
       y -= 8;
       if (fixmode > 1)
          gfx_text (1, 0, y, "Lon: %11.6f", lon);
@@ -1312,13 +1314,13 @@ display_task (void *p)
       if (fixmode > 1)
       {
          if (hepe > 999.9)
-            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "---.-m", hepe);
+            gfx_text (1, CONFIG_GFX_WIDTH - 5 * 6 - 2, y, "---.-m", hepe);
          else if (hepe)
-            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", hepe);
+            gfx_text (1, CONFIG_GFX_WIDTH - 5 * 6 - 2, y, "%5.1fm", hepe);
          else
-            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", hdop);
+            gfx_text (1, CONFIG_GFX_WIDTH - 5 * 6 - 2, y, "%6.2f", hdop);
       } else
-         gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
+         gfx_text (1, CONFIG_GFX_WIDTH - 5 * 6 - 2, y, "     \002");
       y -= 8;
       if (fixmode >= 3)
          gfx_text (1, 0, y, "Alt: %6.1fm", alt);
@@ -1327,13 +1329,13 @@ display_task (void *p)
       if (fixmode >= 3)
       {
          if (vepe > 999.9)
-            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "---.-m", vepe);
+            gfx_text (1, CONFIG_GFX_WIDTH - 5 * 6 - 2, y, "---.-m", vepe);
          else if (vepe)
-            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", vepe);
+            gfx_text (1, CONFIG_GFX_WIDTH - 5 * 6 - 2, y, "%5.1fm", vepe);
          else
-            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", vdop);
+            gfx_text (1, CONFIG_GFX_WIDTH - 5 * 6 - 2, y, "%6.2f", vdop);
       } else
-         gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
+         gfx_text (1, CONFIG_GFX_WIDTH - 5 * 6 - 2, y, "     \002");
       y -= 3;                   // Line
       if (gpszda && gotfix)
       {
@@ -1380,7 +1382,7 @@ display_task (void *p)
                   int l = ceil (v);
                   if (l)
                      gfx_set (l - 1, y + Y, (1.0 - ((float) l - v)) * gfx_get (l - 1, y + Y));
-                  for (int X = l; X < CONFIG_OLED_WIDTH; X++)
+                  for (int X = l; X < CONFIG_GFX_WIDTH; X++)
                      gfx_set (X, Y + y, (X + Y) & 1 ? 0 : gfx_get (X, Y + y) >> 3);
                }
             } else
@@ -1422,7 +1424,7 @@ display_task (void *p)
             }
          }
          // Sun angle
-         x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
+         x = CONFIG_GFX_WIDTH - 4 - 3 * 6;
          x = gfx_text (1, x, y + 14, "%+3.0f", sunalt);
          x = gfx_text (0, x, y + 17, "o");
          y -= 3;                // Line
@@ -1446,18 +1448,18 @@ display_task (void *p)
          x = gfx_text (5, 0, y, "\002%3.0f", s);
       else
          x = gfx_text (5, 0, y, "%4.1f", s);
-      gfx_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", kt ? "kt" : kmh ? "km/h" : "mph");
+      gfx_text (-1, CONFIG_GFX_WIDTH - 4 * 6, y + 2, "%4s", kt ? "kt" : kmh ? "km/h" : "mph");
       if (!moving)
-         x = gfx_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "---");
+         x = gfx_text (-1, CONFIG_GFX_WIDTH - 3 * 6 - 4, y + 12, "---");
       else
-         x = gfx_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "%3.0f", course);
+         x = gfx_text (-1, CONFIG_GFX_WIDTH - 3 * 6 - 4, y + 12, "%3.0f", course);
       x = gfx_text (0, x, y + 12 + 3, "o");
       if (ds18b20 >= 0)
       {
          if (tempc < -9.9 || tempc > 99.9)
-            x = gfx_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "--");
+            x = gfx_text (-2, CONFIG_GFX_WIDTH - 2 * 12, y + 24, "--");
          else
-            x = gfx_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2f", tempc);
+            x = gfx_text (-2, CONFIG_GFX_WIDTH - 2 * 12, y + 24, "%2f", tempc);
       }
       gfx_unlock ();
    }
@@ -2438,14 +2440,23 @@ app_main ()
       revk_error ("malloc", "fix failed");
       return;
    }
-   if (gfxsda >= 0 && gfxscl >= 0)
-      gfx_start (1, gfxaddress, gfxscl, gfxsda, gfxflip);
-   gfx_set_contrast (gfxcontrast);
-   for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
+     if (gfxmosi)
    {
-      gfx_set (x, CONFIG_OLED_HEIGHT - 12, 4);
-      gfx_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
-      gfx_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
+    const char *e = gfx_init(cs: gfxcs, sck: gfxsck, mosi: gfxmosi, dc: gfxdc, rst: gfxrst, flip:gfxflip);
+      if (e)
+      {
+         jo_t j = jo_object_alloc();
+         jo_string(j, "error", "Failed to start");
+         jo_string(j, "description", e);
+         revk_error("GFX", &j);
+      }
+   }
+   gfx_set_contrast (gfxcontrast);
+   for (int x = 0; x < CONFIG_GFX_WIDTH; x++)
+   {
+      gfx_set (x, CONFIG_GFX_HEIGHT - 12, 4);
+      gfx_set (x, CONFIG_GFX_HEIGHT - 12 - 3 - 24, 4);
+      gfx_set (x, CONFIG_GFX_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
       gfx_set (x, 8, 4);
    }
    if (gfxsda >= 0 && gfxscl >= 0)
