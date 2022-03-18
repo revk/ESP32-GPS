@@ -1,9 +1,9 @@
 // GPS module (tracker and/or display module)
 // Copyright (c) 2019 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
-static const char TAG[] = "GPS";
+static __attribute__((unused)) const char TAG[] = "GPS";
 
 #include "revk.h"
-#include <esp32/aes.h>
+#include <aes/esp_aes.h>
 #include <driver/i2c.h>
 #include <driver/uart.h>
 #include <math.h>
@@ -434,10 +434,12 @@ sun_position (double t, double latitude, double longitude, double *altitudep, do
 void
 fixstatus (void)
 {
+#if 0
    revk_info (TAG, "Sats %d (NAVSTAR %d/%d, GLONASS %d/%d, GALILEO %d/%d) %s %s hepe=%.1f vepe=%.1f", sats, gngsa[0], gxgsv[0],
               gngsa[1], gxgsv[1], gngsa[2], gxgsv[2], fixtype == 0 ? "Invalid" : fixtype ==
               1 ? "GNSS" : fixtype == 2 ? "DGPS" : fixtype == 6 ? "Estimated" : "?",
               fixmode == 1 ? "No fix" : fixmode == 2 ? "2D" : fixmode == 3 ? "3D" : "?", hepe, vepe);
+#endif
 }
 
 uint32_t gpsbaudnow = 0;
@@ -445,7 +447,7 @@ uint32_t gpsbaudnow = 0;
 void
 gps_connect (unsigned int baud)
 {
-   esp_err_t err;
+   esp_err_t err=0;
    if (gpsbaudnow)
       uart_driver_delete (gpsuart);
    gpsbaudnow = baud;
@@ -456,12 +458,10 @@ gps_connect (unsigned int baud)
       .stop_bits = UART_STOP_BITS_1,
       .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
    };
-   if ((err = uart_param_config (gpsuart, &uart_config)))
-      revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-   else if ((err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1)))
-      revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-   else if ((err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0)))
-      revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+   if (!err)err = uart_param_config (gpsuart, &uart_config);
+   if (!err)err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1);
+   if (!err)err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0);
+   // TODO report error
    uart_write_bytes (gpsuart, "\r\n\r\n", 4);
 }
 
@@ -479,8 +479,10 @@ gps_cmd (const char *fmt, ...)
    char *p;
    for (p = s + 1; *p; p++)
       c ^= *p;
+#if 0
    if (gpsdebug)
       revk_info ("gpstx", "%s", s);
+#endif
    if (*s == '$')
       p += sprintf (p, "*%02X\r\n", c); // We allowed space
    xSemaphoreTake (cmd_mutex, portMAX_DELAY);
@@ -506,8 +508,10 @@ at_cmd (const void *cmd, int t1, int t2)
    {
       uart_write_bytes (atuart, cmd, strlen ((char *) cmd));
       uart_write_bytes (atuart, "\r", 1);
+#if 0
       if (atdebug)
          revk_info ("attx", "%s", cmd);
+#endif
    }
    int l = 0;
    while (1)
@@ -550,12 +554,16 @@ at_cmd (const void *cmd, int t1, int t2)
          e++;
       if (!*e && (!strncmp (p, "Call Ready", 10) || !strncmp (p, "SMS Ready", 9) || !strncmp (p, "+CFUN:", 6)))
       {
+#if 0
          if (atdebug)
             revk_info ("ignore", "%s", atbuf);
+#endif
          continue;              // Skip known single line async messages we can ignore
       }
+#if 0
       if (l && atdebug)
          revk_info ("atrx", "%s", atbuf);
+#endif
       break;
    }
    xSemaphoreGive (at_mutex);
@@ -595,7 +603,9 @@ process_udp (uint32_t len, uint8_t * buf)
          hmac_sha256 (auth + 1 + 3 + 16, *auth - 3 - 16, (void *) buf, len, mac);
          if (memcmp (mac, buf + len, MACLEN))
          {
+#if 0
             revk_error (TAG, "Bad HMAC (%u bytes)", len);
+#endif
             len = 0;            // bad HMAC
          }
       }
@@ -637,7 +647,10 @@ process_udp (uint32_t len, uint8_t * buf)
                if (q < e)
                {
                   q++;
+#if 0
+		  // TODO
                   revk_setting ((char *) p + 2, e - q, q);
+#endif
                }
             }
             p += 1 + dlen;
@@ -646,38 +659,49 @@ process_udp (uint32_t len, uint8_t * buf)
    }
 }
 
-const char *
-app_command (const char *tag, unsigned int len, const unsigned char *value)
+	const char *app_callback(int client, const char *prefix, const char *target, const char *suffix, jo_t j)
 {
-   if (!strcmp (tag, "test"))
+	  if (client || !prefix || target || strcmp(prefix, prefixcommand) || !suffix)
+      return NULL;              //Not for us or not a command from main MQTT
+   char value[1000];
+   int len = 0;
+   if (j)
+   {
+      len = jo_strncpy(j, value, sizeof(value));
+      if (len < 0)
+         return "Expecting JSON string";
+      if (len > sizeof(value))
+         return "Too long";
+   }
+   if (!strcmp (suffix, "test"))
    {
       trackmqtt = 1 - trackmqtt;        // Switch for testing
       return "";
    }
-   if (!strcmp (tag, "udp"))
+   if (!strcmp (suffix, "udp"))
    {
       process_udp (len, (uint8_t *) value);
       return "";
    }
-   if (!strcmp (tag, "contrast"))
+   if (!strcmp (suffix, "contrast"))
    {
       gfx_set_contrast (atoi ((char *) value));
       return "";                // OK
    }
-   if (!strcmp (tag, "wifi"))
+   if (!strcmp (suffix, "wifi"))
    {                            // WiFi connected, but not need for SNTP as we have GPS
       if (gpszda)
          sntp_stop ();
       return "";
    }
-   if (!strcmp (tag, "disconnect"))
+   if (!strcmp (suffix, "disconnect"))
    {
       xSemaphoreTake (track_mutex, portMAX_DELAY);
       trackmqtt = 0;
       xSemaphoreGive (track_mutex);
       return "";
    }
-   if (!strcmp (tag, "connect"))
+   if (!strcmp (suffix, "connect"))
    {
       xSemaphoreTake (track_mutex, portMAX_DELAY);
       trackmqtt = 1;
@@ -686,16 +710,18 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
          gps_cmd ("$PMTK183");  // Log status
       if (tracki && (attx < 0 || atrx < 0))
          fixnow = "WiFi/MQTT connect";
+#if 0
       if (!auth || *auth <= 3 + 16)
          revk_error ("auth", "Authentication not set");
+#endif
       return "";
    }
-   if (!strcmp (tag, "status"))
+   if (!strcmp (suffix, "status"))
    {
       fixstatus ();
       return "";
    }
-   if (!strcmp (tag, "resend"))
+   if (!strcmp (suffix, "resend"))
    {                            // Resend log data
       if (len)
       {
@@ -706,22 +732,22 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
          trackreset (0);
       return "";
    }
-   if (!strcmp (tag, "fix"))
+   if (!strcmp (suffix, "fix"))
    {                            // Force fix dump now
       fixnow = "MQTT fix command";
       return "";
    }
-   if (!strcmp (tag, "upgrade"))
+   if (!strcmp (suffix, "upgrade"))
    {                            // Force fix dump now
       fixnow = "Upgrade";
       return "";
    }
-   if (!strcmp (tag, "restart"))
+   if (!strcmp (suffix, "restart"))
    {                            // Force fix dump now
       fixnow = "Restart";
       return "";
    }
-   if (!strcmp (tag, "time"))
+   if (!strcmp (suffix, "time"))
    {
       if (!len)
          timeforce = 0;
@@ -738,7 +764,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
       }
       return "";
    }
-#define force(x) if (!strcmp (tag, #x)) { if (!len) x##force = 0; else { x##force = 1; x = strtof ((char *) value, NULL); } return ""; }
+#define force(x) if (!strcmp (suffix, #x)) { if (!len) x##force = 0; else { x##force = 1; x = strtof ((char *) value, NULL); } return ""; }
    force (lat);
    force (lon);
    force (alt);
@@ -750,61 +776,61 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    force (hepe);
    force (vepe);
 #undef force
-   if (!strcmp (tag, "gpstx") && len)
+   if (!strcmp (suffix, "gpstx") && len)
    {                            // Send arbitrary GPS command (do not include *XX or CR/LF)
       gps_cmd ("%s", value);
       return "";
    }
-   if (!strcmp (tag, "attx") && len)
+   if (!strcmp (suffix, "attx") && len)
    {                            // Send arbitrary AT command (do not include *XX or CR/LF)
       at_cmd (value, 0, 0);
       return "";
    }
-   if (!strcmp (tag, "dump"))
+   if (!strcmp (suffix, "dump"))
    {
       gps_cmd ("$PMTK622,1");   // Dump log
       return "";
    }
-   if (!strcmp (tag, "locus"))
+   if (!strcmp (suffix, "locus"))
    {
       gps_cmd ("$PMTK183");     // Log status
       return "";
    }
-   if (!strcmp (tag, "erase"))
+   if (!strcmp (suffix, "erase"))
    {
       gps_cmd ("$PMTK184,1");   // Erase
       return "";
    }
-   if (!strcmp (tag, "hot"))
+   if (!strcmp (suffix, "hot"))
    {
       gps_cmd ("$PMTK101");     // Hot start
       gpsstarted = 0;
       return "";
    }
-   if (!strcmp (tag, "warm"))
+   if (!strcmp (suffix, "warm"))
    {
       gps_cmd ("$PMTK102");     // Warm start
       gpsstarted = 0;
       return "";
    }
-   if (!strcmp (tag, "cold"))
+   if (!strcmp (suffix, "cold"))
    {
       gps_cmd ("$PMTK103");     // Cold start
       gpsstarted = 0;
       return "";
    }
-   if (!strcmp (tag, "reset"))
+   if (!strcmp (suffix, "reset"))
    {
       gps_cmd ("$PMTK104");     // Full cold start (resets to default settings including Baud rate)
       revk_restart ("GPS has been reset", 1);
       return "";
    }
-   if (!strcmp (tag, "sleep"))
+   if (!strcmp (suffix, "sleep"))
    {
       gps_cmd ("$PMTK291,7,0,10000,1"); // Low power (maybe we need to drive EN pin?)
       return "";
    }
-   if (!strcmp (tag, "version"))
+   if (!strcmp (suffix, "version"))
    {
       gps_cmd ("$PMTK605");     // Version
       return "";
@@ -823,6 +849,7 @@ fixcheck (unsigned int fixtim)
         fixtim > 60000          //
        ))
    {
+#if 0
       if (fixdebug)
       {
          if (fixnow)
@@ -834,6 +861,7 @@ fixcheck (unsigned int fixtim)
          else if (fixtim > 60000)
             revk_info (TAG, "Fix tim too high %u (%u)", fixtim, fixnext);
       }
+#endif
       fixend = fixlast;
       fixsave = fixnext;        // Save the fixes we have so far (more may accumulate whilst saving)
    }
@@ -870,8 +898,10 @@ gps_init (void)
 static void
 nmea (char *s)
 {
+#if 0
    if (gpsdebug)
       revk_info ("gpsrx", "%s", s);
+#endif
    if (!s || *s != '$' || !s[1] || !s[2] || !s[3])
       return;
    char *f[50];
@@ -888,7 +918,7 @@ nmea (char *s)
    }
    if (!n)
       return;
-   if (!gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_offline ()))
+   if (!gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_link_down ()))
       gpsstarted = -1;          // Time to send init
    if (!strcmp (f[0], "PMTK001") && n >= 3)
    {                            // ACK
@@ -898,11 +928,13 @@ nmea (char *s)
          xSemaphoreGive (ack_semaphore);
          pmtk = 0;
       }
+#if 0
       int ok = atoi (f[2]);
       if (ok == 1)
          revk_error (TAG, "PMTK%d unsupported", tag);
       else if (ok == 2)
          revk_error (TAG, "PMTK%d failed", tag);
+#endif
       return;
    }
    if (!strcmp (f[0], "PQTXT"))
@@ -972,8 +1004,10 @@ nmea (char *s)
    {                            // Set EASY
       if (atoi (f[1]) == 2 && atoi (f[2]) != easy)
       {
+#if 0
          if (fixdebug)
             revk_info (TAG, "Setting EASY %s  (%s days)", easy ? "on" : "off", f[3]);
+#endif
          gps_cmd ("$PMTK869,1,%d", easy ? 1 : 0);
       }
       return;
@@ -982,8 +1016,10 @@ nmea (char *s)
    {                            // Set SBAS
       if (atoi (f[1]) != sbas)
       {
+#if 0
          if (fixdebug)
             revk_info (TAG, "Setting SBAS %s", sbas ? "on" : "off");
+#endif
          gps_cmd ("$PMTK313,%d", sbas ? 1 : 0);
       }
       return;
@@ -992,8 +1028,10 @@ nmea (char *s)
    {                            // Set DGPS
       if (atoi (f[1]) != ((sbas || waas) ? 2 : 0))
       {
+#if 0
          if (fixdebug)
             revk_info (TAG, "Setting DGPS %s", (sbas || waas) ? "on" : "off");
+#endif
          gps_cmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);
       }
       return;
@@ -1002,15 +1040,19 @@ nmea (char *s)
    {                            // Fix rate
       if (atoi (f[1]) != fixms)
       {
+#if 0
          if (fixdebug)
             revk_info (TAG, "Setting fix rate %dms", fixms);
+#endif
          gps_cmd ("$PMTK220,%d", fixms);
       }
       return;
    }
    if (!strcmp (f[0], "PMTK705") && n >= 2)
    {
+#if 0
       revk_info (TAG, "GPS version %s", f[1]);
+#endif
       return;
    }
    if (!strcmp (f[0], "PMTK514") && n >= 2)
@@ -1025,8 +1067,10 @@ nmea (char *s)
       for (q = 0; q < sizeof (rates) / sizeof (rates) && rates[q] == (1 + q < n ? atoi (f[1 + q]) : 0); q++);
       if (q < sizeof (rates) / sizeof (rates))
       {                         // Set message rates
+#if 0
          if (fixdebug)
             revk_info (TAG, "Setting message rates");
+#endif
          gps_cmd ("$PMTK314,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
                   rates[0], rates[1], rates[2], rates[3], rates[4], rates[5], rates[6], rates[7], rates[8], rates[9], rates[10],
                   rates[11], rates[12], rates[13], rates[14], rates[15], rates[16], rates[17], rates[18], rates[19]);
@@ -1138,9 +1182,11 @@ nmea (char *s)
                   fix[fixnext].sats = sats;
                   fix[fixnext].dgps = (fixtype == 2 ? 1 : 0);
                   fix[fixnext].hepe = fixhepe;
+#if 0
                   if (fixdump)
                      revk_info (TAG, "fix:%u tim=%u/%d lat=%d/60 lon=%d/60 alt=%d*%.1f", fixnext, fixtim, TSCALE, fixlat, fixlon,
                                 fixalt, ascale);
+#endif
                   fixnext++;
                   fixlast = fixbase + fixtim / TSCALE;
                   fixcheck (fixtim);
@@ -1186,8 +1232,10 @@ nmea (char *s)
          if (!gpszda)
          {
             sntp_stop ();
+#if 0
             if (fixdebug)
                revk_info (TAG, "Set clock %s-%s-%s %s", f[4], f[3], f[2], f[1]);
+#endif
             fixbase = v.tv_sec;
             fixend = v.tv_sec;
             fixsave = 0;        // Send a null fix
@@ -1208,8 +1256,10 @@ nmea (char *s)
       {
          if (!moving)
          {
+#if 0
             if (fixdebug)
                revk_info (TAG, "Moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
+#endif
             lograte (logfast);
             fixtimeout = time (0) + startedlog; // Do fix quickly
          }
@@ -1217,8 +1267,10 @@ nmea (char *s)
       } else if (moving && moving < time (0))
       {
          fixnow = "Stopped moving";     // Do fix now
+					#if 0
          if (fixdebug)
             revk_info (TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
+#endif
          moving = 0;            // Stopped moving
          lograte (logslow);
       }
@@ -1282,6 +1334,7 @@ display_task (void *p)
       } else
          sleep (1);
       gfx_lock ();
+#if 0
       int y = CONFIG_GFX_HEIGHT,
          x = 0;
       time_t now = time (0) + 1;
@@ -1294,7 +1347,7 @@ display_task (void *p)
          gfx_text (1, 0, 0, temp);
       }
       y -= 10;
-      gfx_text (1, 0, y, "Fix: %c %2d\002sat%s %c %c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');     // DGPS
+      gfx_text (1, 0, y, "Fix: %c %2d\002sat%s %c %c", revk_link_down ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');     // DGPS
       // Show sats in use as dots
       for (int t = 0; t < sizeof (gxgsv) / sizeof (*gxgsv); t++)
          for (x = 0; x < 12; x++)
@@ -1461,6 +1514,7 @@ display_task (void *p)
          else
             x = gfx_text (-2, CONFIG_GFX_WIDTH - 2 * 12, y + 24, "%2f", tempc);
       }
+#endif
       gfx_unlock ();
    }
 }
@@ -1478,8 +1532,10 @@ trackreset (time_t reference)
    else
       tracko = tracki - MAXTRACK;
    xSemaphoreGive (track_mutex);
+#if 0
    if (fixdebug)
       revk_info (TAG, "Resend from %u", (unsigned int) reference);
+#endif
 }
 
 unsigned int
@@ -1562,8 +1618,10 @@ tracknext (uint8_t * buf)
 void
 at_task (void *X)
 {
+#if 0
    if (atdebug)
-      revk_error (TAG, "AT Debug enabled");
+      revk_info (TAG, "AT Debug enabled");
+#endif
    char m95 = 0;
    atbuf = malloc (ATBUFSIZE);
    while (1)
@@ -1809,7 +1867,9 @@ at_task (void *X)
 
          mobile = 1;
          try = 50;
+#if 0
          revk_info (TAG, "Mobile connected%s", roam ? " (roaming)" : "");
+#endif
          trackmobile = 1;
          time_t ka = 0;
          while (1)
@@ -1847,7 +1907,9 @@ at_task (void *X)
                break;
             if (!auth || *auth <= 3 + 16)
             {
+#if 0
                revk_error (TAG, "No auth to decode message");
+#endif
                len = 0;         // No auth
             }
             char *p = atbuf;
@@ -1869,7 +1931,9 @@ at_task (void *X)
          }
 
          trackmobile = 0;
+#if 0
          revk_info (TAG, "Mobile disconnected");
+#endif
       }
    }
 }
@@ -1881,9 +1945,11 @@ log_task (void *z)
    {
       int len = 0;
       uint8_t buf[MAXDATA];
+#if 0
       if (trackmqtt && (len = tracknext (buf)) > 0)
          revk_raw ("info", "udp", len, buf, 0);
       else if (len >= 0)
+#endif
          sleep (1);             // Wait for next message to send
    }
 }
@@ -1915,7 +1981,9 @@ nmea_task (void *z)
                gpio_set_level (gpsen, 1);
             }
             gps_connect (rates[rate]);
+#if 0
             revk_info (TAG, "GPS silent, trying %d", gpsbaudnow);
+#endif 
             timeout = esp_timer_get_time () + 2000000 + fixms;
          }
          continue;
@@ -1938,7 +2006,9 @@ nmea_task (void *z)
                c ^= *x;
             if (((c >> 4) > 9 ? 7 : 0) + (c >> 4) + '0' != l[-2] || ((c & 0xF) > 9 ? 7 : 0) + (c & 0xF) + '0' != l[-1])
             {
+#if 0
                revk_error (TAG, "[%.*s] (%02X)", l - p, p, c);
+#endif
                gpserrorcount++;
             } else
             {                   // Process line
@@ -1946,8 +2016,11 @@ nmea_task (void *z)
                l[-3] = 0;
                nmea ((char *) p);
             }
-         } else if (l > p)
+         } 
+#if 0
+	 else if (l > p)
             revk_error (TAG, "[%.*s]", l - p, p);
+#endif
          while (l < e && *l < ' ')
             l++;
          p = l;
@@ -2224,10 +2297,12 @@ gps_task (void *z)
          q += 2;                // fix tag to be added once we know it
          unsigned int max = (MAXDATA - 16 - (q - t)) / fixlen;  // How many fixes we can fit...
          last = rdp (last, max, &dlost, &dkept);
+#if 0
          if (fixdebug)
             revk_info (TAG, "Logging %u/%u from %u fixes at %u." MPART "/%u." MPART "/%u." MPART " covering %u seconds", last,
                        max, fixsave, fix[1].dist / MSCALE, fix[1].dist % MSCALE, dkept / MSCALE, dkept % MSCALE, dlost / MSCALE,
                        dlost % MSCALE, fixend - fixbase);
+#endif
          if (last > max)
             last = max;         // truncate
          if (last)
@@ -2378,15 +2453,17 @@ ds18b20_task (void *z)
 void
 app_main ()
 {
-   esp_err_t err;
+	   revk_boot(&app_callback);
+   esp_err_t err=0;
    cmd_mutex = xSemaphoreCreateMutex ();        // Shared command access
    vSemaphoreCreateBinary (ack_semaphore);      // GPS ACK mutex
    at_mutex = xSemaphoreCreateMutex (); // Shared command access
    track_mutex = xSemaphoreCreateMutex ();
-   revk_init (&app_command);
+      revk_register("gfx", 0, sizeof(gfxmosi), &gfxmosi, NULL, SETTING_SECRET);
+      revk_register("gps", 0, sizeof(gpsrx), &gpsrx, NULL, SETTING_SECRET);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
-#define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINARY|SETTING_HEX);
+#define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
 #define u32(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
@@ -2401,6 +2478,8 @@ app_main ()
 #undef b
 #undef h
 #undef s
+      revk_start();
+
    if (balloon)
       ascale = ALT_BALLOON;
    else if (flight)
@@ -2413,13 +2492,17 @@ app_main ()
       track = malloc (sizeof (*track) * (MAXTRACK = MAXTRACKLOW));
    if (!track)
    {
+#if 0
       revk_error ("malloc", "track failed");
+#endif
       return;
    }
    tracklen = heap_caps_malloc (sizeof (*tracklen) * MAXTRACK, MALLOC_CAP_SPIRAM) ? : malloc (sizeof (*tracklen) * MAXTRACK);
    if (!tracklen)
    {
+#if 0
       revk_error ("malloc", "tracklen failed");
+#endif
       return;
    }
    memset (tracklen, 0, sizeof (*tracklen) * MAXTRACK);
@@ -2428,7 +2511,9 @@ app_main ()
       track[n] = heap_caps_malloc (MAXDATA, MALLOC_CAP_SPIRAM) ? : malloc (MAXDATA);
       if (!track[n])
       {
+#if 0
          revk_error ("malloc", "track[%d] failed", n);
+#endif
          return;
       }
    }
@@ -2437,12 +2522,14 @@ app_main ()
       fix = malloc (sizeof (*fix) * (MAXFIX = MAXFIXLOW));
    if (!fix)
    {
+#if 0
       revk_error ("malloc", "fix failed");
+#endif
       return;
    }
      if (gfxmosi)
    {
-    const char *e = gfx_init(cs: gfxcs, sck: gfxsck, mosi: gfxmosi, dc: gfxdc, rst: gfxrst, flip:gfxflip);
+    const char *e = gfx_init(cs: gfxcs, sck: gfxsck, mosi: gfxmosi, dc: gfxdc, rst: gfxrst, flip:gfxflip,contrast:gfxcontrast);
       if (e)
       {
          jo_t j = jo_object_alloc();
@@ -2451,7 +2538,7 @@ app_main ()
          revk_error("GFX", &j);
       }
    }
-   gfx_set_contrast (gfxcontrast);
+#if 0
    for (int x = 0; x < CONFIG_GFX_WIDTH; x++)
    {
       gfx_set (x, CONFIG_GFX_HEIGHT - 12, 4);
@@ -2459,7 +2546,8 @@ app_main ()
       gfx_set (x, CONFIG_GFX_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
       gfx_set (x, 8, 4);
    }
-   if (gfxsda >= 0 && gfxscl >= 0)
+#endif
+   if (gfxmosi)
       revk_task ("Display", display_task, NULL);
    // Main task...
    if (gpspps >= 0)
@@ -2482,12 +2570,10 @@ app_main ()
          .stop_bits = UART_STOP_BITS_1,
          .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
       };
-      if ((err = uart_param_config (atuart, &uart_config)))
-         revk_error (TAG, "UART param fail %s", esp_err_to_name (err));
-      else if ((err = uart_set_pin (atuart, attx, atrx, -1, -1)))
-         revk_error (TAG, "UART pin fail %s", esp_err_to_name (err));
-      else if ((err = uart_driver_install (atuart, 1024, 0, 0, NULL, 0)))
-         revk_error (TAG, "UART install fail %s", esp_err_to_name (err));
+      if (!err)err = uart_param_config (atuart, &uart_config);
+      if (!err)err = uart_set_pin (atuart, attx, atrx, -1, -1);
+      if (!err)err = uart_driver_install (atuart, 1024, 0, 0, NULL, 0);
+       // TODO error
       if (atkey >= 0)
          gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
       if (atrst >= 0)
@@ -2529,9 +2615,11 @@ app_main ()
          ds18b20_use_crc (ds18b20_info, true);  // enable CRC check for temperature readings
          ds18b20_set_resolution (ds18b20_info, DS18B20_RESOLUTION);
       }
-      if (!num_owb)
-         revk_error ("temp", "No OWB devices");
-      else
+	      if(num_owb)
          revk_task ("DS18B20", ds18b20_task, NULL);
+#if 0
+      else
+         revk_error ("temp", "No OWB devices");
+#endif
    }
 }
