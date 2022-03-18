@@ -16,3 +16,6 @@
 [submodule "components/ESP32-GFX"]
 	path = components/ESP32-GFX
 	url = https://github.com/revk/ESP32-GFX
+[submodule "ftdizap"]
+	path = ftdizap
+	url = https://github.com/revk/ftdizap

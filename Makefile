@@ -42,6 +42,13 @@ clean:
 menuconfig:
 	idf.py menuconfig
 
+# Program the FTDI
+ftdi: ftdizap/ftdizap
+	./ftdizap/ftdizap --serial="RevK" --description="ESP32-EnvMon" --cbus3-mode=17 --self-powered=1
+
+ftdizap/ftdizap: ftdizap/ftdizap.c
+	make -C ftdizap
+
 #include $(IDF_PATH)/make/project.mk
 
 pull:
