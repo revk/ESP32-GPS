@@ -7,7 +7,7 @@ static const char TAG[] = "GPS";
 #include <driver/i2c.h>
 #include <driver/uart.h>
 #include <math.h>
-#include "oled.h"
+#include "gfx.h"
 #include "esp_sntp.h"
 #include "revkgps.h"
 #include "owb.h"
@@ -37,11 +37,11 @@ extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * da
 // version      Get GPS version
 
 #define settings	\
-	s8(oledsda,-1,		OLED SDA GPIO)	\
-	s8(oledscl,-1,		OLED SCL GPIO)	\
-	s8(oledaddress,0x3D,	OLED I2C Address)	\
-	u8(oledcontrast,127,	OLED Contrast)	\
-	b(oledflip,N,		OLED display flip)	\
+	s8(gfxsda,-1,		OLED SDA GPIO)	\
+	s8(gfxscl,-1,		OLED SCL GPIO)	\
+	s8(gfxaddress,0x3D,	OLED I2C Address)	\
+	u8(gfxcontrast,127,	OLED Contrast)	\
+	b(gfxflip,N,		OLED display flip)	\
 	bl(gpsdebug,N,		GPS debug logging)	\
 	s8(gpspps,-1,		GPS PPS GPIO)	\
 	s8(gpsuart,1,		GPS UART ID)	\
@@ -659,7 +659,7 @@ app_command (const char *tag, unsigned int len, const unsigned char *value)
    }
    if (!strcmp (tag, "contrast"))
    {
-      oled_set_contrast (atoi ((char *) value));
+      gfx_set_contrast (atoi ((char *) value));
       return "";                // OK
    }
    if (!strcmp (tag, "wifi"))
@@ -1279,7 +1279,7 @@ display_task (void *p)
             usleep (10000);
       } else
          sleep (1);
-      oled_lock ();
+      gfx_lock ();
       int y = CONFIG_OLED_HEIGHT,
          x = 0;
       time_t now = time (0) + 1;
@@ -1289,51 +1289,51 @@ display_task (void *p)
       {
          char temp[30];
          strftime (temp, sizeof (temp), "%F\004%T %Z", &t);
-         oled_text (1, 0, 0, temp);
+         gfx_text (1, 0, 0, temp);
       }
       y -= 10;
-      oled_text (1, 0, y, "Fix: %c %2d\002sat%s %c %c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');     // DGPS
+      gfx_text (1, 0, y, "Fix: %c %2d\002sat%s %c %c", revk_offline ()? ' ' : tracko == tracki ? '*' : '+', sats, sats == 1 ? " " : "s", mobile ? tracko == tracki ? '*' : '+' : ' ', fixtype == 2 ? 'D' : ((waas || sbas) && fixms >= 1000) ? '-' : ' ');     // DGPS
       // Show sats in use as dots
       for (int t = 0; t < sizeof (gxgsv) / sizeof (*gxgsv); t++)
          for (x = 0; x < 12; x++)
-            oled_set (CONFIG_OLED_WIDTH - 1 - x * 2, y + 7 - t * 2, gngsa[t] > x ? 15 : gxgsv[t] > x ? 1 : 0);
+            gfx_set (CONFIG_OLED_WIDTH - 1 - x * 2, y + 7 - t * 2, gngsa[t] > x ? 15 : gxgsv[t] > x ? 1 : 0);
       y -= 3;                   // Line
       y -= 8;
       if (fixmode > 1)
-         oled_text (1, 0, y, "Lat: %11.6f", lat);
+         gfx_text (1, 0, y, "Lat: %11.6f", lat);
       else
-         oled_text (1, 0, y, "%16s", "");
-      oled_text (1, CONFIG_OLED_WIDTH - 3 * 6, y, fixmode > 1 ? hepe ? "EPE" : "DOP" : "   ");
+         gfx_text (1, 0, y, "%16s", "");
+      gfx_text (1, CONFIG_OLED_WIDTH - 3 * 6, y, fixmode > 1 ? hepe ? "EPE" : "DOP" : "   ");
       y -= 8;
       if (fixmode > 1)
-         oled_text (1, 0, y, "Lon: %11.6f", lon);
+         gfx_text (1, 0, y, "Lon: %11.6f", lon);
       else
-         oled_text (1, 0, y, "%16s", "");
+         gfx_text (1, 0, y, "%16s", "");
       if (fixmode > 1)
       {
          if (hepe > 999.9)
-            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "---.-m", hepe);
+            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "---.-m", hepe);
          else if (hepe)
-            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", hepe);
+            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", hepe);
          else
-            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", hdop);
+            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", hdop);
       } else
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
+         gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
       y -= 8;
       if (fixmode >= 3)
-         oled_text (1, 0, y, "Alt: %6.1fm", alt);
+         gfx_text (1, 0, y, "Alt: %6.1fm", alt);
       else
-         oled_text (1, 0, y, "%16s", "");
+         gfx_text (1, 0, y, "%16s", "");
       if (fixmode >= 3)
       {
          if (vepe > 999.9)
-            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "---.-m", vepe);
+            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "---.-m", vepe);
          else if (vepe)
-            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", vepe);
+            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%5.1fm", vepe);
          else
-            oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", vdop);
+            gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "%6.2f", vdop);
       } else
-         oled_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
+         gfx_text (1, CONFIG_OLED_WIDTH - 5 * 6 - 2, y, "     \002");
       y -= 3;                   // Line
       if (gpszda && gotfix)
       {
@@ -1359,10 +1359,10 @@ display_task (void *p)
             o = rise - now;
          if (o >= 0 && rise > set)
          {
-            oled_icon (0, y, day, 22, 21);
+            gfx_icon (0, y, day, 22, 21);
          } else
          {
-            oled_icon (0, y, night, 22, 21);
+            gfx_icon (0, y, night, 22, 21);
             // Moon
 #define LUNY 2551442.8768992    // Seconds per lunar cycle
             int s = now - 1571001050;   // Seconds since reference full moon
@@ -1379,9 +1379,9 @@ display_task (void *p)
                   float v = q * sqrt (1 - (float) d / w * (float) d / w) + w;
                   int l = ceil (v);
                   if (l)
-                     oled_set (l - 1, y + Y, (1.0 - ((float) l - v)) * oled_get (l - 1, y + Y));
+                     gfx_set (l - 1, y + Y, (1.0 - ((float) l - v)) * gfx_get (l - 1, y + Y));
                   for (int X = l; X < CONFIG_OLED_WIDTH; X++)
-                     oled_set (X, Y + y, (X + Y) & 1 ? 0 : oled_get (X, Y + y) >> 3);
+                     gfx_set (X, Y + y, (X + Y) & 1 ? 0 : gfx_get (X, Y + y) >> 3);
                }
             } else
             {                   // dim on left (northern hemisphere)
@@ -1392,9 +1392,9 @@ display_task (void *p)
                   float v = q * sqrt (1 - (float) d / w * (float) d / w) + w;
                   int r = floor (v);
                   if (r < w * 2)
-                     oled_set (r, Y + y, (1.0 - (v - r)) * oled_get (r, Y + y));
+                     gfx_set (r, Y + y, (1.0 - (v - r)) * gfx_get (r, Y + y));
                   for (int X = 0; X < r; X++)
-                     oled_set (X, Y + y, (X + Y) & 1 ? 0 : oled_get (X, Y + y) >> 3);
+                     gfx_set (X, Y + y, (X + Y) & 1 ? 0 : gfx_get (X, Y + y) >> 3);
                }
             }
 #undef w
@@ -1411,20 +1411,20 @@ display_task (void *p)
                gpio_set_level (light, rise > set || o < lightmin * 60 ? 1 : 0); // Light control
             if (o / 3600 < 1000)
             {                   // H:MM:SS
-               x = oled_text (3, x, y, s, o / 3600);
-               x = oled_text (2, x, y, ":%02d", o / 60 % 60);
-               x = oled_text (1, x, y, ":%02d", o % 60);
+               x = gfx_text (3, x, y, s, o / 3600);
+               x = gfx_text (2, x, y, ":%02d", o / 60 % 60);
+               x = gfx_text (1, x, y, ":%02d", o % 60);
             } else
             {                   // D HH:MM
-               x = oled_text (3, x, y, s, o / 86400);
-               x = oled_text (2, x, y, "\002%02d", o / 3600 % 24);
-               x = oled_text (1, x, y, ":%02d", o / 60 % 60);
+               x = gfx_text (3, x, y, s, o / 86400);
+               x = gfx_text (2, x, y, "\002%02d", o / 3600 % 24);
+               x = gfx_text (1, x, y, ":%02d", o / 60 % 60);
             }
          }
          // Sun angle
          x = CONFIG_OLED_WIDTH - 4 - 3 * 6;
-         x = oled_text (1, x, y + 14, "%+3.0f", sunalt);
-         x = oled_text (0, x, y + 17, "o");
+         x = gfx_text (1, x, y + 14, "%+3.0f", sunalt);
+         x = gfx_text (0, x, y + 17, "o");
          y -= 3;                // Line
       }
       // Speed
@@ -1435,31 +1435,31 @@ display_task (void *p)
       else if (!kmh)
          s /= 1.609344;         // Miles per hour
       if (gpserrors)
-         x = oled_text (5, 0, y, "E:%02d", gpserrors);
+         x = gfx_text (5, 0, y, "E:%02d", gpserrors);
       else if (fixok + 10 < now)
-         x = oled_text (5, 0, y, "??.?");
+         x = gfx_text (5, 0, y, "??.?");
       else if (!moving)
-         x = oled_text (5, 0, y, " -.-");
+         x = gfx_text (5, 0, y, " -.-");
       else if (s >= 999)
-         x = oled_text (5, 0, y, "\002---");
+         x = gfx_text (5, 0, y, "\002---");
       else if (s >= 99.9)
-         x = oled_text (5, 0, y, "\002%3.0f", s);
+         x = gfx_text (5, 0, y, "\002%3.0f", s);
       else
-         x = oled_text (5, 0, y, "%4.1f", s);
-      oled_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", kt ? "kt" : kmh ? "km/h" : "mph");
+         x = gfx_text (5, 0, y, "%4.1f", s);
+      gfx_text (-1, CONFIG_OLED_WIDTH - 4 * 6, y + 2, "%4s", kt ? "kt" : kmh ? "km/h" : "mph");
       if (!moving)
-         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "---");
+         x = gfx_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "---");
       else
-         x = oled_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "%3.0f", course);
-      x = oled_text (0, x, y + 12 + 3, "o");
+         x = gfx_text (-1, CONFIG_OLED_WIDTH - 3 * 6 - 4, y + 12, "%3.0f", course);
+      x = gfx_text (0, x, y + 12 + 3, "o");
       if (ds18b20 >= 0)
       {
          if (tempc < -9.9 || tempc > 99.9)
-            x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "--");
+            x = gfx_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "--");
          else
-            x = oled_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2f", tempc);
+            x = gfx_text (-2, CONFIG_OLED_WIDTH - 2 * 12, y + 24, "%2f", tempc);
       }
-      oled_unlock ();
+      gfx_unlock ();
    }
 }
 
@@ -2438,17 +2438,17 @@ app_main ()
       revk_error ("malloc", "fix failed");
       return;
    }
-   if (oledsda >= 0 && oledscl >= 0)
-      oled_start (1, oledaddress, oledscl, oledsda, oledflip);
-   oled_set_contrast (oledcontrast);
+   if (gfxsda >= 0 && gfxscl >= 0)
+      gfx_start (1, gfxaddress, gfxscl, gfxsda, gfxflip);
+   gfx_set_contrast (gfxcontrast);
    for (int x = 0; x < CONFIG_OLED_WIDTH; x++)
    {
-      oled_set (x, CONFIG_OLED_HEIGHT - 12, 4);
-      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
-      oled_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
-      oled_set (x, 8, 4);
+      gfx_set (x, CONFIG_OLED_HEIGHT - 12, 4);
+      gfx_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24, 4);
+      gfx_set (x, CONFIG_OLED_HEIGHT - 12 - 3 - 24 - 3 - 22, 4);
+      gfx_set (x, 8, 4);
    }
-   if (oledsda >= 0 && oledscl >= 0)
+   if (gfxsda >= 0 && gfxscl >= 0)
       revk_task ("Display", display_task, NULL);
    // Main task...
    if (gpspps >= 0)

@@ -1,6 +1,3 @@
-# The following lines of boilerplate have to be in your project's
-# CMakeLists in this exact order for cmake to work correctly
-cmake_minimum_required(VERSION 3.5)
-
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(GPS)
+set (COMPONENT_SRCS "GPS.c")
+set (COMPONENT_REQUIRES "ESP32-RevK" "ESP32-GFX" "esp32-ds18b20" "esp32-owb")
+register_component ()
