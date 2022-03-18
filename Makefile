@@ -19,15 +19,15 @@ tools: 	gpslog gpsout
 set:    wroom pico
 
 pico:
-	components/ESP32-RevK/setbuildsuffix -S1-PICO
+	components/ESP32-RevK/setbuildsuffix -S1-PICO-SSD1351
 	@make
 
 wroom:
-	components/ESP32-RevK/setbuildsuffix -S1
+	components/ESP32-RevK/setbuildsuffix -S1-SSD1351
 	@make
 
 solo:
-	components/ESP32-RevK/setbuildsuffix -S1-SOLO
+	components/ESP32-RevK/setbuildsuffix -S1-SOLO-SSD1351
 	@make
 
 flash:
