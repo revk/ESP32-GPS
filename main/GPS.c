@@ -1513,7 +1513,7 @@ static void display_task(void *p)
    }
 }
 
-#ifdef	CONFIGH_GPS_LOGGING
+#ifdef	CONFIG_GPS_LOGGING
 void trackreset(time_t reference)
 {                               // Reset tracking
    xSemaphoreTake(track_mutex, portMAX_DELAY);
