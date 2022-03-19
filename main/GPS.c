@@ -482,6 +482,7 @@ void gps_cmd(const char *fmt, ...)
       pmtk = 0;
 }
 
+#ifdef	CONFIG_GPS_MOBILE
 #define ATBUFSIZE 2000
 char *atbuf = NULL;
 int at_cmd(const void *cmd, int t1, int t2)
@@ -554,7 +555,9 @@ int at_cmd(const void *cmd, int t1, int t2)
    xSemaphoreGive(at_mutex);
    return l;
 }
+#endif
 
+#ifdef	CONFIG_GPS_LOGGING
 void lograte(int rate)
 {
    static int lastrate = -1;
@@ -570,7 +573,9 @@ void lograte(int rate)
    }
    lastrate = rate;
 }
+#endif
 
+#ifdef	CONFIG_GPS_MOBILE
 void process_udp(uint32_t len, uint8_t * buf)
 {                               // Rx?
    if (len < HEADLEN + 16 + MACLEN || *buf != VERSION || buf[1] != auth[1] || buf[2] != auth[2] || buf[3] != auth[3])
@@ -619,8 +624,10 @@ void process_udp(uint32_t len, uint8_t * buf)
                dlen = 1 + p[1];
             if (*p == TAGT_FIX)
                fixnow = "UDP FIX command";
+#ifdef	CONFIG_GPS_LOGGING
             else if (*p == TAGT_RESEND)
                trackreset((p[1] << 24) + (p[2] << 16) + (p[3] << 8) + p[4]);
+#endif
             else if (*p == TAGT_SETTING && p[1] > 1)
             {
                uint8_t *q = p + 2,
@@ -641,6 +648,7 @@ void process_udp(uint32_t len, uint8_t * buf)
       }
    }
 }
+#endif
 
 const char *app_callback(int client, const char *prefix, const char *target, const char *suffix, jo_t j)
 {
@@ -661,11 +669,13 @@ const char *app_callback(int client, const char *prefix, const char *target, con
       trackmqtt = 1 - trackmqtt;        // Switch for testing
       return "";
    }
+#ifdef	CONFIG_GPS_MOBILE
    if (!strcmp(suffix, "udp"))
    {
       process_udp(len, (uint8_t *) value);
       return "";
    }
+#endif
    if (!strcmp(suffix, "contrast"))
    {
       gfx_set_contrast(atoi((char *) value));
@@ -704,6 +714,7 @@ const char *app_callback(int client, const char *prefix, const char *target, con
       fixstatus();
       return "";
    }
+#ifdef	CONFIG_GPS_LOGGING
    if (!strcmp(suffix, "resend"))
    {                            // Resend log data
       if (len)
@@ -715,6 +726,7 @@ const char *app_callback(int client, const char *prefix, const char *target, con
          trackreset(0);
       return "";
    }
+#endif
    if (!strcmp(suffix, "fix"))
    {                            // Force fix dump now
       fixnow = "MQTT fix command";
@@ -764,26 +776,34 @@ const char *app_callback(int client, const char *prefix, const char *target, con
       gps_cmd("%s", value);
       return "";
    }
+#ifdef	CONFIG_GPS_MOBILE
    if (!strcmp(suffix, "attx") && len)
    {                            // Send arbitrary AT command (do not include *XX or CR/LF)
       at_cmd(value, 0, 0);
       return "";
    }
+#endif
+#ifdef	CONFIG_GPS_LOGGING
    if (!strcmp(suffix, "dump"))
    {
       gps_cmd("$PMTK622,1");    // Dump log
       return "";
    }
+#endif
+#ifdef	CONFIG_GPS_LOGGING
    if (!strcmp(suffix, "locus"))
    {
       gps_cmd("$PMTK183");      // Log status
       return "";
    }
+#endif
+#ifdef	CONFIG_GPS_LOGGING
    if (!strcmp(suffix, "erase"))
    {
       gps_cmd("$PMTK184,1");    // Erase
       return "";
    }
+#endif
    if (!strcmp(suffix, "hot"))
    {
       gps_cmd("$PMTK101");      // Hot start
@@ -1230,7 +1250,9 @@ static void nmea(char *s)
             if (fixdebug)
                revk_info(TAG, "Moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
 #endif
+#ifdef	CONFIG_GPS_LOGGING
             lograte(logfast);
+#endif
             fixtimeout = time(0) + startedlog;  // Do fix quickly
          }
          moving = time(0) + movinglag;
@@ -1242,7 +1264,9 @@ static void nmea(char *s)
             revk_info(TAG, "Not moving %.1fkm/h %.2f HEPE %.2f HEPEA", speed, hepe, hepea);
 #endif
          moving = 0;            // Stopped moving
+#ifdef	CONFIG_GPS_LOGGING
          lograte(logslow);
+#endif
       }
       return;
    }
@@ -1488,6 +1512,7 @@ static void display_task(void *p)
    }
 }
 
+#ifdef	CONFIGH_GPS_LOGGING
 void trackreset(time_t reference)
 {                               // Reset tracking
    xSemaphoreTake(track_mutex, portMAX_DELAY);
@@ -1505,7 +1530,9 @@ void trackreset(time_t reference)
       revk_info(TAG, "Resend from %u", (unsigned int) reference);
 #endif
 }
+#endif
 
+#ifdef	CONFIG_GPS_LOGGING
 unsigned int encode(uint8_t * buf, unsigned int len, time_t ref)
 {
    if (!auth || *auth <= 3 + 16)
@@ -1538,7 +1565,9 @@ unsigned int encode(uint8_t * buf, unsigned int len, time_t ref)
    }
    return len;
 }
+#endif
 
+#ifdef	CONFIG_GPS_LOGGING
 int tracknext(uint8_t * buf)
 {                               // Check if tracking message to be sent, if so, pack and encrypt in to bug and return length, else 0. -1 if try again
    if (tracko >= tracki)
@@ -1580,7 +1609,9 @@ int tracknext(uint8_t * buf)
    xSemaphoreGive(track_mutex);
    return len;
 }
+#endif
 
+#ifdef	CONFIG_GPS_MOBILE
 void at_task(void *X)
 {
 #if 0
@@ -1902,7 +1933,9 @@ void at_task(void *X)
       }
    }
 }
+#endif
 
+#ifdef	CONFIG_GPS_LOGGING
 void log_task(void *z)
 {                               // Log via MQTT
    while (1)
@@ -1917,6 +1950,7 @@ void log_task(void *z)
          sleep(1);              // Wait for next message to send
    }
 }
+#endif
 
 void nmea_task(void *z)
 {
@@ -1925,6 +1959,8 @@ void nmea_task(void *z)
    uint64_t timeout = esp_timer_get_time() + 10000000;
    while (1)
    {
+	   if(gpsstarted<0)
+         gps_init();
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes(gpsuart, p, buf + sizeof(buf) - p, 10 / portTICK_PERIOD_MS);
       if (l <= 0)
@@ -1998,6 +2034,7 @@ void nmea_task(void *z)
    }
 }
 
+#ifdef	CONFIG_GPS_LOGGING
 int fixdistcmp(const void *a, const void *b)
 {
    if (((fix_t *) a)->dist < ((fix_t *) b)->dist)
@@ -2006,7 +2043,9 @@ int fixdistcmp(const void *a, const void *b)
       return -1;
    return 0;
 }
+#endif
 
+#ifdef	CONFIG_GPS_LOGGING
 int fixtimcmp(const void *a, const void *b)
 {
    if (((fix_t *) a)->tim < ((fix_t *) b)->tim)
@@ -2015,7 +2054,9 @@ int fixtimcmp(const void *a, const void *b)
       return 1;
    return 0;
 }
+#endif
 
+#ifdef	CONFIG_GPS_LOGGING
 unsigned int rdp(unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkeptp)
 {                               // Reduce, non recursive
    // Data is inclusive l to h
@@ -2155,14 +2196,15 @@ unsigned int rdp(unsigned int H, unsigned int max, unsigned int *dlostp, unsigne
       *dkeptp = kept;
    return H;
 }
+#endif
 
+#ifdef	CONFIG_GPS_LOGGING
 void gps_task(void *z)
 {
    while (1)
    {                            // main task
       sleep(1);
-      if (gpsstarted < 0)
-         gps_init();
+      if (gpsstarted <= 0)continue;
       if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
          time_t now = time(0);
@@ -2383,6 +2425,7 @@ void gps_task(void *z)
       }
    }
 }
+#endif
 
 void ds18b20_task(void *z)
 {                               // temperature
@@ -2404,7 +2447,6 @@ void ds18b20_task(void *z)
 void app_main()
 {
    revk_boot(&app_callback);
-   esp_err_t err = 0;
    cmd_mutex = xSemaphoreCreateMutex(); // Shared command access
    vSemaphoreCreateBinary(ack_semaphore);       // GPS ACK mutex
    at_mutex = xSemaphoreCreateMutex();  // Shared command access
@@ -2510,8 +2552,10 @@ void app_main()
       gpio_set_direction(gpsen, GPIO_MODE_OUTPUT);
    }
    gps_connect(gpsbaud);
+#ifdef	CONFIG_GPS_MOBILE
    if (attx >= 0 && atrx >= 0 && (atpwr >= 0 || atkey >= 0))
    {
+   esp_err_t err = 0;
       // Init UART for Mobile
       uart_config_t uart_config = {
          .baud_rate = atbaud,
@@ -2535,12 +2579,15 @@ void app_main()
          gpio_set_direction(atpwr, GPIO_MODE_OUTPUT);
       revk_task("Mobile", at_task, NULL);
    }
+#endif
    if (light >= 0)
       gpio_set_direction(light, GPIO_MODE_OUTPUT);
    if (gpsrx >= 0)
       revk_task("NMEA", nmea_task, NULL);
+#ifdef	CONFIG_GPS_LOGGING
    revk_task("Log", log_task, NULL);
    revk_task("GPS", gps_task, NULL);
+#endif
    if (ds18b20 >= 0)
    {                            // DS18B20 init
       owb = owb_rmt_initialize(&rmt_driver_info, ds18b20, RMT_CHANNEL_1, RMT_CHANNEL_0);

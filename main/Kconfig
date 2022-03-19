@@ -1,0 +1,15 @@
+menu "GPS"
+
+	config GPS_MOBILE
+	bool "Include mobile data support"
+	default y 
+	help
+		Include code to handle a SIM / mobile data module
+
+	config GPS_LOGGING
+	bool "Include data logging"
+	default y 
+	help
+		Include code to handle data logging
+
+endmenu
