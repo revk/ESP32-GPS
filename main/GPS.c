@@ -1327,6 +1327,7 @@ static void display_task(void *p)
       } else
          sleep(1);
       gfx_lock();
+      gfx_text(5,"%d",uptime());
 #if 0
       int y = CONFIG_GFX_HEIGHT,
           x = 0;
