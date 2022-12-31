@@ -441,6 +441,7 @@ void gps_connect(unsigned int baud)
       .parity = UART_PARITY_DISABLE,
       .stop_bits = UART_STOP_BITS_1,
       .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+      .source_clk = UART_SCLK_DEFAULT,
    };
    if (!err)
       err = uart_param_config(gpsuart, &uart_config);
@@ -1327,7 +1328,7 @@ static void display_task(void *p)
       } else
          sleep(1);
       gfx_lock();
-      gfx_text(5,"%d",uptime());
+      gfx_text(5, "%d", uptime());
 #if 0
       int y = CONFIG_GFX_HEIGHT,
           x = 0;
@@ -1960,7 +1961,7 @@ void nmea_task(void *z)
    uint64_t timeout = esp_timer_get_time() + 10000000;
    while (1)
    {
-	   if(gpsstarted<0)
+      if (gpsstarted < 0)
          gps_init();
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes(gpsuart, p, buf + sizeof(buf) - p, 10 / portTICK_PERIOD_MS);
@@ -2205,7 +2206,8 @@ void gps_task(void *z)
    while (1)
    {                            // main task
       sleep(1);
-      if (gpsstarted <= 0)continue;
+      if (gpsstarted <= 0)
+         continue;
       if (gpszda && fixsave >= 0)
       {                         // Time to save a fix
          time_t now = time(0);
@@ -2556,7 +2558,7 @@ void app_main()
 #ifdef	CONFIG_GPS_MOBILE
    if (attx >= 0 && atrx >= 0 && (atpwr >= 0 || atkey >= 0))
    {
-   esp_err_t err = 0;
+      esp_err_t err = 0;
       // Init UART for Mobile
       uart_config_t uart_config = {
          .baud_rate = atbaud,
