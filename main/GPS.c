@@ -1065,8 +1065,8 @@ static void nmea(char *s)
       rates[5] = (10000 / fixms ? : 1); // GSV
       rates[17] = (10000 / fixms ? : 1);        // ZDA
       int q;
-      for (q = 0; q < sizeof(rates) / sizeof(rates) && rates[q] == (1 + q < n ? atoi(f[1 + q]) : 0); q++);
-      if (q < sizeof(rates) / sizeof(rates))
+      for (q = 0; q < sizeof(rates) / sizeof(*rates) && rates[q] == (1 + q < n ? atoi(f[1 + q]) : 0); q++);
+      if (q < sizeof(rates) / sizeof(*rates))
       {                         // Set message rates
 #if 0
          if (fixdebug)
