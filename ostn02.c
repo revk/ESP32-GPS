@@ -1,7 +1,7 @@
 // OSGM02 algorithm
 // Conversion for OSGB grid reference
 
-//#define	DEBUG
+//#define       DEBUG
 
 #include <stdio.h>
 #include <math.h>

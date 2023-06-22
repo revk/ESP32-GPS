@@ -705,8 +705,8 @@ main (int argc, const char *argv[])
    int save = 0;
    int resend = 0;
    int locus = 0;               // Flash log download
+   poptContext optCon;          // context for parsing command-line options
    {                            // POPT
-      poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
 	      /* *INDENT-OFF* */
          {"sql-conffile", 'c', POPT_ARG_STRING, &sqlconffile, 0, "SQL conf file", "filename"},
@@ -743,7 +743,6 @@ main (int argc, const char *argv[])
          poptPrintUsage (optCon, stderr, 0);
          return -1;
       }
-      poptFreeContext (optCon);
    }
    if (bindport)
    {                            // UDP tracking
@@ -1290,5 +1289,6 @@ main (int argc, const char *argv[])
    mosquitto_destroy (mqtt);
    mosquitto_lib_cleanup ();
    sql_close (&sql);
+   poptFreeContext (optCon);
    return 0;
 }

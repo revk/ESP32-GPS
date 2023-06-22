@@ -46,9 +46,9 @@ main (int argc, const char *argv[])
    int json = 0;
    int quiet = 0;
    int delete = 0;
-   int minutes=60;
+   int minutes = 60;
+   poptContext optCon;          // context for parsing command-line options
    {                            // POPT
-      poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
          {"sql-conffile", 'c', POPT_ARG_STRING, &sqlconffile, 0, "SQL conf file", "filename"},
          {"sql-hostname", 'H', POPT_ARG_STRING, &sqlhostname, 0, "SQL hostname", "hostname"},
@@ -62,7 +62,7 @@ main (int argc, const char *argv[])
          {"device", 'D', POPT_ARG_STRING, &device, 0, "Device", "ID"},
          {"from", 'F', POPT_ARG_STRING, &from, 0, "From", "YYYY-MM-DD HH:MM:SS (UTC)"},
          {"to", 'T', POPT_ARG_STRING, &to, 0, "To", "YYYY-MM-DD HH:MM:SS (UTC)"},
-         {"minutes", 'm', POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &minutes, 0, "From minutes ago", "minutes"},
+         {"minutes", 'm', POPT_ARG_INT | POPT_ARGFLAG_SHOW_DEFAULT, &minutes, 0, "From minutes ago", "minutes"},
          {"json", 0, POPT_ARG_NONE, &json, 0, "JSON outout"},
          {"quiet", 0, POPT_ARG_NONE, &quiet, 0, "Quiet"},
          {"delete", 0, POPT_ARG_NONE, &delete, 0, "Delete pruned from database"},
@@ -81,10 +81,9 @@ main (int argc, const char *argv[])
          poptPrintUsage (optCon, stderr, 0);
          return -1;
       }
-      poptFreeContext (optCon);
    }
 
-   time_t tfrom = time (0) - minutes*60;      // default
+   time_t tfrom = time (0) - minutes * 60;      // default
    if (from)
       tfrom = sql_time_utc (from);
    time_t tto = time (0);       // default
@@ -158,7 +157,7 @@ main (int argc, const char *argv[])
       {
          point_t *p = &points[n];
          double d = 0;
-         if (LSQ < (MINL * MINL)) // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
+         if (LSQ < (MINL * MINL))       // A bit small to consider a line reliable so reference the centre point, also allows for B=0 which would break
             d = distsq (x (p), y (p), z (p), t (p));    // (centre is 0,0,0,0)
          else
          {
@@ -211,5 +210,6 @@ main (int argc, const char *argv[])
       printf ("]\n");
    free (points);
    sql_close (&sql);
+   poptFreeContext (optCon);
    return 0;
 }
