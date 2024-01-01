@@ -58,6 +58,7 @@
       ],
       "drc_exclusions": [],
       "meta": {
+        "filename": "board_design_settings.json",
         "version": 2
       },
       "rule_severities": {
@@ -110,6 +111,8 @@
         "via_dangling": "warning",
         "zones_intersect": "error"
       },
+      "rule_severitieslegacy_courtyards_overlap": true,
+      "rule_severitieslegacy_no_courtyard_defined": false,
       "rules": {
         "allow_blind_buried_vias": false,
         "allow_microvias": false,
@@ -129,8 +132,6 @@
         "min_track_width": 0.125,
         "min_via_annular_width": 0.049999999999999996,
         "min_via_diameter": 0.39999999999999997,
-        "solder_mask_clearance": 0.0,
-        "solder_mask_min_width": 0.0,
         "solder_mask_to_copper_clearance": 0.0,
         "use_height_for_length_calcs": true
       },
@@ -398,7 +399,7 @@
       "no_connect_dangling": "warning",
       "pin_not_connected": "error",
       "pin_not_driven": "error",
-      "pin_to_pin": "warning",
+      "pin_to_pin": "error",
       "power_pin_not_driven": "error",
       "similar_labels": "warning",
       "simulation_model_issue": "ignore",
@@ -413,7 +414,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "L86.kicad_pro",
+    "filename": "GPS.kicad_pro",
     "version": 1
   },
   "net_settings": {
@@ -502,9 +503,9 @@
       "intersheets_ref_show": false,
       "intersheets_ref_suffix": "",
       "junction_size_choice": 3,
-      "label_size_ratio": 0.375,
+      "label_size_ratio": 0.25,
       "pin_symbol_size": 25.0,
-      "text_offset_ratio": 0.15
+      "text_offset_ratio": 0.08
     },
     "legacy_lib_dir": "",
     "legacy_lib_list": [],
@@ -534,11 +535,11 @@
   },
   "sheets": [
     [
-      "89d700f9-a5e9-43b5-affc-41786df8fa32",
+      "babeabf2-f3b0-4ed5-8d9e-0215947e6cf3",
       ""
     ]
   ],
   "text_variables": {
-    "DATE": "2022-03-06"
+    "DATE": "2023-03-25"
   }
 }
