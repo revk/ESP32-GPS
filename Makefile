@@ -16,7 +16,15 @@ all:
 
 tools: 	gpslog gpsout
 
-set:    wroom pico
+set:    wroom pico s3 s3-blind
+
+s3:
+	components/ESP32-RevK/setbuildsuffix -S1-S3-SSD1351
+	@make
+
+s3-blind:
+	components/ESP32-RevK/setbuildsuffix -S1-S3-GFXNONE
+	@make
 
 pico:
 	components/ESP32-RevK/setbuildsuffix -S1-PICO-SSD1351
