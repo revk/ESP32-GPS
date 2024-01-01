@@ -1,9 +1,0 @@
-### Module positions - created on 2022-03-20 17:02
-### Printed by pcb_positions plugin
-## Unit = mm, Angle = deg.
-## Pcb Height 67.100mm, Pcb Width 44.600mm [based on Edge bounding box]
-## Side : bottom
-## Board Aux Origin: 0.000mm ,0.000mm
-# Ref         Val                 Package                       PosX       PosY       Pin1_PosX  Pin1_PosY    Rot     Side      Type
-BT1           Battery_Cell        Battery-Holder-2032           100.0000   -95.7500   111.4500   -95.7500    180.0    bottom    SMD
-## End

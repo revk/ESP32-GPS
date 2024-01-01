@@ -12,3 +12,4 @@ gpslog
 gpsout
 KiCad/*-backups
 KiCad/fp-info-cache
+components/*
