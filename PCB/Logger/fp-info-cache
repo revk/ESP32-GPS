@@ -1,4 +1,4 @@
-22532992510648189
+22536410531528306
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -15377,7 +15377,7 @@ JST PH series connector, S2B-PH-SM4-TB (http://www.jst-mfg.com/product/pdf/eng/e
 connector JST PH top entry
 0
 4
-3
+2
 Connector_JST
 JST_PH_S3B-PH-K_1x03_P2.00mm_Horizontal
 JST PH series connector, S3B-PH-K (http://www.jst-mfg.com/product/pdf/eng/ePH.pdf), generated with kicad-footprint-generator
@@ -84406,6 +84406,13 @@ connector JST EH horizontal
 5
 5
 RevK
+JST_PH_S2B-PH-SM4-TB_1x02-1MP_P2.00mm_Horizontal
+JST PH series connector, S2B-PH-SM4-TB (http://www.jst-mfg.com/product/pdf/eng/ePH.pdf), generated with kicad-footprint-generator
+connector JST PH top entry
+0
+4
+2
+RevK
 L86-M33
 
 
@@ -85385,6 +85392,13 @@ Through hole angled pin header THT 1x01 2.54mm single row
 0
 1
 1
+RevK
+TF_PUSH
+
+
+0
+15
+10
 RevK
 TS-1092S-B3D2-G
 
