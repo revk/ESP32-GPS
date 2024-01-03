@@ -13,3 +13,6 @@
 [submodule "ftdizap"]
 	path = ftdizap
 	url = https://github.com/revk/ftdizap
+[submodule "PCB/PCBCase"]
+	path = PCB/PCBCase
+	url = https://github.com/revk/PCBCase
