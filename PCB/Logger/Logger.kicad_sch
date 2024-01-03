@@ -4953,6 +4953,9 @@
     (property "LCSC Part #" "C106188" (at 257.175 61.595 0)
       (effects (font (size 1.27 1.27)) hide)
     )
+    (property "JLCPCB Rotation Offset" "180" (at 257.175 61.595 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
     (pin "1" (uuid c7328fcb-e97b-474c-8bf2-9bc71a6fd9e2))
     (pin "2" (uuid 7d603303-c38f-4962-902b-a2d31ec78b36))
     (instances
