@@ -148,14 +148,17 @@ settings
 #undef b
 #undef h
 #undef s
-     float speed = 0;
-     float bearing = 0;
-     float lat = 0;
-     float lon = 0;
-     float alt = 0;
+     double speed = 0;
+     double bearing = 0;
+     double lat = 0;
+     double lon = 0;
+     double alt = 0;
      int64_t ecefx = 0;
      int64_t ecefy = 0;
      int64_t ecefz = 0;
+     int64_t ecefvx = 0;
+     int64_t ecefvy = 0;
+     int64_t ecefvz = 0;
      float gsep = 0;
      float pdop = 0;
      float hdop = 0;
@@ -1025,32 +1028,25 @@ nmea (char *s)
       if (strlen (f[2]) > 6 && strlen (f[3]) > 6 && strlen (f[4]) > 6)
       {
          fixok = time (0);
-         char *s,
-          *p;
-         if (*(s = p = f[2]) == '-')
-            p++;
-         ecefx = strtoll (p, &p, 0) * 1000000LL;
-         if (*p++ == '.')
-            ecefx += strtoll (p, NULL, 0);
-         if (*s == '-')
-            ecefx *= -1;
-         if (*(s = p = f[3]) == '-')
-            p++;
-         ecefy = strtoll (p, &p, 0) * 1000000LL;
-         if (*p++ == '.')
-            ecefy += strtoll (p, NULL, 0);
-         if (*s == '-')
-            ecefy *= -1;
-         if (*(s = p = f[4]) == '-')
-            p++;
-         ecefz = strtoll (p, &p, 0) * 1000000LL;
-         if (*p++ == '.')
-            ecefz += strtoll (p, NULL, 0);
-         if (*s == '-')
-            ecefz *= -1;
-         if (ecef && (ecefx || ecefy || ecefz))
-            gotfix = 1;
-         //revk_info (TAG, "%lld %lld %lld %s %s %s", ecefx, ecefy, ecefz, f[2], f[3], f[4]);
+         int64_t get (char *p)
+         {
+            int64_t v;
+            char *s = p;
+            if (*p == '-')
+               p++;
+            v = strtoll (p, &p, 0) * 1000000LL;
+            if (*p++ == '.')
+               v += strtoll (p, NULL, 0);
+            if (*s == '-')
+               v *= -1;
+            return v;
+         }
+         ecefx = get (f[2]);
+         ecefy = get (f[3]);
+         ecefz = get (f[4]);
+         ecefvx = get (f[5]);
+         ecefvy = get (f[6]);
+         ecefvz = get (f[7]);
       }
       return;
    }
@@ -1145,15 +1141,15 @@ nmea (char *s)
                fixstatus ();
          }
          if (!altforce)
-            alt = strtof (f[9], NULL);
+            alt = strtod (f[9], NULL);
          gsep = strtof (f[10], NULL);
          if (strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
          {
             if (!latforce)
-               lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtof (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
+               lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtod (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
             if (!lonforce)
                lon =
-                  ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtof (f[4] + 3, NULL) / 60) * (f[5][0] ==
+                  ((f[4][0] - '0') * 100 + (f[4][1] - '0') * 10 + f[4][2] - '0' + strtod (f[4] + 3, NULL) / 60) * (f[5][0] ==
                                                                                                                    'E' ? 1 : -1);
             if (!hdopforce)
                hdop = strtof (f[8], NULL);
@@ -2006,14 +2002,26 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-#if 0
-      int len = 0;
-      uint8_t buf[MAXDATA];
-      if (trackmqtt && (len = tracknext (buf)) > 0)
-         revk_raw ("info", "udp", len, buf, 0);
-      else if (len >= 0)
-#endif
-         sleep (1);             // Wait for next message to send
+      // TODO sync that we have the data as a whole?
+      jo_t j = jo_object_alloc ();
+      jo_int (j, "sats", sats);
+      if (lon || lat || alt)
+      {
+         jo_litf (j, "lat", "%lf", lat);
+         jo_litf (j, "lon", "%lf", lon);
+         jo_litf (j, "alt", "%lf", alt);
+      }
+      if (ecefx || ecefy || ecefz)
+      {
+         jo_int (j, "x", ecefx);
+         jo_int (j, "y", ecefy);
+         jo_int (j, "z", ecefz);
+         jo_int (j, "vx", ecefvx);
+         jo_int (j, "vy", ecefvy);
+         jo_int (j, "vz", ecefvz);
+      }
+      revk_info ("GPS", &j);
+      sleep (1);                // Wait for next message to send
    }
 }
 #endif
@@ -2291,7 +2299,8 @@ rgb_task (void *z)
             revk_led (strip, l++, 255, revk_rgb ('Y'));
          for (int n = 0; n < gxgsv[2] && l < leds; n++)
             revk_led (strip, l++, 255, revk_rgb ('b'));
-	 if(!l) revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
+         if (!l)
+            revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
       }
       while (l < leds)
          revk_led (strip, l++, 255, revk_rgb ('K'));
