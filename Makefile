@@ -10,9 +10,17 @@ MODELS := Display Glider L86
 all:
 	@echo Make: build/$(PROJECT_NAME)$(SUFFIX).bin
 	@idf.py build
-	@cp build/$(PROJECT_NAME).bin build/$(PROJECT_NAME)$(SUFFIX).bin
+	@cp build/$(PROJECT_NAME).bin $(PROJECT_NAME)$(SUFFIX).bin
 	@echo Done: build/$(PROJECT_NAME)$(SUFFIX).bin
 
+issue:
+	-git pull
+	-git submodule update --recursive
+	-git commit -a -m checkpoint
+	@make set
+	cp $(PROJECT_NAME)*.bin release
+	git commit -a -m release
+	git push
 
 tools: 	gpslog gpsout
 
@@ -49,13 +57,6 @@ clean:
 
 menuconfig:
 	idf.py menuconfig
-
-# Program the FTDI
-ftdi: ftdizap/ftdizap
-	./ftdizap/ftdizap --serial="RevK" --description="ESP32-EnvMon" --cbus3-mode=17 --self-powered=1
-
-ftdizap/ftdizap: ftdizap/ftdizap.c
-	make -C ftdizap
 
 #include $(IDF_PATH)/make/project.mk
 
