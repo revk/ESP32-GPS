@@ -2286,11 +2286,12 @@ rgb_task (void *z)
       if (fixmode >= blink)
       {
          for (int n = 0; n < gxgsv[0] && l < leds; n++)
-            revk_led (strip, l++, 255, revk_rgb ('G'));
+            revk_led (strip, l++, 255, revk_rgb ('g'));
          for (int n = 0; n < gxgsv[1] && l < leds; n++)
             revk_led (strip, l++, 255, revk_rgb ('Y'));
          for (int n = 0; n < gxgsv[2] && l < leds; n++)
-            revk_led (strip, l++, 255, revk_rgb ('B'));
+            revk_led (strip, l++, 255, revk_rgb ('b'));
+	 if(!l) revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
       }
       while (l < leds)
          revk_led (strip, l++, 255, revk_rgb ('K'));
