@@ -12,4 +12,10 @@ menu "GPS"
 	help
 		Include code to handle data logging
 
+	config GPS_MICROSD
+	bool "Include microSD"
+	default y 
+	help
+		Include microSD
+
 endmenu

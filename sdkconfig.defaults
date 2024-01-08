@@ -1,6 +1,6 @@
 #
 # Automatically generated file. DO NOT EDIT.
-# Espressif IoT Development Framework (ESP-IDF) 5.1.1 Project Configuration
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
 #
 CONFIG_SOC_MPU_MIN_REGION_SIZE=0x20000000
 CONFIG_SOC_MPU_REGIONS_MAX_NUM=8
@@ -1763,6 +1763,7 @@ CONFIG_WIFI_PROV_STA_ALL_CHANNEL_SCAN=y
 #
 # CONFIG_GPS_MOBILE is not set
 CONFIG_GPS_LOGGING=y
+CONFIG_GPS_MICROSD=y
 # end of GPS
 
 #
@@ -1804,7 +1805,7 @@ CONFIG_GFX_FLIP=0
 #
 CONFIG_REVK_APPNAME=""
 # CONFIG_REVK_PREFIXAPP is not set
-CONFIG_REVK_BLINK_LIB=y
+# CONFIG_REVK_BLINK_LIB is not set
 CONFIG_REVK_BLINK_DEFINE=y
 CONFIG_REVK_BLINK=""
 CONFIG_REVK_LED_STRIP=y

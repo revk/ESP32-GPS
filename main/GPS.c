@@ -44,18 +44,6 @@ static __attribute__((unused))
      	u8(leds,15,		RGB LEDs)	\
      	io(accsda,13,		Accellerometer SDA) \
      	io(accscl,13,		Accellerometer SCL) \
-	io(sdss,8,		MicroSD SS)    \
-        io(sdmosi,9,		MicroSD MOSI)     \
-        io(sdsck,10,		MicroSD SCK)      \
-        io(sdcd,11,		MicroSD CD)      \
-        io(sdmiso,12,		MicroSD MISO)     \
-	io(gfxmosi,,		Display MOSI)    \
-        io(gfxsck,,		Display SCK)     \
-        io(gfxcs,,		Display CS)      \
-        io(gfxdc,,		Display DC)      \
-        io(gfxrst,,		Display RST)     \
-        io(gfxflip,,		Display flip)    \
-        io(gfxcontrast,,	Display contrast)     \
 	b(gpsdebug,N,		GPS debug logging)	\
 	io(gpspps,,		GPS PPS GPIO)	\
 	u8(gpsuart,1,		GPS UART ID)	\
@@ -116,6 +104,22 @@ static __attribute__((unused))
 	s(loghost,"mqtt.revk.uk", UDP log host)\
 	u32(logport,6666,	UDP log port)\
 
+#define	settings_gfx	\
+	io(gfxmosi,,		Display MOSI)    \
+        io(gfxsck,,		Display SCK)     \
+        io(gfxcs,,		Display CS)      \
+        io(gfxdc,,		Display DC)      \
+        io(gfxrst,,		Display RST)     \
+        io(gfxflip,,		Display flip)    \
+        io(gfxcontrast,,	Display contrast)     \
+
+#define	settings_sd	\
+	io(sdss,8,		MicroSD SS)    \
+        io(sdmosi,9,		MicroSD MOSI)     \
+        io(sdsck,10,		MicroSD SCK)      \
+        io(sdcd,11,		MicroSD CD)      \
+        io(sdmiso,12,		MicroSD MISO)     \
+
 #define u32(n,d,t)	uint32_t n;
 #define u16(n,d,t)	uint16_t n;
 #define s8(n,d,t)	int8_t n;
@@ -128,6 +132,12 @@ static __attribute__((unused))
 settings
 #ifdef	CONFIG_GPS_MOBILE
    settings_mobile
+#endif
+#ifndef  CONFIG_GFX_BUILD_SUFFIX_GFXNONE
+   setting_gfx
+#endif
+#ifdef	CONFIG_GPS_MICROSD
+   settings_sd
 #endif
 #undef io
 #undef u16
@@ -155,7 +165,7 @@ settings
      float course = 0;
      float hepea = 0;           // Slower average
      uint8_t sats = 0;
-     uint8_t gxgsv[3] = { };
+     uint8_t gxgsv[3] = { };    // Sat count
 uint8_t gngsa[3] = { };
 
 uint8_t fixtype = 0;
@@ -1366,6 +1376,7 @@ nmea (char *s)
 #endif
 }
 
+#ifndef  CONFIG_GFX_BUILD_SUFFIX_GFXNONE
 static void
 display_task (void *p)
 {
@@ -1560,6 +1571,7 @@ display_task (void *p)
       gfx_unlock ();
    }
 }
+#endif
 
 #ifdef	CONFIG_GPS_LOGGING
 void
@@ -2261,6 +2273,31 @@ rdp (unsigned int H, unsigned int max, unsigned int *dlostp, unsigned int *dkept
 }
 #endif
 
+void
+rgb_task (void *z)
+{
+   uint8_t blink = 0;
+   while (1)
+   {
+      if (++blink > 3)
+         blink = 0;
+      usleep (200000);
+      int l = 0;
+      if (fixmode >= blink)
+      {
+         for (int n = 0; n < gxgsv[0] && l < leds; n++)
+            revk_led (strip, l++, 255, revk_rgb ('G'));
+         for (int n = 0; n < gxgsv[1] && l < leds; n++)
+            revk_led (strip, l++, 255, revk_rgb ('Y'));
+         for (int n = 0; n < gxgsv[2] && l < leds; n++)
+            revk_led (strip, l++, 255, revk_rgb ('B'));
+      }
+      while (l < leds)
+         revk_led (strip, l++, 255, revk_rgb ('K'));
+      led_strip_refresh (strip);
+   }
+}
+
 #ifdef	CONFIG_GPS_LOGGING
 void
 gps_task (void *z)
@@ -2493,9 +2530,14 @@ app_main ()
    vSemaphoreCreateBinary (ack_semaphore);      // GPS ACK mutex
    at_mutex = xSemaphoreCreateMutex (); // Shared command access
    track_mutex = xSemaphoreCreateMutex ();
-   revk_register ("gfx", 0, sizeof (gfxmosi), &gfxmosi, NULL, SETTING_SECRET);
-   revk_register ("gps", 0, sizeof (gpsrx), &gpsrx, NULL, SETTING_SECRET);
 #define str(x) #x
+#ifndef  CONFIG_GFX_BUILD_SUFFIX_GFXNONE
+   revk_register ("gfx", 0, sizeof (gfxmosi), &gfxmosi, NULL, SETTING_SECRET);
+#endif
+   revk_register ("gps", 0, sizeof (gpsrx), &gpsrx, NULL, SETTING_SECRET);
+#ifdef	CONFIG_GPS_MICROSD
+   revk_register ("sd", 0, sizeof (sdmosi), &sdmosi, "- " str (d), SETTING_SET | SETTING_BITFIELD | SETTING_FIX);
+#endif
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
@@ -2508,6 +2550,12 @@ app_main ()
    settings;
 #ifdef	CONFIG_GPS_MOBILE
    settings_mobile
+#endif
+#ifndef  CONFIG_GFX_BUILD_SUFFIX_GFXNONE
+      setting_gfx
+#endif
+#ifdef	CONFIG_GPS_MICROSD
+      settings_sd
 #endif
 #undef ui
 #undef u16
@@ -2535,6 +2583,8 @@ app_main ()
          .flags.with_dma = true,
       };
       REVK_ERR_CHECK (led_strip_new_rmt_device (&strip_config, &rmt_config, &strip));
+      if (strip)
+         revk_task ("RGB", rgb_task, NULL, 4);
    }
    if (charger)
    {
@@ -2594,6 +2644,7 @@ app_main ()
 #endif
       return;
    }
+#ifndef  CONFIG_GFX_BUILD_SUFFIX_GFXNONE
    if (gfxmosi)
    {
     const char *e = gfx_init (cs: gfxcs, sck: gfxsck, mosi: gfxmosi, dc: gfxdc, rst: gfxrst, flip: gfxflip, contrast:gfxcontrast);
@@ -2616,6 +2667,7 @@ app_main ()
 #endif
    if (gfxmosi)
       revk_task ("Display", display_task, NULL, 4);
+#endif
    // Main task...
    if (gpspps)
       gpio_set_direction (gpspps & IO_MASK, GPIO_MODE_INPUT);
