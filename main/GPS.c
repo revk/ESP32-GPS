@@ -11,6 +11,7 @@ static __attribute__((unused))
 #include "gfx.h"
 #include "esp_sntp.h"
 #include "revkgps.h"
+
      extern void hmac_sha256 (const uint8_t * key, size_t key_len, const uint8_t * data, size_t data_len, uint8_t * mac);
 
 // Commands:-
