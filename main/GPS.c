@@ -34,22 +34,36 @@ static __attribute__((unused))
 // reset        Do full reset cold start of GPS
 // sleep        Put GPS to sleep
 // version      Get GPS version
-
+//
+#define IO_MASK         0x3F
+#define IO_INV          0x40
 #define settings	\
-	u8(gfxmosi,,		Display MOSI)    \
-        u8(gfxsck,,		Display SCK)     \
-        u8(gfxcs,,		Display CS)      \
-        u8(gfxdc,,		Display DC)      \
-        u8(gfxrst,,		Display RST)     \
-        u8(gfxflip,,		Display flip)    \
-        u8(gfxcontrast,,	Display contrast)     \
-	bl(gpsdebug,N,		GPS debug logging)	\
-	s8(gpspps,-1,		GPS PPS GPIO)	\
-	s8(gpsuart,1,		GPS UART ID)	\
-	s8(gpsrx,-1,		GPS Rx GPIO)	\
-	s8(gpstx,-1,		GPS Tx GPIO)	\
-	s8(gpsfix,-1,		GPS Fix GPIO)	\
-	s8(gpsen,-1,		GPS EN GPIO)	\
+     	io(pwr,-15,		System PWR)	\
+     	io(charger,-33,		Charger status)	\
+     	io(rgb,34,		RGB LED Strip)	\
+     u8(leds,15,	RGB LEDs)	\
+     io(accsda,13,	Accellerometer SDA) \
+     io(accscl,13,	Accellerometer SCL) \
+	io(sdss,8,		MicroSD SS)    \
+        io(sdmosi,9,		MicroSD MOSI)     \
+        io(sdsck,10,		MicroSD SCK)      \
+        io(sdcd,11,		MicroSD CD)      \
+        io(sdmiso,12,		MicroSD MISO)     \
+	io(gfxmosi,,		Display MOSI)    \
+        io(gfxsck,,		Display SCK)     \
+        io(gfxcs,,		Display CS)      \
+        io(gfxdc,,		Display DC)      \
+        io(gfxrst,,		Display RST)     \
+        io(gfxflip,,		Display flip)    \
+        io(gfxcontrast,,	Display contrast)     \
+	io(gpsdebug,N,		GPS debug logging)	\
+	io(gpspps,,		GPS PPS GPIO)	\
+	u8(gpsuart,1,		GPS UART ID)	\
+	io(gpsrx,7,		GPS Rx GPIO)	\
+	io(gpstx,5,		GPS Tx GPIO)	\
+	io(gpsfix,,		GPS Fix GPIO)	\
+	io(gpstick,3,		GPS Tick GPIO)	\
+	io(gpsen,,		GPS EN GPIO)	\
         u32(gpsbaud,115200,	GPS Baud)	\
 	u32(fixms,1000,		GPS fix rate (ms)) \
 	bl(fixdump,N,		GPS Fix log)	\
@@ -66,17 +80,6 @@ static __attribute__((unused))
 	b(flight,N,		GPS Flight mode)	\
 	b(balloon,N,		GPS Balloon mode)	\
 	s8(ds18b20,-1,		DS18B20 GPIO)	\
-	u16(mtu,1488,		UDP MTU)	\
-      	bl(atdebug,N,		Modem debug log)    \
-        s8(atuart,2,		Modem UART ID)	\
-        u32(atbaud,115200,	Modem Baud)	\
-        s8(attx,-1,		Modem Tx GPIO)	\
-        s8(atrx,-1,		Modem Rx GPIO)	\
-        s8(atkey,-1,		Modem power key GPIO)	\
-        s8(atrst,-1,		Modem reset GPIO)	\
-        s8(atpwr,-1,		Modem power GPIO)	\
-	s(operator,"",		Modem operator)\
-	s(apn,"mobiledata",	Modem APN)\
 	u32(periodstopped,3600,	Report interval when stopped)\
 	u32(stoppedlog,60,	Fix interval when stopped)\
 	u32(startedlog,60,	Report delay when start moving)\
@@ -96,12 +99,24 @@ static __attribute__((unused))
 	b(datamargin,Y,		Report margin sent) \
 	b(datatemp,Y,		Report temp sent)	\
 	u8(lightmin,30,		Lighting up time (minutes))	\
-	s8(light,-1,		Light control GPIO)	\
+	io(light,,		Light control GPIO)	\
 	u8(movingepe,15,	Multiple HEPE for moving /10)\
 	u32(movinglag,10,	Stop moving after this time (seconds))\
 	b(ecef,Y,		Report ECEF)	\
 	u32(rdpmin,10,		Min disttance for RDP (mm))  \
 
+#define	settings_mobile	\
+	u16(mtu,1488,		UDP MTU)	\
+      	bl(atdebug,N,		Modem debug log)    \
+        io(atuart,2,		Modem UART ID)	\
+        u32(atbaud,115200,	Modem Baud)	\
+        io(attx,,		Modem Tx GPIO)	\
+        io(atrx,,		Modem Rx GPIO)	\
+        io(atkey,,		Modem power key GPIO)	\
+        io(atrst,,		Modem reset GPIO)	\
+        io(atpwr,,		Modem power GPIO)	\
+	s(operator,"",		Modem operator)\
+	s(apn,"mobiledata",	Modem APN)\
 
 #define u32(n,d,t)	uint32_t n;
 #define u16(n,d,t)	uint16_t n;
@@ -111,7 +126,12 @@ static __attribute__((unused))
 #define bl(n,d,t) uint8_t n;
 #define h(n,t) uint8_t *n;
 #define s(n,d,t) char * n;
+     #define io(n,d,t)         uint8_t n;
 settings
+#ifdef	CONFIG_GPS_MOBILE
+settings_mobile
+#endif
+#undef io
 #undef u16
 #undef u32
 #undef s8
@@ -172,7 +192,11 @@ time_t gpszda = 0;              // Last ZDA
 unsigned int MAXFIX = 6000;     // Large memory max fix
 #define MAXFIXLOW	 650    // Small memory max fix
 #define	FIXALLOW	 100    // Allow time to process fixes
+#ifdef	CONFIG_GPS_MOBILE
 #define MAXDATA (mtu-28)        // SIM800 says 1472 allowed but only 1460 works FFS
+#else
+#define MAXDATA 1500
+#endif
 unsigned int MAXTRACK = 1024;   // Large memory history
 #define	MAXTRACKLOW	40      // Small memory history
 
@@ -456,7 +480,7 @@ gps_connect (unsigned int baud)
    if (!err)
       err = uart_param_config (gpsuart, &uart_config);
    if (!err)
-      err = uart_set_pin (gpsuart, gpstx, gpsrx, -1, -1);
+      err = uart_set_pin (gpsuart, gpstx&IO_MASK, gpsrx&IO_MASK, -1, -1);
    if (!err)
       err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0);
    // TODO report error
@@ -500,7 +524,7 @@ char *atbuf = NULL;
 int
 at_cmd (const void *cmd, int t1, int t2)
 {
-   if (attx < 0 || atrx < 0)
+   if (!attx || !atrx )
       return 0;
    xSemaphoreTake (at_mutex, portMAX_DELAY);
    if (cmd)
@@ -717,8 +741,10 @@ app_callback (int client, const char *prefix, const char *target, const char *su
       xSemaphoreGive (track_mutex);
       if (logslow || logfast)
          gps_cmd ("$PMTK183");  // Log status
-      if (tracki && (attx < 0 || atrx < 0))
+#ifdef	CONFIG_GPS_MOBILE
+      if (tracki && (!attx || !atrx ))
          fixnow = "WiFi/MQTT connect";
+#endif
 #if 0
       if (!auth || *auth <= 3 + 16)
          revk_error ("auth", "Authentication not set");
@@ -1347,12 +1373,12 @@ display_task (void *p)
    p = p;
    while (1)
    {
-      if (gpspps >= 0)
+      if (gpspps)
       {
          int try = 20;
-         if (gpio_get_level (gpspps))
+         if (gpio_get_level (gpspps&IO_MASK))
             usleep (800000);    // In pulse
-         while (!gpio_get_level (gpspps) && try-- > 0)
+         while (!gpio_get_level (gpspps&IO_MASK) && try-- > 0)
             usleep (10000);
       } else
          sleep (1);
@@ -1658,24 +1684,24 @@ at_task (void *X)
    while (1)
    {
       // Power cycle
-      if (atpwr >= 0)
+      if (atpwr)
       {
-         gpio_set_level (atpwr, 1);
+         gpio_set_level (atpwr&IO_MASK, 1);
          sleep (1);
       }
-      if (atkey >= 0)
+      if (atkey)
       {
-         gpio_set_level (atkey, 0);
+         gpio_set_level (atkey&IO_MASK, 0);
          sleep (1);
       }
-      if (atrst >= 0)
-         gpio_set_level (atrst, 0);
-      if (atkey >= 0)
-         gpio_set_level (atkey, 1);
-      if (atrst >= 0)
+      if (atrst )
+         gpio_set_level (atrst*IO_MASK, 0);
+      if (atkey )
+         gpio_set_level (atkey*IO_MASK, 1);
+      if (atrst )
       {
          sleep (1);
-         gpio_set_level (atrst, 1);
+         gpio_set_level (atrst*IO_MASK, 1);
       }
       int try = 60;
       at_cmd (NULL, 0, 0);
@@ -1976,9 +2002,9 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
+#if 0
       int len = 0;
       uint8_t buf[MAXDATA];
-#if 0
       if (trackmqtt && (len = tracknext (buf)) > 0)
          revk_raw ("info", "udp", len, buf, 0);
       else if (len >= 0)
@@ -2010,11 +2036,11 @@ nmea_task (void *z)
             rate++;
             if (rate == sizeof (rates) / sizeof (*rates))
                rate = 0;
-            if (!rate && gpsen >= 0)
+            if (!rate && gpsen)
             {                   // Reset GPS
-               gpio_set_level (gpsen, 0);
+               gpio_set_level (gpsen&IO_MASK, 0);
                sleep (1);
-               gpio_set_level (gpsen, 1);
+               gpio_set_level (gpsen&IO_MASK, 1);
             }
             gps_connect (rates[rate]);
 #if 0
@@ -2486,6 +2512,7 @@ app_main ()
    track_mutex = xSemaphoreCreateMutex ();
    revk_register ("gfx", 0, sizeof (gfxmosi), &gfxmosi, NULL, SETTING_SECRET);
    revk_register ("gps", 0, sizeof (gpsrx), &gpsrx, NULL, SETTING_SECRET);
+   #define str(x) #x
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
@@ -2494,7 +2521,12 @@ app_main ()
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s(n,d,t) revk_register(#n,0,0,&n,d,0);
+#define io(n,d,t)         revk_register(#n,0,sizeof(n),&n,"- "str(d),SETTING_SET|SETTING_BITFIELD|SETTING_FIX);
    settings;
+#ifdef	CONFIG_GPS_MOBILE
+settings_mobile
+#endif
+#undef ui
 #undef u16
 #undef u32
 #undef s8
@@ -2503,14 +2535,25 @@ app_main ()
 #undef b
 #undef h
 #undef s
+#undef str
    revk_start ();
-
+if(charger)
+{
+      gpio_set_direction (charger&IO_MASK, GPIO_MODE_INPUT);
+}
+if(pwr)
+{ // System power
+      gpio_set_level (pwr&IO_MASK, (pwr&IO_INV)?0:1);
+      gpio_set_direction (pwr&IO_MASK, GPIO_MODE_OUTPUT);
+}
    if (balloon)
       ascale = ALT_BALLOON;
    else if (flight)
       ascale = ALT_FLIGHT;
+#ifdef  CONFIG_GPS_MOBILE
    if (mtu > 1488)
       mtu = 1488;
+#endif
    // Memory
    track = heap_caps_malloc (sizeof (*track) * MAXTRACK, MALLOC_CAP_SPIRAM);
    if (!track)
@@ -2575,18 +2618,20 @@ app_main ()
    if (gfxmosi)
       revk_task ("Display", display_task, NULL, 4);
    // Main task...
-   if (gpspps >= 0)
-      gpio_set_direction (gpspps, GPIO_MODE_INPUT);
-   if (gpsfix >= 0)
-      gpio_set_direction (gpsfix, GPIO_MODE_INPUT);
-   if (gpsen >= 0)
+   if (gpspps)
+      gpio_set_direction (gpspps&IO_MASK, GPIO_MODE_INPUT);
+   if (gpsfix )
+      gpio_set_direction (gpsfix&IO_MASK, GPIO_MODE_INPUT);
+   if (gpstick )
+      gpio_set_direction (gpstick&IO_MASK, GPIO_MODE_INPUT);
+   if (gpsen )
    {                            // Enable
-      gpio_set_level (gpsen, 1);
-      gpio_set_direction (gpsen, GPIO_MODE_OUTPUT);
+      gpio_set_level (gpsen&IO_MASK, 1);
+      gpio_set_direction (gpsen&IO_MASK, GPIO_MODE_OUTPUT);
    }
    gps_connect (gpsbaud);
 #ifdef	CONFIG_GPS_MOBILE
-   if (attx >= 0 && atrx >= 0 && (atpwr >= 0 || atkey >= 0))
+   if (attx && atrx && (atpwr || atkey ))
    {
       esp_err_t err = 0;
       // Init UART for Mobile
@@ -2600,22 +2645,22 @@ app_main ()
       if (!err)
          err = uart_param_config (atuart, &uart_config);
       if (!err)
-         err = uart_set_pin (atuart, attx, atrx, -1, -1);
+         err = uart_set_pin (atuart, attx&IO_MASK, atrx&IO_MASK, -1, -1);
       if (!err)
          err = uart_driver_install (atuart, 1024, 0, 0, NULL, 0);
       // TODO error
-      if (atkey >= 0)
-         gpio_set_direction (atkey, GPIO_MODE_OUTPUT);
-      if (atrst >= 0)
-         gpio_set_direction (atrst, GPIO_MODE_OUTPUT);
-      if (atpwr >= 0)
-         gpio_set_direction (atpwr, GPIO_MODE_OUTPUT);
+      if (atkey )
+         gpio_set_direction (atkey&IO_MASK, GPIO_MODE_OUTPUT);
+      if (atrst )
+         gpio_set_direction (atrst&IO_MASK, GPIO_MODE_OUTPUT);
+      if (atpwr )
+         gpio_set_direction (atpwr&IO_MASK, GPIO_MODE_OUTPUT);
       revk_task ("Mobile", at_task, NULL, 4);
    }
 #endif
-   if (light >= 0)
-      gpio_set_direction (light, GPIO_MODE_OUTPUT);
-   if (gpsrx >= 0)
+   if (light)
+      gpio_set_direction (light&IO_MASK, GPIO_MODE_OUTPUT);
+   if (gpsrx)
       revk_task ("NMEA", nmea_task, NULL, 4);
 #ifdef	CONFIG_GPS_LOGGING
    revk_task ("Log", log_task, NULL, 4);
