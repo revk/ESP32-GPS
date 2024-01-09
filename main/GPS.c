@@ -136,7 +136,7 @@ fix_t *
 fixadd (fixq_t * q, fix_t * f)
 {
    xSemaphoreTake (fix_mutex, portMAX_DELAY);
-   if (q->last)
+   if (q->base)
       q->last->next = f;
    else
       q->base = f;
@@ -408,7 +408,12 @@ nmea (char *s)
          return;                // Same fix
       fixtod = newtod;
       if (fix)
+      {
+         status.fixmode = fix->fixmode;
+         for (int s = 0; s < SYSTEMS; s++)
+            status.sat[s] = fix->sat[s];
          fix = fixadd (&fixlog, fix);
+      }
       if (tod)
          fix = fixnew ();
    }
@@ -466,6 +471,7 @@ nmea (char *s)
          fix->ecef.x = parse (f[2], 6);
          fix->ecef.y = parse (f[3], 6);
          fix->ecef.z = parse (f[4], 6);
+         fix->setecef = 1;
       }
       return;
    }
@@ -661,7 +667,6 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      ESP_LOGE (TAG, "Log %ld", fixlog.count);
       if (!fixlog.count || (revk_link_down () && fixlog.count < 100))
       {
          sleep (1);
@@ -669,10 +674,18 @@ log_task (void *z)
       }
       fix_t *f = fixget (&fixlog);
       if (!f)
+      {
+         sleep (1);             // TODO
          continue;
+      }
       jo_t j = jo_object_alloc ();
       if (f->sett)
       {
+         struct tm t;
+         time_t now = f->t / 1000000LL;
+         gmtime_r (&now, &t);
+         jo_stringf (j, "ts", "%04d-%02d-%02dT%02d:%02d:%02d.%06lldZ", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour,
+                     t.tm_min, t.tm_sec, f->t % 1000000LL);
       }
       if (f->setsat)
       {
@@ -706,7 +719,7 @@ pack_task (void *z)
 {
    while (1)
    {
-      fix_t *f = fixget (&fixlog);
+      fix_t *f = fixget (&fixpack);
       if (!f)
       {
          sleep (1);
@@ -729,7 +742,7 @@ sd_task (void *z)
    // TODO handle stop moving
    while (1)
    {
-      fix_t *f = fixget (&fixlog);
+      fix_t *f = fixget (&fixsd);
       if (!f)
       {
          sleep (1);
