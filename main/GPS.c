@@ -377,6 +377,7 @@ gps_init (void)
    gps_cmd ("$PMTK352,%d", qzss ? 0 : 1);       // QZSS (yes, 1 is disable)
    gps_cmd ("$PQTXT,W,0,1");    // Disable TXT
    gps_cmd ("$PQECEF,W,1,1");   // Enable ECEF
+   //gps_cmd ("$PQODO,W,1");   // Enable ODO
    gps_cmd ("$PQEPE,W,1,1");    // Enable EPE
    gps_cmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0); // FR mode
    // Queries - responses prompt settings changes if needed
@@ -392,7 +393,7 @@ gps_init (void)
 static void
 nmea (char *s)
 {
-   //ESP_LOGE (TAG, "GPS %s", s); // TODO
+   ESP_LOGE (TAG, "GPS %s", s); // TODO
    if (!s || *s != '$' || !s[1] || !s[2] || !s[3])
       return;
    char *f[50];
@@ -445,7 +446,7 @@ nmea (char *s)
       if (fix && fixtod == newtod)
          return;                // Same fix
       fixtod = newtod;
-      if (fix)
+      if (fix && fix->setsat)
       {
          status.fixmode = fix->fixmode;
          for (int s = 0; s < SYSTEMS; s++)
@@ -541,7 +542,7 @@ nmea (char *s)
       return;                   // Ignore
    if (!strcmp (f[0], "PMTK514") && n >= 2)
    {
-      unsigned int rates[19] = { };
+      unsigned int rates[19] = { 0 };
       rates[2] = (1000 / fixms ? : 1);  // VTG
       rates[3] = 1;             // GGA
       rates[4] = (10000 / fixms ? : 1); // GSA
