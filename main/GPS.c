@@ -1,6 +1,13 @@
 // GPS logger
 // Copyright (c) 2019-2024 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
+// TODO
+// DOP
+// START/STOP
+// SPEED/COURSE
+// PACK
+// UPLOAD
+
 static __attribute__((unused))
      const char TAG[] = "GPS";
 
@@ -10,6 +17,15 @@ static __attribute__((unused))
 #include <driver/uart.h>
 #include <math.h>
 #include "esp_sntp.h"
+#include "esp_vfs_fat.h"
+
+#ifdef	CONFIG_FATFS_LFN_NONE
+#error Need long file names
+#endif
+
+//#if	FF_FS_EXFAT == 0
+//#error Need EXFAT (ffconf.h)
+//#endif
 
 #define	SYSTEMS	3
      static const char system_code[SYSTEMS] = { 'P', 'L', 'A' };
@@ -34,7 +50,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	io(sdss,8,		MicroSD SS)    \
         io(sdmosi,9,		MicroSD MOSI)     \
         io(sdsck,10,		MicroSD SCK)      \
-        io(sdcd,11,		MicroSD CD)      \
+        io(sdcd,-11,		MicroSD CD)      \
         io(sdmiso,12,		MicroSD MISO)     \
 	u16(fixms,1000,		Fix rate)	\
         b(navstar,Y,            GPS track NAVSTAR GPS)  \
@@ -79,9 +95,11 @@ static int gpserrors = 0;       // last count
 
 static struct
 {
-   uint8_t gpsstarted:1;
-   uint8_t gpsinit:1;
-} volatile b;
+   uint8_t gpsstarted:1;        // GPS started
+   uint8_t gpsinit:1;           // Init GPS
+   uint8_t doformat:1;          // Format SD
+   uint8_t dodismount:1;        // Stop SD until card removed
+} volatile b = { 0 };
 
 static struct
 {                               // Status for LED
@@ -235,10 +253,6 @@ gps_cmd (const char *fmt, ...)
    char *p;
    for (p = s + 1; *p; p++)
       c ^= *p;
-#if 0
-   if (gpsdebug)
-      revk_info ("gpstx", "%s", s);
-#endif
    if (*s == '$')
       p += sprintf (p, "*%02X\r\n", c); // We allowed space
    xSemaphoreTake (cmd_mutex, portMAX_DELAY);
@@ -266,6 +280,16 @@ app_callback (int client, const char *prefix, const char *target, const char *su
          return "Expecting JSON string";
       if (len > sizeof (value))
          return "Too long";
+   }
+   if (!strcmp (suffix, "format"))
+   {
+      b.doformat = 1;
+      return "";
+   }
+   if (!strcmp (suffix, "dismount") || !strcmp (suffix, "restart"))
+   {
+      b.dodismount = 1;
+      return "";
    }
    if (!strcmp (suffix, "wifi"))
    {                            // WiFi connected, but not need for SNTP as we have GPS
@@ -354,7 +378,7 @@ gps_init (void)
 static void
 nmea (char *s)
 {
-   ESP_LOGE (TAG, "GPS %s", s); // TODO
+   //ESP_LOGE (TAG, "GPS %s", s); // TODO
    if (!s || *s != '$' || !s[1] || !s[2] || !s[3])
       return;
    char *f[50];
@@ -445,7 +469,7 @@ nmea (char *s)
       t.tm_hour = fixtod / 10000000 % 100;
       t.tm_min = fixtod / 100000 % 100;
       t.tm_sec = fixtod / 1000 % 100;
-      fix->t = 1000000LL * timegm (&t) + (fixtod % 1000000LL);
+      fix->t = 1000000LL * timegm (&t) + (fixtod % 1000LL) * 1000LL;
       fix->sett = 1;
       return;                   // ignore
    }
@@ -662,6 +686,62 @@ nmea_task (void *z)
    }
 }
 
+jo_t
+log_line (fix_t * f)
+{                               // generate log line
+   jo_t j = jo_object_alloc ();
+   if (f->sett)
+   {
+      struct tm t;
+      time_t now = f->t / 1000000LL;
+      gmtime_r (&now, &t);
+      uint32_t ms = f->t / 1000LL % 1000LL;
+      char temp[100],
+       *p = temp;
+      p += sprintf (p, "%04d-%02d-%02dT%02d:%02d:%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+      if (ms)
+         p += sprintf (p, ".%03ld", ms);
+      *p++ = 'Z';
+      *p = 0;
+      jo_stringf (j, "ts", temp);
+   }
+   if (f->setsat)
+   {
+      jo_object (j, "sats");
+      for (int s = 0; s < SYSTEMS; s++)
+         if (f->sat[s])
+            jo_int (j, system_name[s], f->sat[s]);
+      jo_close (j);
+   }
+   if (f->setlla)
+   {
+      jo_litf (j, "lat", "%lf", f->lat);
+      jo_litf (j, "lon", "%lf", f->lon);
+      jo_litf (j, "alt", "%lf", f->alt);
+   }
+   if (f->setecef)
+   {
+      void o (const char *t, int64_t v)
+      {
+         char *s = "";
+         if (v < 0)
+         {
+            v = 0 - v;
+            s = "-";
+         }
+         jo_litf (j, t, "%s%lld.%06lld", s, v / 1000000LL, v % 1000000LL);
+      }
+      jo_object (j, "ecef");
+      o ("x", f->ecef.x);
+      o ("y", f->ecef.y);
+      o ("z", f->ecef.z);
+      jo_close (j);
+   }
+   if (gpserrors)
+      jo_int (j, "errors", gpserrors);
+   return j;
+}
+
 void
 log_task (void *z)
 {                               // Log via MQTT
@@ -678,37 +758,7 @@ log_task (void *z)
          sleep (1);             // TODO
          continue;
       }
-      jo_t j = jo_object_alloc ();
-      if (f->sett)
-      {
-         struct tm t;
-         time_t now = f->t / 1000000LL;
-         gmtime_r (&now, &t);
-         jo_stringf (j, "ts", "%04d-%02d-%02dT%02d:%02d:%02d.%06lldZ", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour,
-                     t.tm_min, t.tm_sec, f->t % 1000000LL);
-      }
-      if (f->setsat)
-      {
-         jo_object (j, "sats");
-         for (int s = 0; s < SYSTEMS; s++)
-            if (f->sat[s])
-               jo_int (j, system_name[s], f->sat[s]);
-         jo_close (j);
-      }
-      if (f->setlla)
-      {
-         jo_litf (j, "lat", "%lf", f->lat);
-         jo_litf (j, "lon", "%lf", f->lon);
-         jo_litf (j, "alt", "%lf", f->alt);
-      }
-      if (f->setecef)
-      {
-         jo_int (j, "x", f->ecef.x);
-         jo_int (j, "y", f->ecef.y);
-         jo_int (j, "z", f->ecef.z);
-      }
-      if (gpserrors)
-         jo_int (j, "errors", gpserrors);
+      jo_t j = log_line (f);
       revk_info ("GPS", &j);
       fixadd (&fixpack, f);
    }
@@ -734,22 +784,198 @@ pack_task (void *z)
 void
 sd_task (void *z)
 {
-   // TODO wait on SD
-   // TODO discard if queue too big
-   // TODO open file
-   // TODO log to file
-   // TODO handle removal of SD
-   // TODO handle stop moving
+   esp_err_t ret;
+   if (sdcd)
+   {
+      gpio_reset_pin (sdcd & IO_MASK);
+      gpio_set_direction (sdcd & IO_MASK, GPIO_MODE_INPUT);
+   }
+#if 0                           // Should be done by system
+   if (sdmosi)
+      gpio_set_direction (sdmosi & IO_MASK, GPIO_MODE_OUTPUT);
+   if (sdss)
+      gpio_set_direction (sdss & IO_MASK, GPIO_MODE_OUTPUT);
+   if (sdsck)
+      gpio_set_direction (sdsck & IO_MASK, GPIO_MODE_OUTPUT);
+   if (sdmiso)
+      gpio_set_direction (sdmiso & IO_MASK, GPIO_MODE_INPUT);
+#endif
+   // By default, SD card frequency is initialized to SDMMC_FREQ_DEFAULT (20MHz)
+   // For setting a specific frequency, use host.max_freq_khz (range 400kHz - 20MHz for SDSPI)
+   // Example: for fixed frequency of 10MHz, use host.max_freq_khz = 10000;
+   sdmmc_host_t host = SDSPI_HOST_DEFAULT ();
+   host.max_freq_khz = SDMMC_FREQ_PROBING;
+
+   spi_bus_config_t bus_cfg = {
+      .mosi_io_num = sdmosi & IO_MASK,
+      .miso_io_num = sdmiso & IO_MASK,
+      .sclk_io_num = sdsck & IO_MASK,
+      .quadwp_io_num = -1,
+      .quadhd_io_num = -1,
+      .max_transfer_sz = 4000,
+   };
+   ret = spi_bus_initialize (host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
+   if (ret != ESP_OK)
+   {
+      jo_t j = jo_object_alloc ();
+      jo_string (j, "error", "SPI failed");
+      jo_int (j, "code", ret);
+      jo_int (j, "MOSI", sdmosi & IO_MASK);
+      jo_int (j, "MISO", sdmiso & IO_MASK);
+      jo_int (j, "CLK", sdsck & IO_MASK);
+      revk_error ("SD", &j);
+      vTaskDelete (NULL);
+      return;
+   }
    while (1)
    {
-      fix_t *f = fixget (&fixsd);
-      if (!f)
+      if (sdcd)
       {
-         sleep (1);
+         if (b.dodismount)
+         {
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "action", "Remove card");
+            revk_info ("SD", &j);
+            b.dodismount = 0;
+            while (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))
+               sleep (1);
+            continue;
+         }
+         if (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+         {
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "error", "Card not present");
+            revk_error ("SD", &j);
+         }
+         while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+         {
+            sleep (1);
+            // TODO flushing if too much logged
+         }
+      } else if (b.dodismount)
+      {
+         b.dodismount = 0;
+         sleep (60);
          continue;
       }
-      // TODO SD task
-      fixadd (&fixfree, f);     // Discard
+
+      sleep (1);
+
+      esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+         .format_if_mount_failed = 1,
+         .max_files = 1,
+         .allocation_unit_size = 16 * 1024
+      };
+      sdmmc_card_t *card;
+      const char mount_point[] = "/sd";
+      ESP_LOGI (TAG, "Initializing SD card");
+
+      sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
+      slot_config.gpio_cs = sdss & IO_MASK;
+      slot_config.host_id = host.slot;
+
+      ESP_LOGI (TAG, "Mounting filesystem");
+      ret = esp_vfs_fat_sdspi_mount (mount_point, &host, &slot_config, &mount_config, &card);
+
+      if (ret != ESP_OK)
+      {
+         jo_t j = jo_object_alloc ();
+         if (ret == ESP_FAIL)
+            jo_string (j, "error", "Failed to mount");
+         else
+            jo_string (j, "error", "Failed to iniitialise");
+         jo_int (j, "code", ret);
+         revk_error ("SD", &j);
+         if (sdcd)
+         {
+            int try = 60;
+            while (try-- && gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))
+               sleep (1);
+         } else
+            sleep (60);
+         continue;
+      }
+      ESP_LOGI (TAG, "Filesystem mounted");
+
+      if (b.doformat && (ret = esp_vfs_fat_sdcard_format (mount_point, card)))
+      {
+         jo_t j = jo_object_alloc ();
+         jo_string (j, "error", "Failed to format");
+         jo_int (j, "code", ret);
+         revk_error ("SD", &j);
+      }
+      {
+         jo_t j = jo_object_alloc ();
+         jo_string (j, "action", b.doformat ? "formatted" : "mounted");
+         // TODO size?
+         revk_info ("SD", &j);
+      }
+      b.doformat = 0;
+
+      FILE *o = NULL;
+      int line = 0;
+      char filename[100];
+      while (!b.doformat && !b.dodismount)
+      {
+         if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+            break;
+         fix_t *f = fixget (&fixsd);
+         if (!f)
+         {
+            sleep (1);
+            continue;
+         }
+         // TODO checking available space
+         // TODO moving or not - close file when not moving
+         // TODO uploading and deleting files.
+         if (!o)
+         {
+            struct tm t;
+            time_t now = f->t / 1000000LL;
+            gmtime_r (&now, &t);
+            sprintf (filename, "%s%04d-%02d-%02dT%02d-%02d-%02d", mount_point, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour,
+                     t.tm_min, t.tm_sec);
+            o = fopen (filename, "w");
+            if (!o)
+            {
+               jo_t j = jo_object_alloc ();
+               jo_string (j, "error", "Failed to create file");
+               jo_string (j, "filename", filename);
+               revk_error ("SD", &j);
+            } else
+            {
+               jo_t j = jo_object_alloc ();
+               jo_string (j, "action", "Log file created");
+               jo_string (j, "filename", filename);
+               revk_info ("SD", &j);
+               fprintf (o, "[\n");
+            }
+            line = 0;
+         }
+         if (o)
+         {
+            jo_t j = log_line (f);
+            char *l = jo_finisha (&j);
+            if (line++)
+               fprintf (o, ",\n");
+            fprintf (o, " %s", l);
+            free (l);
+         }
+         fixadd (&fixfree, f);  // Discard
+      }
+      if (o)
+      {
+         fprintf (o, "\n]\n");
+         fclose (o);
+      }
+      // All done, unmount partition and disable SPI peripheral
+      esp_vfs_fat_sdcard_unmount (mount_point, card);
+      ESP_LOGI (TAG, "Card unmounted");
+      {
+         jo_t j = jo_object_alloc ();
+         jo_string (j, "action", "dismounted");
+         revk_info ("SD", &j);
+      }
    }
 }
 
@@ -792,7 +1018,7 @@ app_main ()
    ack_mutex = xSemaphoreCreateBinary ();
 #define str(x) #x
    revk_register ("gps", 0, sizeof (gpsrx), &gpsrx, NULL, SETTING_SECRET);
-   revk_register ("sd", 0, sizeof (sdmosi), &sdmosi, "- " str (d), SETTING_SET | SETTING_BITFIELD | SETTING_FIX);
+   revk_register ("sd", 0, sizeof (sdmosi), &sdmosi, "- 9", SETTING_SET | SETTING_BITFIELD | SETTING_FIX);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
@@ -833,7 +1059,10 @@ app_main ()
          revk_task ("RGB", rgb_task, NULL, 4);
    }
    if (charger)
+   {
+      gpio_reset_pin (charger & IO_MASK);
       gpio_set_direction (charger & IO_MASK, GPIO_MODE_INPUT);
+   }
    if (pwr)
    {                            // System power
       gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
@@ -841,7 +1070,10 @@ app_main ()
    }
    // Main task...
    if (gpstick)
+   {
+      gpio_reset_pin (gpstick & IO_MASK);
       gpio_set_direction (gpstick & IO_MASK, GPIO_MODE_INPUT);
+   }
    gps_connect (gpsbaud);
    revk_task ("NMEA", nmea_task, NULL, 4);
    revk_task ("Log", log_task, NULL, 4);
