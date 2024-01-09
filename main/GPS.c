@@ -7,7 +7,6 @@
 // START/STOP
 // SPEED/COURSE
 // PACK
-// UPLOAD
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -819,15 +818,12 @@ checkupload (void)
       struct dirent *entry;
       while (!filename && (entry = readdir (dir)))
          if (entry->d_type == DT_REG)
-         {
-            if (entry)
-               asprintf (&filename, "%s/%s", sd_mount, entry->d_name);
-         }
+            asprintf (&filename, "%s/%s", sd_mount, entry->d_name);
       closedir (dir);
-      ESP_LOGE (TAG, "Send %s", filename);
       struct stat s = { 0 };
       if (filename && *filename && !stat (filename, &s))
       {
+         ESP_LOGE (TAG, "Send %s", filename);
          if (!s.st_size)
             zap = 1;            // Empty
          else
@@ -838,8 +834,8 @@ checkupload (void)
                esp_http_client_config_t config = {
                   .url = url,
                   .crt_bundle_attach = esp_crt_bundle_attach,
-		  .method=HTTP_METHOD_POST,
-		  .query=revk_id,
+                  .method = HTTP_METHOD_POST,
+                  .query = revk_id,
                };
                char *buf = mallocspi (1024);
                int response = 0;
@@ -852,7 +848,7 @@ checkupload (void)
                      int len = 0;
                      while ((len = fread (buf, 1, 1024, i)) > 0)
                         esp_http_client_write (client, buf, len);
-		     esp_http_client_fetch_headers (client);
+                     esp_http_client_fetch_headers (client);
                      esp_http_client_flush_response (client, &len);
                      response = esp_http_client_get_status_code (client);
                      esp_http_client_close (client);
@@ -878,7 +874,7 @@ checkupload (void)
                   jo_int (j, "response", response);
                   revk_error ("Upload", &j);
                }
-	       fclose(i);
+               fclose (i);
             }
          }
       }
