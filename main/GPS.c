@@ -446,15 +446,19 @@ nmea (char *s)
       if (fix && fixtod == newtod)
          return;                // Same fix
       fixtod = newtod;
-      if (fix && fix->setsat)
+      if (fix)
       {
-         status.fixmode = fix->fixmode;
-         for (int s = 0; s < SYSTEMS; s++)
-            status.sat[s] = fix->sat[s];
+         if (fix->setsat)
+         {
+            status.fixmode = fix->fixmode;
+            for (int s = 0; s < SYSTEMS; s++)
+               status.sat[s] = fix->sat[s];
+         }
          fix = fixadd (&fixlog, fix);
       }
       if (tod)
          fix = fixnew ();
+      // TODO should we copy sats and mode?
    }
    if (!b.gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_link_down ()))
       b.gpsinit = 1;            // Time to send init
