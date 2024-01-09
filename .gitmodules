@@ -4,9 +4,6 @@
 [submodule "SQLlib"]
 	path = SQLlib
 	url = https://github.com/revk/SQLlib
-[submodule "components/ESP32-GFX"]
-	path = components/ESP32-GFX
-	url = https://github.com/revk/ESP32-GFX
 [submodule "PCB/PCBCase"]
 	path = PCB/PCBCase
 	url = https://github.com/revk/PCBCase
