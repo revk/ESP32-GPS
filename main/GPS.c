@@ -2,6 +2,7 @@
 // Copyright (c) 2019-2024 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
 // TODO
+// TEST DATA
 // DOP
 // START/STOP
 // SPEED/COURSE
@@ -18,12 +19,16 @@ static __attribute__((unused))
 #include <math.h>
 #include "esp_sntp.h"
 #include "esp_vfs_fat.h"
+#include <sys/dirent.h>
+#include "esp_http_client.h"
+#include "esp_http_server.h"
+#include "esp_crt_bundle.h"
 
 #ifdef	CONFIG_FATFS_LFN_NONE
 #error Need long file names
 #endif
 
-//#if	FF_FS_EXFAT == 0
+//#if   FF_FS_EXFAT == 0
 //#error Need EXFAT (ffconf.h)
 //#endif
 
@@ -64,6 +69,13 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	b(walking,N,            GPS Walking mode)       \
         b(flight,N,             GPS Flight mode)        \
         b(balloon,N,            GPS Balloon mode)       \
+	b(logecef,Y,		Log ECEF data)		\
+	b(logsats,Y,		Log Sats data)		\
+	u16(packmin,60,		Min samples for pack)	\
+	u16(packmax,600,	Max samples for pack)	\
+	u16(packm,1,	 	Pack delta m)	\
+	u16(packs,10,		Pack delta s)	\
+	s(url,,			URL to post data)	\
 
 #define u32(n,d,t)	uint32_t n;
 #define u16(n,d,t)	uint16_t n;
@@ -84,6 +96,7 @@ settings
 #undef b
 #undef h
 #undef s
+const char sd_mount[] = "/sd";
 static led_strip_handle_t strip = NULL;
 static SemaphoreHandle_t cmd_mutex = NULL;
 static SemaphoreHandle_t ack_mutex = NULL;
@@ -112,12 +125,12 @@ struct fix_s
 {
    fix_t *next;                 // Next in queue
    fix_t *pair;                 // Pair for packing
-   int64_t t;                   // Time stamp (us)
    struct
-   {                            // Earth centred Earth fixed, used for packing, etc
+   {                            // Earth centred Earth fixed, used for packing, etc, and time stamp (us)
       int64_t x,
         y,
-        z;
+        z,
+        t;
    } ecef;
    double lat,
      lon,
@@ -153,6 +166,8 @@ fixq_t fixfree = { 0 };         // Queue of free
 fix_t *
 fixadd (fixq_t * q, fix_t * f)
 {
+   if (!f)
+      return NULL;
    xSemaphoreTake (fix_mutex, portMAX_DELAY);
    if (q->base)
       q->last->next = f;
@@ -469,7 +484,7 @@ nmea (char *s)
       t.tm_hour = fixtod / 10000000 % 100;
       t.tm_min = fixtod / 100000 % 100;
       t.tm_sec = fixtod / 1000 % 100;
-      fix->t = 1000000LL * timegm (&t) + (fixtod % 1000LL) * 1000LL;
+      fix->ecef.t = 1000000LL * timegm (&t) + (fixtod % 1000LL) * 1000LL;
       fix->sett = 1;
       return;                   // ignore
    }
@@ -693,9 +708,9 @@ log_line (fix_t * f)
    if (f->sett)
    {
       struct tm t;
-      time_t now = f->t / 1000000LL;
+      time_t now = f->ecef.t / 1000000LL;
       gmtime_r (&now, &t);
-      uint32_t ms = f->t / 1000LL % 1000LL;
+      uint32_t ms = f->ecef.t / 1000LL % 1000LL;
       char temp[100],
        *p = temp;
       p += sprintf (p, "%04d-%02d-%02dT%02d:%02d:%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
@@ -705,21 +720,24 @@ log_line (fix_t * f)
       *p = 0;
       jo_stringf (j, "ts", temp);
    }
-   if (f->setsat)
+   if (f->setsat && logsats)
    {
       jo_object (j, "sats");
       for (int s = 0; s < SYSTEMS; s++)
          if (f->sat[s])
             jo_int (j, system_name[s], f->sat[s]);
+      jo_int (j, "fix", f->fixmode);
+      jo_int (j, "used", f->sats);
       jo_close (j);
    }
    if (f->setlla)
    {
       jo_litf (j, "lat", "%lf", f->lat);
       jo_litf (j, "lon", "%lf", f->lon);
-      jo_litf (j, "alt", "%lf", f->alt);
+      if (f->fixmode >= 3)
+         jo_litf (j, "alt", "%lf", f->alt);
    }
-   if (f->setecef)
+   if (f->setecef && logecef)
    {
       void o (const char *t, int64_t v)
       {
@@ -735,10 +753,15 @@ log_line (fix_t * f)
       o ("x", f->ecef.x);
       o ("y", f->ecef.y);
       o ("z", f->ecef.z);
+      if (f->sett)
+         o ("t", f->ecef.t);
       jo_close (j);
    }
    if (gpserrors)
+   {
       jo_int (j, "errors", gpserrors);
+      gpserrors = 0;
+   }
    return j;
 }
 
@@ -782,8 +805,103 @@ pack_task (void *z)
 }
 
 void
+checkupload (void)
+{
+   if (revk_link_down () || !*url)
+      return;
+   DIR *dir = opendir (sd_mount);
+   if (!dir)
+      return;
+   while (1)
+   {
+      char zap = 0;
+      char *filename = NULL;
+      struct dirent *entry;
+      while (!filename && (entry = readdir (dir)))
+         if (entry->d_type == DT_REG)
+         {
+            if (entry)
+               asprintf (&filename, "%s/%s", sd_mount, entry->d_name);
+         }
+      closedir (dir);
+      ESP_LOGE (TAG, "Send %s", filename);
+      struct stat s = { 0 };
+      if (filename && *filename && !stat (filename, &s))
+      {
+         if (!s.st_size)
+            zap = 1;            // Empty
+         else
+         {
+            FILE *i = fopen (filename, "r");
+            if (i)
+            {
+               esp_http_client_config_t config = {
+                  .url = url,
+                  .crt_bundle_attach = esp_crt_bundle_attach,
+		  .method=HTTP_METHOD_POST,
+		  .query=revk_id,
+               };
+               char *buf = mallocspi (1024);
+               int response = 0;
+               esp_http_client_handle_t client = esp_http_client_init (&config);
+               if (client)
+               {
+                  esp_http_client_set_header (client, "Content-Type", "application/json");
+                  if (!esp_http_client_open (client, s.st_size))
+                  {             // Send
+                     int len = 0;
+                     while ((len = fread (buf, 1, 1024, i)) > 0)
+                        esp_http_client_write (client, buf, len);
+		     esp_http_client_fetch_headers (client);
+                     esp_http_client_flush_response (client, &len);
+                     response = esp_http_client_get_status_code (client);
+                     esp_http_client_close (client);
+                  }
+                  esp_http_client_cleanup (client);
+               }
+               sleep (1);
+               if (response / 100 == 2)
+               {
+                  jo_t j = jo_object_alloc ();
+                  jo_string (j, "filename", filename);
+                  jo_string (j, "url", url);
+                  jo_int (j, "size", s.st_size);
+                  revk_info ("Uploaded", &j);
+                  zap = 1;
+               } else
+               {
+                  jo_t j = jo_object_alloc ();
+                  jo_string (j, "error", "Failed to upload");
+                  jo_string (j, "filename", filename);
+                  jo_string (j, "url", url);
+                  jo_int (j, "size", s.st_size);
+                  jo_int (j, "response", response);
+                  revk_error ("Upload", &j);
+               }
+	       fclose(i);
+            }
+         }
+      }
+      if (zap)
+         unlink (filename);
+      free (filename);
+      if (!zap)
+         return;
+   }
+}
+
+void
 sd_task (void *z)
 {
+   void wait (int s)
+   {
+      while (s--)
+      {
+         while (fixsd.count > packmax)
+            fixadd (&fixfree, fixget (&fixsd)); // Discard as too many waiting
+         sleep (1);
+      }
+   }
    esp_err_t ret;
    if (sdcd)
    {
@@ -838,7 +956,7 @@ sd_task (void *z)
             revk_info ("SD", &j);
             b.dodismount = 0;
             while (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))
-               sleep (1);
+               wait (1);
             continue;
          }
          if (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
@@ -849,17 +967,17 @@ sd_task (void *z)
          }
          while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
          {
-            sleep (1);
+            wait (1);
             // TODO flushing if too much logged
          }
       } else if (b.dodismount)
       {
          b.dodismount = 0;
-         sleep (60);
+         wait (60);
          continue;
       }
 
-      sleep (1);
+      wait (1);
 
       esp_vfs_fat_sdmmc_mount_config_t mount_config = {
          .format_if_mount_failed = 1,
@@ -867,7 +985,6 @@ sd_task (void *z)
          .allocation_unit_size = 16 * 1024
       };
       sdmmc_card_t *card;
-      const char mount_point[] = "/sd";
       ESP_LOGI (TAG, "Initializing SD card");
 
       sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
@@ -875,7 +992,7 @@ sd_task (void *z)
       slot_config.host_id = host.slot;
 
       ESP_LOGI (TAG, "Mounting filesystem");
-      ret = esp_vfs_fat_sdspi_mount (mount_point, &host, &slot_config, &mount_config, &card);
+      ret = esp_vfs_fat_sdspi_mount (sd_mount, &host, &slot_config, &mount_config, &card);
 
       if (ret != ESP_OK)
       {
@@ -890,14 +1007,14 @@ sd_task (void *z)
          {
             int try = 60;
             while (try-- && gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))
-               sleep (1);
+               wait (1);
          } else
-            sleep (60);
+            wait (60);
          continue;
       }
       ESP_LOGI (TAG, "Filesystem mounted");
 
-      if (b.doformat && (ret = esp_vfs_fat_sdcard_format (mount_point, card)))
+      if (b.doformat && (ret = esp_vfs_fat_sdcard_format (sd_mount, card)))
       {
          jo_t j = jo_object_alloc ();
          jo_string (j, "error", "Failed to format");
@@ -911,6 +1028,8 @@ sd_task (void *z)
          revk_info ("SD", &j);
       }
       b.doformat = 0;
+
+      checkupload ();
 
       FILE *o = NULL;
       int line = 0;
@@ -928,13 +1047,13 @@ sd_task (void *z)
          // TODO checking available space
          // TODO moving or not - close file when not moving
          // TODO uploading and deleting files.
-         if (!o)
+         if (!o && f->sett && f->fixmode > 1)
          {
             struct tm t;
-            time_t now = f->t / 1000000LL;
+            time_t now = f->ecef.t / 1000000LL;
             gmtime_r (&now, &t);
-            sprintf (filename, "%s%04d-%02d-%02dT%02d-%02d-%02d", mount_point, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour,
-                     t.tm_min, t.tm_sec);
+            sprintf (filename, "%s/%04d-%02d-%02dT%02d-%02d-%02d.json", sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                     t.tm_hour, t.tm_min, t.tm_sec);
             o = fopen (filename, "w");
             if (!o)
             {
@@ -960,7 +1079,8 @@ sd_task (void *z)
                fprintf (o, ",\n");
             fprintf (o, " %s", l);
             free (l);
-         }
+         } else
+            checkupload ();
          fixadd (&fixfree, f);  // Discard
       }
       if (o)
@@ -968,8 +1088,9 @@ sd_task (void *z)
          fprintf (o, "\n]\n");
          fclose (o);
       }
+      checkupload ();
       // All done, unmount partition and disable SPI peripheral
-      esp_vfs_fat_sdcard_unmount (mount_point, card);
+      esp_vfs_fat_sdcard_unmount (sd_mount, card);
       ESP_LOGI (TAG, "Card unmounted");
       {
          jo_t j = jo_object_alloc ();
@@ -1026,7 +1147,7 @@ app_main ()
 #define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s(n,d,t) revk_register(#n,0,0,&n,d,0);
+#define s(n,d,t) revk_register(#n,0,0,&n,str(d),0);
 #define io(n,d,t)         revk_register(#n,0,sizeof(n),&n,"- "str(d),SETTING_SET|SETTING_BITFIELD|SETTING_FIX);
    settings;
 #undef ui
