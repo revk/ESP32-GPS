@@ -42,7 +42,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(pwr,-15,		System PWR)	\
      	io(charger,-33,		Charger status)	\
      	io(rgb,34,		RGB LED Strip)	\
-     	u8(leds,15,		RGB LEDs)	\
+     	u8f(leds,15,		RGB LEDs)	\
      	io(accsda,13,		Accellerometer SDA) \
      	io(accscl,13,		Accellerometer SCL) \
 	b(gpsdebug,N,		GPS debug logging)	\
@@ -80,6 +80,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 #define u16(n,d,t)	uint16_t n;
 #define s8(n,d,t)	int8_t n;
 #define u8(n,d,t)	uint8_t n;
+#define u8f(n,d,t)	uint8_t n;
 #define b(n,d,t) uint8_t n;
 #define bl(n,d,t) uint8_t n;
 #define h(n,t) uint8_t *n;
@@ -91,6 +92,7 @@ settings
 #undef u32
 #undef s8
 #undef u8
+#undef u8f
 #undef bl
 #undef b
 #undef h
@@ -545,7 +547,7 @@ nmea (char *s)
    if (!strcmp (f[0], "PMTK705") && n >= 2)
       return;                   // Ignore
    if (!strcmp (f[0], "PMTK514") && n >= 2)
-   {
+   { // TODO review timing?
       unsigned int rates[19] = { 0 };
       rates[2] = (1000 / fixms ? : 1);  // VTG
       rates[3] = 1;             // GGA
@@ -1148,6 +1150,7 @@ app_main ()
 #define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define u8f(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_FIX);
 #define s(n,d,t) revk_register(#n,0,0,&n,str(d),0);
 #define io(n,d,t)         revk_register(#n,0,sizeof(n),&n,"- "str(d),SETTING_SET|SETTING_BITFIELD|SETTING_FIX);
    settings;
@@ -1155,6 +1158,7 @@ app_main ()
 #undef u16
 #undef u32
 #undef s8
+#undef u8
 #undef u8
 #undef bl
 #undef b
