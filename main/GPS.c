@@ -668,6 +668,8 @@ log_task (void *z)
          continue;
       }
       fix_t *f = fixget (&fixlog);
+      if (!f)
+         continue;
       jo_t j = jo_object_alloc ();
       if (f->sett)
       {
