@@ -5,8 +5,8 @@
 // TEST DATA
 // DOP
 // START/STOP
-// SPEED/COURSE
 // PACK
+// ACC
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -43,6 +43,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(charger,-33,		Charger status)	\
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,15,		RGB LEDs)	\
+	b(acclog,1,		Accellerometer log) \
      	io(accsda,13,		Accellerometer SDA) \
      	io(accscl,13,		Accellerometer SCL) \
 	bl(gpsdebug,N,		GPS debug logging)	\
@@ -109,6 +110,7 @@ static uint32_t gsadue = 0;
 static uint32_t gsvdue = 0;
 static uint32_t vtgdue = 0;
 
+httpd_handle_t webserver = NULL;
 const char sd_mount[] = "/sd";
 static led_strip_handle_t strip = NULL;
 static SemaphoreHandle_t cmd_mutex = NULL;
@@ -723,13 +725,15 @@ nmea_task (void *z)
             b.gpsstarted = 0;
             static int rate = 0;
             const uint32_t rates[] = { 4800, 9600, 14400, 19200, 38400, 57600, 115200 };
-            rate++;
-            if (rate == sizeof (rates) / sizeof (*rates))
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "error", "No reply");
+            jo_int (j, "Baud", rates[rate]);
+	    jo_int(j,"tx",gpstx&IO_MASK);
+	    jo_int(j,"rx",gpsrx&IO_MASK);
+            revk_error ("GPS", &j);
+            if (++rate >= sizeof (rates) / sizeof (*rates))
                rate = 0;
             gps_connect (rates[rate]);
-#if 1
-            ESP_LOGE (TAG, "GPS silent, trying %ld", gpsbaudnow);
-#endif
             timeout = esp_timer_get_time () + 2000000 + fixms;
             nmea_timeout (uptime ());
          }
@@ -857,15 +861,12 @@ log_task (void *z)
          gps_init ();
       if (!fixlog.count || (revk_link_down () && fixlog.count < 100))
       {
-         sleep (1);
+         usleep (100000);
          continue;
       }
       fix_t *f = fixget (&fixlog);
       if (!f)
-      {
-         sleep (1);             // TODO
          continue;
-      }
       jo_t j = log_line (f);
       revk_info ("GPS", &j);
       fixadd (&fixpack, f);
@@ -1217,6 +1218,45 @@ rgb_task (void *z)
    }
 }
 
+static void
+register_uri (const httpd_uri_t * uri_struct)
+{
+   esp_err_t res = httpd_register_uri_handler (webserver, uri_struct);
+   if (res != ESP_OK)
+   {
+      ESP_LOGE (TAG, "Failed to register %s, error code %d", uri_struct->uri, res);
+   }
+}
+
+static void
+register_get_uri (const char *uri, esp_err_t (*handler) (httpd_req_t * r))
+{
+   httpd_uri_t uri_struct = {
+      .uri = uri,
+      .method = HTTP_GET,
+      .handler = handler,
+   };
+   register_uri (&uri_struct);
+}
+
+static void
+web_head (httpd_req_t * req, const char *title)
+{
+   revk_web_head (req, title);
+   revk_web_send (req, "<style>"        //
+                  "body{font-family:sans-serif;background:#8cf;}"       //
+                  "</style><body><h1>%s</h1>", title ? : "");
+}
+
+static esp_err_t
+web_root (httpd_req_t * req)
+{
+   if (revk_link_down ())
+      return revk_web_settings (req);   // Direct to web set up
+   web_head (req, *hostname ? hostname : appname);
+   return revk_web_foot (req, 0, 1, NULL);
+}
+
 void
 app_main ()
 {
@@ -1228,7 +1268,9 @@ app_main ()
    vSemaphoreCreateBinary (ack_semaphore);
 #define str(x) #x
    revk_register ("gps", 0, sizeof (gpsrx), &gpsrx, NULL, SETTING_SECRET);
-   revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_BOOLEAN | SETTING_FIX);
+   revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
+   revk_register ("acc", 0, sizeof (acclog), &acclog, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
+   revk_register ("pack", 0, sizeof (packm), &packm, "1", SETTING_SECRET);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bf(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_FIX);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
@@ -1293,4 +1335,12 @@ app_main ()
    revk_task ("Log", log_task, NULL, 4);
    revk_task ("Pack", pack_task, NULL, 4);
    revk_task ("SD", sd_task, NULL, 4);
+   // Web interface
+   httpd_config_t config = HTTPD_DEFAULT_CONFIG ();
+   config.max_uri_handlers = 5 + revk_num_web_handlers ();
+   if (!httpd_start (&webserver, &config))
+   {
+      register_get_uri ("/", web_root);
+      revk_web_settings_add (webserver);
+   }
 }
