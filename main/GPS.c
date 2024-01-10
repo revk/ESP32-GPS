@@ -42,15 +42,16 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(pwr,-15,		System PWR)	\
      	io(charger,-33,		Charger status)	\
      	io(rgb,34,		RGB LED Strip)	\
-     	u8(leds,15,		RGB LEDs)	\
+     	u8f(leds,15,		RGB LEDs)	\
      	io(accsda,13,		Accellerometer SDA) \
      	io(accscl,13,		Accellerometer SCL) \
-	b(gpsdebug,N,		GPS debug logging)	\
+	bl(gpsdebug,N,		GPS debug logging)	\
 	u8(gpsuart,1,		GPS UART ID)	\
 	io(gpsrx,5,		GPS Rx - Tx from GPS GPIO)	\
 	io(gpstx,7,		GPS Tx - Rx yo GPS GPIO)	\
 	io(gpstick,3,		GPS Tick GPIO)	\
         u32(gpsbaud,115200,	GPS Baud)	\
+	bf(sdled,N,		First LED is SD)	\
 	io(sdss,8,		MicroSD SS)    \
         io(sdmosi,9,		MicroSD MOSI)     \
         io(sdsck,10,		MicroSD SCK)      \
@@ -80,8 +81,10 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 #define u16(n,d,t)	uint16_t n;
 #define s8(n,d,t)	int8_t n;
 #define u8(n,d,t)	uint8_t n;
+#define u8f(n,d,t)	uint8_t n;
 #define b(n,d,t) uint8_t n;
 #define bl(n,d,t) uint8_t n;
+#define bf(n,d,t) uint8_t n;
 #define h(n,t) uint8_t *n;
 #define s(n,d,t) char * n;
 #define io(n,d,t)         uint8_t n;
@@ -91,32 +94,46 @@ settings
 #undef u32
 #undef s8
 #undef u8
+#undef u8f
 #undef bl
+#undef bf
 #undef b
 #undef h
 #undef s
+#define	ZDARATE	10
+#define	GSARATE	10
+#define	GSVRATE	10
+#define VTGRATE 10
+static uint32_t zdadue = 0;
+static uint32_t gsadue = 0;
+static uint32_t gsvdue = 0;
+static uint32_t vtgdue = 0;
+
 const char sd_mount[] = "/sd";
 static led_strip_handle_t strip = NULL;
 static SemaphoreHandle_t cmd_mutex = NULL;
-static SemaphoreHandle_t ack_mutex = NULL;
+static SemaphoreHandle_t ack_semaphore = NULL;
 static int pmtk = 0;            // Waiting ack
 static SemaphoreHandle_t fix_mutex = NULL;
 static int gpserrorcount = 0;   // running count
-static time_t gpszda = 0;       // Last ZDA
 static int gpserrors = 0;       // last count
 
 static struct
 {
    uint8_t gpsstarted:1;        // GPS started
+   uint8_t gpsreset:1;          // Reset GPS
    uint8_t gpsinit:1;           // Init GPS
    uint8_t doformat:1;          // Format SD
    uint8_t dodismount:1;        // Stop SD until card removed
 } volatile b = { 0 };
 
-static struct
-{                               // Status for LED
+typedef struct slow_s slow_t;
+struct slow_s
+{
    uint8_t sat[SYSTEMS];        // Count per system
    uint8_t fixmode;             // Fix mode
+   float course;
+   float speed;
 } status;
 
 typedef struct fix_s fix_t;
@@ -131,21 +148,17 @@ struct fix_s
         z,
         t;
    } ecef;
+   slow_t slow;
    double lat,
      lon,
      alt;                       // Lat/lon/alt
-   float course;
-   float speed;
    float hepe;
    float vepe;
-   uint8_t sats;                // Sats in use
-   uint8_t fixmode;             // Fix mode 1-3
-   uint8_t sat[SYSTEMS];        // Sat visible count per system
+   uint8_t sats;                // Sats used for fix
    uint8_t sett:1;
    uint8_t setsat:1;
    uint8_t setecef:1;
    uint8_t setlla:1;
-   uint8_t setcs:1;
    uint8_t setepe:1;
 };
 
@@ -249,7 +262,9 @@ gps_connect (unsigned int baud)
       err = uart_set_pin (gpsuart, gpstx & IO_MASK, gpsrx & IO_MASK, -1, -1);
    if (!err)
       err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0);
-   // TODO report error
+   if (err)
+      ESP_LOGE (TAG, "UART init error");
+   sleep (1);
    uart_write_bytes (gpsuart, "\r\n\r\n", 4);
 }
 
@@ -257,12 +272,18 @@ void
 gps_cmd (const char *fmt, ...)
 {                               // Send command to UART
    if (pmtk)
-      xSemaphoreTake (ack_mutex, 1000 * portTICK_PERIOD_MS);    // Wait for ACK from last command
+      xSemaphoreTake (ack_semaphore, 1000 * portTICK_PERIOD_MS);        // Wait for ACK from last command
    char s[100];
    va_list ap;
    va_start (ap, fmt);
    vsnprintf (s, sizeof (s) - 5, fmt, ap);
    va_end (ap);
+   if (gpsdebug)
+   {                            // Log (without checksum)
+      jo_t j = jo_create_alloc ();
+      jo_string (j, NULL, s);
+      revk_info ("tx", &j);
+   }
    uint8_t c = 0;
    char *p;
    for (p = s + 1; *p; p++)
@@ -274,7 +295,7 @@ gps_cmd (const char *fmt, ...)
    xSemaphoreGive (cmd_mutex);
    if (!strncmp (s, "$PMTK", 5))
    {
-      xSemaphoreTake (ack_mutex, 0);
+      xSemaphoreTake (ack_semaphore, 0);
       pmtk = atoi (s + 5);
    } else
       pmtk = 0;
@@ -295,6 +316,17 @@ app_callback (int client, const char *prefix, const char *target, const char *su
       if (len > sizeof (value))
          return "Too long";
    }
+   if (!strcmp (suffix, "reset"))
+   {
+      b.gpsreset = 1;
+      b.gpsinit = 1;
+      return "";
+   }
+   if (!strcmp (suffix, "init"))
+   {
+      b.gpsinit = 1;
+      return "";
+   }
    if (!strcmp (suffix, "format"))
    {
       b.doformat = 1;
@@ -307,7 +339,7 @@ app_callback (int client, const char *prefix, const char *target, const char *su
    }
    if (!strcmp (suffix, "wifi"))
    {                            // WiFi connected, but not need for SNTP as we have GPS
-      if (gpszda)
+      if (zdadue)
          esp_sntp_stop ();
       return "";
    }
@@ -365,6 +397,12 @@ static void
 gps_init (void)
 {                               // Set up GPS
    b.gpsinit = 0;
+   if (b.gpsreset)
+   {
+      b.gpsreset = 0;
+      gps_cmd ("$PMTK104");     // Factory reset
+      sleep (1);
+   }
    if (gpsbaudnow != gpsbaud)
    {
       gps_cmd ("$PQBAUD,W,%d", gpsbaud);        // 
@@ -390,9 +428,40 @@ gps_init (void)
 }
 
 static void
+nmea_timeout (uint32_t up)
+{
+   if (zdadue && zdadue < up)
+   {
+      zdadue = 0;
+      esp_sntp_restart ();
+   }
+   if (gsadue && gsadue < up)
+   {
+      gsadue = 0;
+      status.fixmode = 0;
+   }
+   if (gsvdue && gsvdue < up)
+   {
+      gsvdue = 0;
+      memset (status.sat, 0, sizeof (status.sat));
+   }
+   if (vtgdue && vtgdue < up)
+   {
+      vtgdue = 0;
+      status.course = NAN;
+      status.speed = NAN;
+   }
+}
+
+static void
 nmea (char *s)
 {
-   //ESP_LOGE (TAG, "GPS %s", s); // TODO
+   if (gpsdebug)
+   {
+      jo_t j = jo_create_alloc ();
+      jo_string (j, NULL, s);
+      revk_info ("rx", &j);
+   }
    if (!s || *s != '$' || !s[1] || !s[2] || !s[3])
       return;
    char *f[50];
@@ -437,23 +506,34 @@ nmea (char *s)
          v = 0 - v;
       return v;
    }
+   uint32_t up = uptime ();
+   nmea_timeout (up);
+   static uint8_t century = 19;
    static fix_t *fix = NULL;
    static uint32_t fixtod = -1;
+   static uint32_t sod = 0;
    void startfix (const char *tod)
    {
       uint32_t newtod = (tod ? parse (tod, 3) : -1);
       if (fix && fixtod == newtod)
          return;                // Same fix
+      if (sod && fixtod > newtod)
+         sod++;
       fixtod = newtod;
       if (fix)
       {
-         status.fixmode = fix->fixmode;
-         for (int s = 0; s < SYSTEMS; s++)
-            status.sat[s] = fix->sat[s];
+         fix->slow = status;
          fix = fixadd (&fixlog, fix);
       }
       if (tod)
          fix = fixnew ();
+      if (sod && tod && fix)
+      {
+         fix->ecef.t =
+            1000000LL * (sod * 86400 + (fixtod / 10000000LL) * 3600 + (fixtod / 100000LL % 100LL) * 60 +
+                         (fixtod / 1000LL % 100LL)) + (fixtod % 1000LL) * 1000LL;
+         fix->sett = 1;
+      }
    }
    if (!b.gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_link_down ()))
       b.gpsinit = 1;            // Time to send init
@@ -462,7 +542,7 @@ nmea (char *s)
       int tag = atoi (f[1]);
       if (pmtk && pmtk == tag)
       {                         // ACK received
-         xSemaphoreGive (ack_mutex);
+         xSemaphoreGive (ack_semaphore);
          pmtk = 0;
       }
       return;
@@ -474,23 +554,15 @@ nmea (char *s)
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GLL"))
       return;                   // ignore
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "RMC") && n >= 13 && strlen (f[9]) == 6)
-   {
-      startfix (f[1]);
-      struct tm t = { };
-      t.tm_year = (f[9][4] - '0') * 10 + f[9][5] - '0' + 100;
-      t.tm_mon = (f[9][2] - '0') * 10 + f[9][3] - '0' - 1;
-      t.tm_mday = (f[9][0] - '0') + f[9][1] - '0';
-      t.tm_hour = fixtod / 10000000 % 100;
-      t.tm_min = fixtod / 100000 % 100;
-      t.tm_sec = fixtod / 1000 % 100;
-      fix->ecef.t = 1000000LL * timegm (&t) + (fixtod % 1000LL) * 1000LL;
-      fix->sett = 1;
       return;                   // ignore
-   }
    if (!strcmp (f[0], "PMTK010"))
       return;                   // Started, happens at end of init anyway
    if (!strcmp (f[0], "PMTK011"))
+   {
+      if (n >= 2 && atoi (f[1]) == 1)
+         b.gpsinit = 1;         // Startup
       return;                   // Message! Ignore
+   }
    if (!strcmp (f[0], "PQEPE") && n >= 3)
    {                            // Estimated position error
       if (fix)
@@ -541,12 +613,20 @@ nmea (char *s)
       return;                   // Ignore
    if (!strcmp (f[0], "PMTK514") && n >= 2)
    {
-      unsigned int rates[19] = { };
-      rates[2] = (1000 / fixms ? : 1);  // VTG
-      rates[3] = 1;             // GGA
-      rates[4] = (10000 / fixms ? : 1); // GSA
-      rates[5] = (10000 / fixms ? : 1); // GSV
-      rates[17] = (10000 / fixms ? : 1);        // ZDA
+      unsigned int rates[19] = { 0 };
+      //rates[0]=0;     // GLL
+      //rates[1]=0;     // RMC
+      rates[2] = (VTGRATE * 1000 / fixms ? : 1);        // VTG
+      rates[3] = 1;             // GGA every sample
+      rates[4] = (GSARATE * 1000 / fixms ? : 1);        // GSA
+      rates[5] = (GSVRATE * 1000 / fixms ? : 1);        // GSV
+      //rates[6]=0; // GRS
+      //rates[7]=0; // GST
+      //rates[13]=0; // MALM
+      //rates[14]=0; // MEPH
+      //rates[15]=0; // MDGP
+      //rates[16]=0; // MDBG
+      rates[17] = (ZDARATE * 1000 / fixms ? : 1);       // ZDA
       int q;
       for (q = 0; q < sizeof (rates) / sizeof (*rates) && rates[q] == (1 + q < n ? atoi (f[1 + q]) : 0); q++);
       if (q < sizeof (rates) / sizeof (*rates)) // Set message rates
@@ -573,60 +653,55 @@ nmea (char *s)
       }
       return;
    }
-
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "ZDA") && n >= 5)
    {                            // Time: $GPZDA,093624.000,02,11,2019,,
       startfix (f[1]);
       gpserrors = gpserrorcount;
       gpserrorcount = 0;
-      if (strlen (f[1]) == 10 && atoi (f[4]) > 2000)
+      if (strlen (f[1]) == 10)
       {
-         struct tm t = { };
-         struct timeval v = { };
-         t.tm_year = atoi (f[4]) - 1900;
-         t.tm_mon = atoi (f[3]) - 1;
-         t.tm_mday = atoi (f[2]);
-         t.tm_hour = (f[1][0] - '0') * 10 + f[1][1] - '0';
-         t.tm_min = (f[1][2] - '0') * 10 + f[1][3] - '0';
-         t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
-         v.tv_usec = atoi (f[1] + 7) * 1000;
-         v.tv_sec = timegm (&t);
-         if (!gpszda)
-            esp_sntp_stop ();
-         gpszda = v.tv_sec;
-         settimeofday (&v, NULL);
+         century = atoi (f[4]) / 100;
+         if (century >= 20)
+         {
+            struct timeval v = { 0 };
+            struct tm t = { 0 };
+            t.tm_year = atoi (f[4]) - 1900;
+            t.tm_mon = atoi (f[3]) - 1;
+            t.tm_mday = atoi (f[2]);
+            sod = timegm (&t) / 86400;
+            t.tm_hour = (f[1][0] - '0') * 10 + f[1][1] - '0';
+            t.tm_min = (f[1][2] - '0') * 10 + f[1][3] - '0';
+            t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
+            v.tv_usec = atoi (f[1] + 7) * 1000;
+            v.tv_sec = timegm (&t);
+            if (!zdadue)
+               esp_sntp_stop ();
+            zdadue = up + ZDARATE + 2;
+            settimeofday (&v, NULL);
+         }
       }
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "VTG") && n >= 10)
    {
-      if (fix)
-      {
-         fix->course = strtof (f[1], NULL);
-         fix->speed = strtof (f[7], NULL);
-         fix->setcs = 1;
-      }
+      vtgdue = up + VTGRATE + 2;
+      status.course = strtof (f[1], NULL);
+      status.speed = strtof (f[7], NULL);
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSA") && n >= 18)
    {
-      if (fix)
-      {
-         fix->fixmode = atoi (f[2]);
-         // TODO DOP?
-      }
+      gsadue = up + GSARATE + 2;
+      status.fixmode = atoi (f[2]);
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSV") && n >= 4)
    {
+      gsvdue = up + GSVRATE + 2;
       int n = atoi (f[3]);
-      if (fix && n)
-      {
-         fix->setsat = 1;
-         for (int s = 0; s < SYSTEMS; s++)
-            if (f[0][1] == system_code[s])
-               fix->sat[s] = n;
-      }
+      for (int s = 0; s < SYSTEMS; s++)
+         if (f[0][1] == system_code[s])
+            status.sat[s] = n;
       return;
    }
 }
@@ -639,8 +714,6 @@ nmea_task (void *z)
    uint64_t timeout = esp_timer_get_time () + 10000000;
    while (1)
    {
-      if (b.gpsinit)
-         gps_init ();
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes (gpsuart, p, buf + sizeof (buf) - p, 10 / portTICK_PERIOD_MS);
       if (l <= 0)
@@ -658,6 +731,7 @@ nmea_task (void *z)
             ESP_LOGE (TAG, "GPS silent, trying %ld", gpsbaudnow);
 #endif
             timeout = esp_timer_get_time () + 2000000 + fixms;
+            nmea_timeout (uptime ());
          }
          continue;
       }
@@ -717,24 +791,34 @@ log_line (fix_t * f)
          p += sprintf (p, ".%03ld", ms);
       *p++ = 'Z';
       *p = 0;
-      jo_stringf (j, "ts", temp);
+      if (t.tm_year >= 100)
+         jo_stringf (j, "ts", temp);
    }
-   if (f->setsat && logsats)
+   if (logsats)
    {
       jo_object (j, "sats");
       for (int s = 0; s < SYSTEMS; s++)
-         if (f->sat[s])
-            jo_int (j, system_name[s], f->sat[s]);
-      jo_int (j, "fix", f->fixmode);
-      jo_int (j, "used", f->sats);
+         if (f->slow.sat[s])
+            jo_int (j, system_name[s], f->slow.sat[s]);
+      if (f->slow.fixmode)
+      {
+         jo_int (j, "fix", f->slow.fixmode);
+         jo_int (j, "used", f->sats);
+      }
       jo_close (j);
    }
    if (f->setlla)
    {
       jo_litf (j, "lat", "%lf", f->lat);
       jo_litf (j, "lon", "%lf", f->lon);
-      if (f->fixmode >= 3)
+      if (f->slow.fixmode >= 3)
          jo_litf (j, "alt", "%lf", f->alt);
+   }
+   if (!isnan (f->slow.speed) && f->slow.speed != 0)
+   {
+      jo_litf (j, "speed", "%.2f", f->slow.speed);
+      if (!isnan (f->slow.course))
+         jo_litf (j, "course", "%.2f", f->slow.course);
    }
    if (f->setecef && logecef)
    {
@@ -769,6 +853,8 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
+      if (b.gpsinit)
+         gps_init ();
       if (!fixlog.count || (revk_link_down () && fixlog.count < 100))
       {
          sleep (1);
@@ -1043,7 +1129,7 @@ sd_task (void *z)
          // TODO checking available space
          // TODO moving or not - close file when not moving
          // TODO uploading and deleting files.
-         if (!o && f->sett && f->fixmode > 1)
+         if (!o && f->sett && f->slow.fixmode > 1)
          {
             struct tm t;
             time_t now = f->ecef.t / 1000000LL;
@@ -1106,6 +1192,8 @@ rgb_task (void *z)
          blink = 0;
       usleep (200000);
       int l = 0;
+      if (!zdadue && l < leds)
+         revk_led (strip, l++, 255, revk_rgb ('R'));    // No GPS
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
@@ -1132,17 +1220,19 @@ app_main ()
    xSemaphoreGive (cmd_mutex);
    fix_mutex = xSemaphoreCreateBinary ();
    xSemaphoreGive (fix_mutex);
-   ack_mutex = xSemaphoreCreateBinary ();
+   vSemaphoreCreateBinary (ack_semaphore);
 #define str(x) #x
    revk_register ("gps", 0, sizeof (gpsrx), &gpsrx, NULL, SETTING_SECRET);
-   revk_register ("sd", 0, sizeof (sdmosi), &sdmosi, "- 9", SETTING_SET | SETTING_BITFIELD | SETTING_FIX);
+   revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_BOOLEAN | SETTING_FIX);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
+#define bf(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_FIX);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
 #define u32(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define u8f(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_FIX);
 #define s(n,d,t) revk_register(#n,0,0,&n,str(d),0);
 #define io(n,d,t)         revk_register(#n,0,sizeof(n),&n,"- "str(d),SETTING_SET|SETTING_BITFIELD|SETTING_FIX);
    settings;
@@ -1151,7 +1241,9 @@ app_main ()
 #undef u32
 #undef s8
 #undef u8
+#undef u8
 #undef bl
+#undef bf
 #undef b
 #undef h
 #undef s
