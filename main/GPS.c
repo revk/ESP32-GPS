@@ -52,6 +52,8 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	io(gpstx,7,		GPS Tx - Rx yo GPS GPIO)	\
 	io(gpstick,3,		GPS Tick GPIO)	\
         u32(gpsbaud,115200,	GPS Baud)	\
+	u8l(moven,2,		How many VTG before moving) \
+	u8l(stopn,10,		How many VTG before stopped) \
 	bf(sdled,N,		First LED is SD)	\
 	io(sdss,8,		MicroSD SS)    \
         io(sdmosi,9,		MicroSD MOSI)     \
@@ -83,6 +85,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 #define s8(n,d,t)	int8_t n;
 #define u8(n,d,t)	uint8_t n;
 #define u8f(n,d,t)	uint8_t n;
+#define u8l(n,d,t)	uint8_t n;
 #define b(n,d,t) uint8_t n;
 #define bl(n,d,t) uint8_t n;
 #define bf(n,d,t) uint8_t n;
@@ -96,6 +99,7 @@ settings
 #undef s8
 #undef u8
 #undef u8f
+#undef u8l
 #undef bl
 #undef bf
 #undef b
@@ -119,14 +123,16 @@ static int pmtk = 0;            // Waiting ack
 static SemaphoreHandle_t fix_mutex = NULL;
 static int gpserrorcount = 0;   // running count
 static int gpserrors = 0;       // last count
+static uint8_t vtgcount = 0;    // Count of stopped/moving
 
 static struct
 {
    uint8_t gpsstarted:1;        // GPS started
-   uint8_t gpsreset:1;          // Reset GPS
    uint8_t gpsinit:1;           // Init GPS
    uint8_t doformat:1;          // Format SD
    uint8_t dodismount:1;        // Stop SD until card removed
+   uint8_t vtglast:1;           // Was last VTG moving
+   uint8_t moving:1;            // We seem to be moving
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -267,7 +273,7 @@ gps_connect (unsigned int baud)
    if (err)
       ESP_LOGE (TAG, "UART init error");
    sleep (1);
-   uart_write_bytes (gpsuart, "\r\n\r\n", 4);
+   uart_write_bytes (gpsuart, "\r\n\r\n$PMTK000*32\r\n", 4);
 }
 
 void
@@ -317,17 +323,6 @@ app_callback (int client, const char *prefix, const char *target, const char *su
          return "Expecting JSON string";
       if (len > sizeof (value))
          return "Too long";
-   }
-   if (!strcmp (suffix, "reset"))
-   {
-      b.gpsreset = 1;
-      b.gpsinit = 1;
-      return "";
-   }
-   if (!strcmp (suffix, "init"))
-   {
-      b.gpsinit = 1;
-      return "";
    }
    if (!strcmp (suffix, "format"))
    {
@@ -379,6 +374,7 @@ app_callback (int client, const char *prefix, const char *target, const char *su
    if (!strcmp (suffix, "reset"))
    {
       gps_cmd ("$PMTK104");     // Full cold start (resets to default settings including Baud rate)
+      b.gpsstarted = 0;
       revk_restart ("GPS has been reset", 1);
       return "";
    }
@@ -399,12 +395,6 @@ static void
 gps_init (void)
 {                               // Set up GPS
    b.gpsinit = 0;
-   if (b.gpsreset)
-   {
-      b.gpsreset = 0;
-      gps_cmd ("$PMTK104");     // Factory reset
-      sleep (1);
-   }
    if (gpsbaudnow != gpsbaud)
    {
       gps_cmd ("$PQBAUD,W,%d", gpsbaud);        // 
@@ -560,11 +550,7 @@ nmea (char *s)
    if (!strcmp (f[0], "PMTK010"))
       return;                   // Started, happens at end of init anyway
    if (!strcmp (f[0], "PMTK011"))
-   {
-      if (n >= 2 && atoi (f[1]) == 1)
-         b.gpsinit = 1;         // Startup
-      return;                   // Message! Ignore
-   }
+      return;                   // Ignore
    if (!strcmp (f[0], "PQEPE") && n >= 3)
    {                            // Estimated position error
       if (fix)
@@ -689,6 +675,28 @@ nmea (char *s)
       vtgdue = up + VTGRATE + 2;
       status.course = strtof (f[1], NULL);
       status.speed = strtof (f[7], NULL);
+      if (b.vtglast == (status.speed == 0 ? 0 : 1))
+      {
+         if (vtgcount < 255)
+            vtgcount++;
+         if (b.vtglast && !b.moving && vtgcount >= moven)
+         {
+            b.moving = 1;
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "action", "Started moving");
+            revk_info ("GPS", &j);
+         } else if (!b.vtglast && b.moving && vtgcount >= stopn)
+         {
+            b.moving = 0;
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "action", "Stopped moving");
+            revk_info ("GPS", &j);
+         }
+      } else
+      {
+         b.vtglast ^= 1;
+         vtgcount = 0;
+      }
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSA") && n >= 18)
@@ -728,8 +736,8 @@ nmea_task (void *z)
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", "No reply");
             jo_int (j, "Baud", rates[rate]);
-	    jo_int(j,"tx",gpstx&IO_MASK);
-	    jo_int(j,"rx",gpsrx&IO_MASK);
+            jo_int (j, "tx", gpstx & IO_MASK);
+            jo_int (j, "rx", gpsrx & IO_MASK);
             revk_error ("GPS", &j);
             if (++rate >= sizeof (rates) / sizeof (*rates))
                rate = 0;
@@ -897,7 +905,10 @@ checkupload (void)
       return;
    DIR *dir = opendir (sd_mount);
    if (!dir)
+   {
+      ESP_LOGE (TAG, "Cannot open dir");
       return;
+   }
    while (1)
    {
       char zap = 0;
@@ -923,11 +934,12 @@ checkupload (void)
             FILE *i = fopen (filename, "r");
             if (i)
             {
+               char *u;
+               asprintf (&u, "%s?%s", url, filename + sizeof (sd_mount));
                esp_http_client_config_t config = {
-                  .url = url,
+                  .url = u,
                   .crt_bundle_attach = esp_crt_bundle_attach,
                   .method = HTTP_METHOD_POST,
-                  .query = revk_id,
                };
                char *buf = mallocspi (1024);
                int response = 0;
@@ -947,7 +959,7 @@ checkupload (void)
                   }
                   esp_http_client_cleanup (client);
                }
-               sleep (1);
+               free (u);
                if (response / 100 == 2)
                {
                   jo_t j = jo_object_alloc ();
@@ -971,7 +983,10 @@ checkupload (void)
          }
       }
       if (zap)
+      {
          unlink (filename);
+         sleep (1);
+      }
       free (filename);
       if (!zap)
          return;
@@ -1118,65 +1133,73 @@ sd_task (void *z)
       b.doformat = 0;
 
       checkupload ();
-
-      FILE *o = NULL;
-      int line = 0;
-      char filename[100];
       while (!b.doformat && !b.dodismount)
       {
-         if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-            break;
-         fix_t *f = fixget (&fixsd);
-         if (!f)
+         FILE *o = NULL;
+         int line = 0;
+         char filename[100];
+         while (!b.doformat && !b.dodismount)
          {
-            sleep (1);
-            continue;
-         }
-         // TODO checking available space
-         // TODO moving or not - close file when not moving
-         // TODO uploading and deleting files.
-         if (!o && f->sett && f->slow.fixmode > 1)
-         {
-            struct tm t;
-            time_t now = f->ecef.t / 1000000LL;
-            gmtime_r (&now, &t);
-            sprintf (filename, "%s/%04d-%02d-%02dT%02d-%02d-%02d.json", sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
-                     t.tm_hour, t.tm_min, t.tm_sec);
-            o = fopen (filename, "w");
-            if (!o)
+            if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+               break;
+            fix_t *f = fixget (&fixsd);
+            if (!f)
             {
-               jo_t j = jo_object_alloc ();
-               jo_string (j, "error", "Failed to create file");
-               jo_string (j, "filename", filename);
-               revk_error ("SD", &j);
-            } else
-            {
-               jo_t j = jo_object_alloc ();
-               jo_string (j, "action", "Log file created");
-               jo_string (j, "filename", filename);
-               revk_info ("SD", &j);
-               fprintf (o, "[\n");
+               sleep (1);
+               continue;
             }
-            line = 0;
+            // TODO checking available space
+            // TODO moving or not - close file when not moving
+            // TODO uploading and deleting files.
+            if (!o && f->sett && f->slow.fixmode > 1 && b.moving)
+            {
+               struct tm t;
+               time_t now = f->ecef.t / 1000000LL;
+               gmtime_r (&now, &t);
+               sprintf (filename, "%s/%04d-%02d-%02dT%02d-%02d-%02d.json", sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                        t.tm_hour, t.tm_min, t.tm_sec);
+               o = fopen (filename, "w");
+               if (!o)
+               {
+                  jo_t j = jo_object_alloc ();
+                  jo_string (j, "error", "Failed to create file");
+                  jo_string (j, "filename", filename);
+                  revk_error ("SD", &j);
+               } else
+               {
+                  jo_t j = jo_object_alloc ();
+                  jo_string (j, "action", "Log file created");
+                  jo_string (j, "filename", filename);
+                  revk_info ("SD", &j);
+                  fprintf (o, "{\n \"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n", revk_id, revk_version);
+               }
+               line = 0;
+            }
+            if (o)
+            {
+               jo_t j = log_line (f);
+               char *l = jo_finisha (&j);
+               if (line++)
+                  fprintf (o, ",\n");
+               fprintf (o, " %s", l);
+               free (l);
+            } else
+               checkupload ();
+            fixadd (&fixfree, f);       // Discard
+            if (o && !b.moving && !fixsd.count && !fixpack.count)
+               break;           // Stopped moving
          }
          if (o)
          {
-            jo_t j = log_line (f);
-            char *l = jo_finisha (&j);
-            if (line++)
-               fprintf (o, ",\n");
-            fprintf (o, " %s", l);
-            free (l);
-         } else
-            checkupload ();
-         fixadd (&fixfree, f);  // Discard
+            fprintf (o, "\n]}\n");
+            fclose (o);
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "action", "Log file closed");
+            jo_string (j, "filename", filename);
+            revk_info ("SD", &j);
+         }
+         checkupload ();
       }
-      if (o)
-      {
-         fprintf (o, "\n]\n");
-         fclose (o);
-      }
-      checkupload ();
       // All done, unmount partition and disable SPI peripheral
       esp_vfs_fat_sdcard_unmount (sd_mount, card);
       ESP_LOGI (TAG, "Card unmounted");
@@ -1280,6 +1303,7 @@ app_main ()
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define u8f(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_FIX);
+#define u8l(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_LIVE);
 #define s(n,d,t) revk_register(#n,0,0,&n,str(d),0);
 #define io(n,d,t)         revk_register(#n,0,sizeof(n),&n,"- "str(d),SETTING_SET|SETTING_BITFIELD|SETTING_FIX);
    settings;
@@ -1288,7 +1312,8 @@ app_main ()
 #undef u32
 #undef s8
 #undef u8
-#undef u8
+#undef u8f
+#undef u8l
 #undef bl
 #undef bf
 #undef b
