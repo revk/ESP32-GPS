@@ -4,7 +4,7 @@
 // TODO
 // TEST DATA
 // DOP
-// START/STOP
+// START/STOP - Needs work
 // PACK
 // ACC
 
@@ -43,16 +43,15 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(charger,-33,		Charger status)	\
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,15,		RGB LEDs)	\
-	b(acclog,1,		Accellerometer log) \
      	io(accsda,13,		Accellerometer SDA) \
-     	io(accscl,13,		Accellerometer SCL) \
+     	io(accscl,14,		Accellerometer SCL) \
 	bl(gpsdebug,N,		GPS debug logging)	\
 	u8(gpsuart,1,		GPS UART ID)	\
 	io(gpsrx,5,		GPS Rx - Tx from GPS GPIO)	\
 	io(gpstx,7,		GPS Tx - Rx yo GPS GPIO)	\
 	io(gpstick,3,		GPS Tick GPIO)	\
         u32(gpsbaud,115200,	GPS Baud)	\
-	u8l(moven,2,		How many VTG before moving) \
+	u8l(moven,1,		How many VTG before moving) \
 	u8l(stopn,10,		How many VTG before stopped) \
 	bf(sdled,N,		First LED is SD)	\
 	io(sdss,8,		MicroSD SS)    \
@@ -69,11 +68,13 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
         b(qzss,N,               GPS enable QZSS)        \
         b(aic,Y,                GPS enable AIC) \
         b(easy,Y,               GPS enable Easy)        \
-	b(walking,N,            GPS Walking mode)       \
-        b(flight,N,             GPS Flight mode)        \
-        b(balloon,N,            GPS Balloon mode)       \
-	b(logecef,Y,		Log ECEF data)		\
-	b(logsats,Y,		Log Sats data)		\
+	b(gpswalking,N,            GPS Walking mode)       \
+        b(gpsflight,N,             GPS Flight mode)        \
+        b(gpsballoon,N,            GPS Balloon mode)       \
+	bl(logecef,Y,		Log ECEF data)		\
+	bl(logsats,Y,		Log Sats data)		\
+	bl(logcs,Y,		Log Course/speed)		\
+	bl(logacc,Y,		Log Accelerometer)		\
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
 	u16(packm,1,	 	Pack delta m)	\
@@ -119,10 +120,10 @@ const char sd_mount[] = "/sd";
 static led_strip_handle_t strip = NULL;
 static SemaphoreHandle_t cmd_mutex = NULL;
 static SemaphoreHandle_t ack_semaphore = NULL;
-static int pmtk = 0;            // Waiting ack
+static uint16_t pmtk = 0;       // Waiting ack
 static SemaphoreHandle_t fix_mutex = NULL;
-static int gpserrorcount = 0;   // running count
-static int gpserrors = 0;       // last count
+static uint8_t gpserrorcount = 0;       // running count
+static uint8_t gpserrors = 0;   // last count
 static uint8_t vtgcount = 0;    // Count of stopped/moving
 
 static struct
@@ -137,7 +138,7 @@ static struct
 
 typedef struct slow_s slow_t;
 struct slow_s
-{
+{                               // Slow updated data
    uint8_t sat[SYSTEMS];        // Count per system
    uint8_t fixmode;             // Fix mode
    float course;
@@ -146,9 +147,8 @@ struct slow_s
 
 typedef struct fix_s fix_t;
 struct fix_s
-{
+{                               // each fix
    fix_t *next;                 // Next in queue
-   fix_t *pair;                 // Pair for packing
    struct
    {                            // Earth centred Earth fixed, used for packing, etc, and time stamp (us)
       int64_t x,
@@ -163,6 +163,7 @@ struct fix_s
    float hepe;
    float vepe;
    uint8_t sats;                // Sats used for fix
+   uint8_t corner:1;            // Corner point for packing
    uint8_t sett:1;
    uint8_t setsat:1;
    uint8_t setecef:1;
@@ -408,7 +409,7 @@ gps_init (void)
    gps_cmd ("$PQTXT,W,0,1");    // Disable TXT
    gps_cmd ("$PQECEF,W,1,1");   // Enable ECEF
    gps_cmd ("$PQEPE,W,1,1");    // Enable EPE
-   gps_cmd ("$PMTK886,%d", balloon ? 3 : flight ? 2 : walking ? 1 : 0); // FR mode
+   gps_cmd ("$PMTK886,%d", gpsballoon ? 3 : gpsflight ? 2 : gpswalking ? 1 : 0);        // FR mode
    // Queries - responses prompt settings changes if needed
    gps_cmd ("$PMTK414");        // Q_NMEA_OUTPUT
    gps_cmd ("$PMTK400");        // Q_FIX
@@ -680,7 +681,7 @@ nmea (char *s)
          if (vtgcount < 255)
             vtgcount++;
          if (b.vtglast && !b.moving && vtgcount >= moven)
-         {
+         {                      // TODO maybe high speed is quicker
             b.moving = 1;
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
@@ -695,7 +696,7 @@ nmea (char *s)
       } else
       {
          b.vtglast ^= 1;
-         vtgcount = 0;
+         vtgcount = 1;
       }
       return;
    }
@@ -826,7 +827,7 @@ log_line (fix_t * f)
       if (f->slow.fixmode >= 3)
          jo_litf (j, "alt", "%lf", f->alt);
    }
-   if (!isnan (f->slow.speed) && f->slow.speed != 0)
+   if (logcs && !isnan (f->slow.speed) && f->slow.speed != 0)
    {
       jo_litf (j, "speed", "%.2f", f->slow.speed);
       if (!isnan (f->slow.course))
@@ -881,20 +882,119 @@ log_task (void *z)
    }
 }
 
+fix_t *
+findmax (fix_t * a, fix_t * b, int64_t * dsqp)
+{
+   if (*dsqp)
+      *dsqp = 0;
+   if (!a || !b || a == b || a->next == b)
+      return NULL;
+   int64_t cx = (a->ecef.x + b->ecef.x) / 2LL;
+   int64_t cy = (a->ecef.y + b->ecef.y) / 2LL;
+   int64_t cz = (a->ecef.z + b->ecef.z) / 2LL;
+   int64_t ct = (a->ecef.t + b->ecef.t) / 2LL;
+   int64_t x (fix_t * p)
+   {
+      return p->ecef.x - cx;
+   }
+   int64_t y (fix_t * p)
+   {
+      return p->ecef.y - cy;
+   }
+   int64_t z (fix_t * p)
+   {
+      return p->ecef.z - cz;
+   }
+   int64_t t (fix_t * p)
+   {
+      return (p->ecef.t - ct) * packm / packs;  // Scaled to packm
+   }
+   int64_t distsq (int64_t dx, int64_t dy, int64_t dz, int64_t dt)
+   {                            // Distance in 4D space
+      return dx * dx + dy * dy + dz * dz + dt * dt;
+   }
+   int64_t DX = x (b) - x (a);
+   int64_t DY = y (b) - y (a);
+   int64_t DZ = z (b) - z (a);
+   int64_t DT = t (b) - t (a);
+   int64_t LSQ = distsq (DX, DY, DZ, DT);
+   fix_t *m = NULL;
+   int64_t best = 0;
+   for (fix_t * p = a->next; p && p != b; p = p->next)
+   {
+      int64_t d = 0;
+      if (!LSQ)
+         d = distsq (x (p) - x (a), y (p) - y (a), z (p) - z (a), t (p) - t (a));       // Simple distance from point
+      else
+      {
+         int64_t T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
+         d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
+      }
+      if (m && d <= best)
+         continue;
+      best = d;
+      m = p;
+   }
+   if (*dsqp)
+      *dsqp = best;
+   return m;
+}
+
 void
 pack_task (void *z)
 {
+   int packtry = packmin;
+   int64_t cutoff = packm * 1000000LL * packm * 1000000LL;
    while (1)
    {
-      fix_t *f = fixget (&fixpack);
-      if (!f)
-      {
+      if (fixpack.count < 2 || (b.moving && fixpack.count < packtry))
+      {                         // Wait
          sleep (1);
          continue;
       }
-      // TODO packing
-      // TODO start and stop moving
-      fixadd (&fixsd, f);
+      fix_t *A = fixpack.base;
+      fix_t *B = fixpack.last;
+      int64_t dsq = 0;
+      fix_t *M = findmax (A, B, &dsq);
+      ESP_LOGE (TAG, "Pack %ld/%d dsq %lld m %p", fixpack.count, packtry, dsq, M);
+      if (dsq < cutoff && b.moving && fixpack.count < packmax)
+      {                         // wait for more
+         packtry += packmin;
+         continue;
+      }
+      packtry = packmin;
+      int count = 0;
+      while (A && M)
+      {
+         ESP_LOGE (TAG, "Pack %p %p", A, M);
+         M->corner = 1;
+         B = M;
+         M = findmax (A, B, &dsq);
+         if (dsq < cutoff)
+         {                      // Drop all in middle
+            fix_t *X;
+            while ((X = A->next) != B)
+            {
+               count++;
+               A->next = X->next;
+               xSemaphoreTake (fix_mutex, portMAX_DELAY);
+               fixpack.count--;
+               xSemaphoreGive (fix_mutex);
+               fixadd (&fixfree, X);
+            }
+            M = B->next;
+            while (M && !M->corner)
+               M = M->next;
+         }
+      }
+      ESP_LOGE (TAG, "Packed %d", count);
+      count = 0;
+      while (fixpack.base && fixpack.base->next != M)
+      {
+         fixadd (&fixsd, fixget (&fixpack));
+         count++;
+      }
+      ESP_LOGE (TAG, "Processed %d", count);
    }
 }
 
@@ -1222,7 +1322,9 @@ rgb_task (void *z)
       usleep (200000);
       int l = 0;
       if (!zdadue && l < leds)
-         revk_led (strip, l++, 255, revk_rgb ('R'));    // No GPS
+         revk_led (strip, l++, 255, revk_rgb ('R'));    // No GPS clock
+      else if (!b.moving && l < leds)
+         revk_led (strip, l++, 255, revk_rgb ('M'));    // Not moving
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
@@ -1290,9 +1392,9 @@ app_main ()
    xSemaphoreGive (fix_mutex);
    vSemaphoreCreateBinary (ack_semaphore);
 #define str(x) #x
-   revk_register ("gps", 0, sizeof (gpsrx), &gpsrx, NULL, SETTING_SECRET);
+   revk_register ("gps", 0, sizeof (gpsdebug), &gpsdebug, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
    revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
-   revk_register ("acc", 0, sizeof (acclog), &acclog, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
+   revk_register ("log", 0, sizeof (logacc), &logacc, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
    revk_register ("pack", 0, sizeof (packm), &packm, "1", SETTING_SECRET);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bf(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_FIX);
