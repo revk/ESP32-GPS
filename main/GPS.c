@@ -1009,7 +1009,6 @@ pack_task (void *z)
          }
       }
       count = 0;
-      ESP_LOGE (TAG, "Process to %p", E);
       while (fixpack.base && fixpack.base != E)
       {
          fix_t *X = fixget (&fixpack);
@@ -1017,9 +1016,7 @@ pack_task (void *z)
             count++;
        fixadd (X->deleted ? &fixfree:&fixsd, X);
       }
-      ESP_LOGE (TAG, "Processed to %p", fixpack.base);
-      if (count)
-         ESP_LOGE (TAG, "Processed %d", count);
+      ESP_LOGE (TAG, "Processed to %p (%d)", fixpack.base,count);
    }
 }
 
