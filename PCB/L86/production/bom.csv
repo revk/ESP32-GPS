@@ -1,4 +1,5 @@
 ﻿Designator,Footprint,Quantity,Value,LCSC Part #
 BT1,Battery-Holder-2032,1,Battery_Cell,
+C1,CP_EIA-7343-31_Kemet-D,1,C_Polarized,C106188
 J1,PTSM-HH-5-RA-P-SMD,1,Conn_01x05,
 U1,L86-M33,1,L86-M33,
