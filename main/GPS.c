@@ -883,10 +883,12 @@ log_task (void *z)
 }
 
 fix_t *
-findmax (fix_t * a, fix_t * b, int64_t * dsqp)
+findmax (fix_t * a, fix_t * b, int64_t * dsqp, int *countp)
 {
-   if (*dsqp)
+   if (dsqp)
       *dsqp = 0;
+   if (countp)
+      *countp = ((a == b) ? 1 : (a && b) ? 2 : 0);
    if (!a || !b || a == b || a->next == b)
       return NULL;
    int64_t cx = (a->ecef.x + b->ecef.x) / 2LL;
@@ -920,8 +922,10 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
    int64_t LSQ = distsq (DX, DY, DZ, DT);
    fix_t *m = NULL;
    int64_t best = 0;
+   int count = 2;
    for (fix_t * p = a->next; p && p != b; p = p->next)
    {
+      count++;
       int64_t d = 0;
       if (!LSQ)
          d = distsq (x (p) - x (a), y (p) - y (a), z (p) - z (a), t (p) - t (a));       // Simple distance from point
@@ -935,8 +939,10 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
       best = d;
       m = p;
    }
-   if (*dsqp)
+   if (dsqp)
       *dsqp = best;
+   if (countp)
+      *countp = count;
    return m;
 }
 
@@ -947,7 +953,7 @@ pack_task (void *z)
    int64_t cutoff = packm * 1000000LL * packm * 1000000LL;
    while (1)
    {
-      if (fixpack.count < 2 || (b.moving && fixpack.count < packtry))
+      if (fixpack.count < 2 || (/*b.moving && */fixpack.count < packtry))
       {                         // Wait
          sleep (1);
          continue;
@@ -955,24 +961,25 @@ pack_task (void *z)
       fix_t *A = fixpack.base;
       fix_t *B = fixpack.last;
       int64_t dsq = 0;
-      fix_t *M = findmax (A, B, &dsq);
-      ESP_LOGE (TAG, "Pack %ld/%d dsq %lld m %p", fixpack.count, packtry, dsq, M);
-      if (dsq < cutoff && b.moving && fixpack.count < packmax)
+      int count = 0;
+      fix_t *M = findmax (A, B, &dsq, &count);
+      ESP_LOGE (TAG, "Check %p %p %p (%d) %lld", A, M, B, count, dsq);
+      if (dsq < cutoff && /*b.moving && */fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
          continue;
       }
       packtry = packmin;
-      int count = 0;
       while (A && M)
-      {
-         ESP_LOGE (TAG, "Pack %p %p", A, M);
+      { // Check A to M
          M->corner = 1;
          B = M;
-         M = findmax (A, B, &dsq);
+         M = findmax (A, B, &dsq, &count);
+         ESP_LOGE (TAG, "Pack %p %p %p (%d) %lld", A, M, B, count, dsq);
          if (dsq < cutoff)
-         {                      // Drop all in middle
+         {                      // Drop all in between as all within margin - otherwise process A to M again.
             fix_t *X;
+            count = 0;
             while ((X = A->next) != B)
             {
                count++;
@@ -982,19 +989,22 @@ pack_task (void *z)
                xSemaphoreGive (fix_mutex);
                fixadd (&fixfree, X);
             }
-            M = B->next;
+            ESP_LOGE (TAG, "Zapped %d", count);
+            // Find next half
+            A = B;
+            M = A->next;
             while (M && !M->corner)
                M = M->next;
          }
       }
-      ESP_LOGE (TAG, "Packed %d", count);
       count = 0;
       while (fixpack.base && fixpack.base->next != M)
       {
          fixadd (&fixsd, fixget (&fixpack));
          count++;
       }
-      ESP_LOGE (TAG, "Processed %d", count);
+      if (count)
+         ESP_LOGE (TAG, "Processed %d", count);
    }
 }
 
@@ -1248,9 +1258,6 @@ sd_task (void *z)
                sleep (1);
                continue;
             }
-            // TODO checking available space
-            // TODO moving or not - close file when not moving
-            // TODO uploading and deleting files.
             if (!o && f->sett && f->slow.fixmode > 1 && b.moving)
             {
                struct tm t;
