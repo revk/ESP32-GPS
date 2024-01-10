@@ -209,7 +209,7 @@ fixget (fixq_t * q)
    {
       f = q->base;
       q->base = f->next;
-      f->next = NULL;
+      f->next = NULL; // Tidy
       q->count--;
    }
    xSemaphoreGive (fix_mutex);
@@ -909,10 +909,10 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, int *countp)
    }
    int64_t t (fix_t * p)
    {
-      return (p->ecef.t - ct) * packm / packs;  // Scaled to packm
+      return (p->ecef.t - ct) * packm / packs;  // Scaled packs to packm
    }
    int64_t distsq (int64_t dx, int64_t dy, int64_t dz, int64_t dt)
-   {                            // Distance in 4D space
+   {                            // Distance squared in 4D space
       return dx * dx + dy * dy + dz * dz + dt * dt;
    }
    int64_t DX = x (b) - x (a);
@@ -983,8 +983,8 @@ pack_task (void *z)
             while ((X = A->next) != B)
             {
                count++;
-               A->next = X->next;
                xSemaphoreTake (fix_mutex, portMAX_DELAY);
+               A->next = X->next;
                fixpack.count--;
                xSemaphoreGive (fix_mutex);
                fixadd (&fixfree, X);
