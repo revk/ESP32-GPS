@@ -67,10 +67,11 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
         b(qzss,N,               GPS enable QZSS)        \
         b(aic,Y,                GPS enable AIC) \
         b(easy,Y,               GPS enable Easy)        \
-	b(gpswalking,N,            GPS Walking mode)       \
-        b(gpsflight,N,             GPS Flight mode)        \
-        b(gpsballoon,N,            GPS Balloon mode)       \
+	b(gpswalking,N,         GPS Walking mode)       \
+        b(gpsflight,N,          GPS Flight mode)        \
+        b(gpsballoon,N,         GPS Balloon mode)       \
 	bl(logecef,Y,		Log ECEF data)		\
+	bl(logepe,Y,		Log EPE data)		\
 	bl(logsats,Y,		Log Sats data)		\
 	bl(logcs,Y,		Log Course/speed)		\
 	bl(logacc,Y,		Log Accelerometer)		\
@@ -818,6 +819,11 @@ log_line (fix_t * f)
          jo_int (j, "fix", f->slow.fixmode);
          jo_int (j, "used", f->sats);
       }
+      if (logepe && f->setepe)
+      {
+         jo_litf (j, "hepe", "%f", f->hepe);
+         jo_litf (j, "vepe", "%f", f->vepe);
+      }
       jo_close (j);
    }
    if (f->setlla)
@@ -934,6 +940,11 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, int *countp)
          int64_t T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
          d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
       }
+      int64_t e = p->hepe * 1000000 * p->hepe * 1000000;
+      if (e > d)
+         d = 0;
+      else
+         d -= e;
       if (m && d <= best)
          continue;
       best = d;
@@ -963,6 +974,7 @@ pack_task (void *z)
       int64_t dsq = 0;
       int count = 0;
       fix_t *M = findmax (A, B, &dsq, &count);
+      fix_t *E = M ? : B;
       ESP_LOGE (TAG, "Check %p %p %p (%d) %lld", A, M, B, count, dsq);
       if (dsq < cutoff && /*b.moving && */ fixpack.count < packmax)
       {                         // wait for more
@@ -989,25 +1001,22 @@ pack_task (void *z)
                xSemaphoreGive (fix_mutex);
                fixadd (&fixfree, X);
             }
-            ESP_LOGE (TAG, "Zapped %d", count);
+            if(count)ESP_LOGE (TAG, "Zapped %d", count);
             // Find next half
             A = B;
             M = A->next;
             while (M && !M->corner)
                M = M->next;
-            if (!M)
-            {                   // second half stays for continual processing
-               M = B;
-               break;
-            }
          }
       }
       count = 0;
-      while (fixpack.base && fixpack.base->next != M)
+      ESP_LOGE(TAG,"Process to %p",E);
+      while (fixpack.base && fixpack.base != E)
       {
          fixadd (&fixsd, fixget (&fixpack));
          count++;
       }
+      ESP_LOGE(TAG,"Processed to %p",fixpack.base);
       if (count)
          ESP_LOGE (TAG, "Processed %d", count);
    }
