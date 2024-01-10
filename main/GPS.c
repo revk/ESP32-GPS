@@ -5,7 +5,6 @@
 // TEST DATA
 // DOP
 // START/STOP - Needs work
-// PACK
 // ACC
 
 static __attribute__((unused))
@@ -190,6 +189,7 @@ fixadd (fixq_t * q, fix_t * f)
    if (!f)
       return NULL;
    xSemaphoreTake (fix_mutex, portMAX_DELAY);
+   f->next = NULL;              // Just in case
    if (q->base)
       q->last->next = f;
    else
@@ -953,7 +953,7 @@ pack_task (void *z)
    int64_t cutoff = packm * 1000000LL * packm * 1000000LL;
    while (1)
    {
-      if (fixpack.count < 2 || (/*b.moving && */fixpack.count < packtry))
+      if (fixpack.count < 2 || ( /*b.moving && */ fixpack.count < packtry))
       {                         // Wait
          sleep (1);
          continue;
@@ -964,14 +964,14 @@ pack_task (void *z)
       int count = 0;
       fix_t *M = findmax (A, B, &dsq, &count);
       ESP_LOGE (TAG, "Check %p %p %p (%d) %lld", A, M, B, count, dsq);
-      if (dsq < cutoff && /*b.moving && */fixpack.count < packmax)
+      if (dsq < cutoff && /*b.moving && */ fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
          continue;
       }
       packtry = packmin;
       while (A && M)
-      { // Check A to M
+      {                         // Check A to M
          M->corner = 1;
          B = M;
          M = findmax (A, B, &dsq, &count);
