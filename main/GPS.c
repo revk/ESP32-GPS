@@ -209,7 +209,7 @@ fixget (fixq_t * q)
    {
       f = q->base;
       q->base = f->next;
-      f->next = NULL; // Tidy
+      f->next = NULL;           // Tidy
       q->count--;
    }
    xSemaphoreGive (fix_mutex);
@@ -995,6 +995,11 @@ pack_task (void *z)
             M = A->next;
             while (M && !M->corner)
                M = M->next;
+            if (!M)
+            {                   // second half stays for continual processing
+               M = B;
+               break;
+            }
          }
       }
       count = 0;
