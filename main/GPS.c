@@ -911,8 +911,13 @@ checkupload (void)
       {
          ESP_LOGE (TAG, "Send %s", filename);
          if (!s.st_size)
+         {
             zap = 1;            // Empty
-         else
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "error", "Empty file");
+            jo_string (j, "filename", filename);
+            revk_error ("Upload", &j);
+         } else
          {
             FILE *i = fopen (filename, "r");
             if (i)
