@@ -272,7 +272,7 @@ void
 gps_cmd (const char *fmt, ...)
 {                               // Send command to UART
    if (pmtk)
-      xSemaphoreTake (ack_semaphore, 10000 * portTICK_PERIOD_MS);       // Wait for ACK from last command
+      xSemaphoreTake (ack_semaphore, 1000 * portTICK_PERIOD_MS);        // Wait for ACK from last command
    char s[100];
    va_list ap;
    va_start (ap, fmt);
@@ -511,11 +511,14 @@ nmea (char *s)
    static uint8_t century = 19;
    static fix_t *fix = NULL;
    static uint32_t fixtod = -1;
+   static uint32_t sod = 0;
    void startfix (const char *tod)
    {
       uint32_t newtod = (tod ? parse (tod, 3) : -1);
       if (fix && fixtod == newtod)
          return;                // Same fix
+      if (sod && fixtod > newtod)
+         sod++;
       fixtod = newtod;
       if (fix)
       {
@@ -524,6 +527,13 @@ nmea (char *s)
       }
       if (tod)
          fix = fixnew ();
+      if (sod && tod && fix)
+      {
+         fix->ecef.t =
+            1000000LL * (sod * 86400 + (fixtod / 10000000LL) * 3600 + (fixtod / 100000LL % 100LL) * 60 +
+                         (fixtod / 1000LL % 100LL)) + (fixtod % 1000LL) * 1000LL;
+         fix->sett = 1;
+      }
    }
    if (!b.gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_link_down ()))
       b.gpsinit = 1;            // Time to send init
@@ -544,19 +554,7 @@ nmea (char *s)
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GLL"))
       return;                   // ignore
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "RMC") && n >= 13 && strlen (f[9]) == 6)
-   {
-      startfix (f[1]);
-      struct tm t = { };
-      t.tm_year = (f[9][4] - '0') * 10 + f[9][5] - '0' + (century - 19) * 100;
-      t.tm_mon = (f[9][2] - '0') * 10 + f[9][3] - '0' - 1;
-      t.tm_mday = (f[9][0] - '0') + f[9][1] - '0';
-      t.tm_hour = fixtod / 10000000 % 100;
-      t.tm_min = fixtod / 100000 % 100;
-      t.tm_sec = fixtod / 1000 % 100;
-      fix->ecef.t = 1000000LL * timegm (&t) + (fixtod % 1000LL) * 1000LL;
-      fix->sett = 1;
       return;                   // ignore
-   }
    if (!strcmp (f[0], "PMTK010"))
       return;                   // Started, happens at end of init anyway
    if (!strcmp (f[0], "PMTK011"))
@@ -616,10 +614,18 @@ nmea (char *s)
    if (!strcmp (f[0], "PMTK514") && n >= 2)
    {
       unsigned int rates[19] = { 0 };
+      //rates[0]=0;     // GLL
+      //rates[1]=0;     // RMC
       rates[2] = (VTGRATE * 1000 / fixms ? : 1);        // VTG
       rates[3] = 1;             // GGA every sample
       rates[4] = (GSARATE * 1000 / fixms ? : 1);        // GSA
       rates[5] = (GSVRATE * 1000 / fixms ? : 1);        // GSV
+      //rates[6]=0; // GRS
+      //rates[7]=0; // GST
+      //rates[13]=0; // MALM
+      //rates[14]=0; // MEPH
+      //rates[15]=0; // MDGP
+      //rates[16]=0; // MDBG
       rates[17] = (ZDARATE * 1000 / fixms ? : 1);       // ZDA
       int q;
       for (q = 0; q < sizeof (rates) / sizeof (*rates) && rates[q] == (1 + q < n ? atoi (f[1 + q]) : 0); q++);
@@ -657,11 +663,12 @@ nmea (char *s)
          century = atoi (f[4]) / 100;
          if (century >= 20)
          {
-            struct tm t = { };
-            struct timeval v = { };
+            struct timeval v = { 0 };
+            struct tm t = { 0 };
             t.tm_year = atoi (f[4]) - 1900;
             t.tm_mon = atoi (f[3]) - 1;
             t.tm_mday = atoi (f[2]);
+            sod = timegm (&t) / 86400;
             t.tm_hour = (f[1][0] - '0') * 10 + f[1][1] - '0';
             t.tm_min = (f[1][2] - '0') * 10 + f[1][3] - '0';
             t.tm_sec = (f[1][4] - '0') * 10 + f[1][5] - '0';
@@ -793,8 +800,11 @@ log_line (fix_t * f)
       for (int s = 0; s < SYSTEMS; s++)
          if (f->slow.sat[s])
             jo_int (j, system_name[s], f->slow.sat[s]);
-      jo_int (j, "fix", f->slow.fixmode);
-      jo_int (j, "used", f->sats);
+      if (f->slow.fixmode)
+      {
+         jo_int (j, "fix", f->slow.fixmode);
+         jo_int (j, "used", f->sats);
+      }
       jo_close (j);
    }
    if (f->setlla)
@@ -804,10 +814,12 @@ log_line (fix_t * f)
       if (f->slow.fixmode >= 3)
          jo_litf (j, "alt", "%lf", f->alt);
    }
-   if (!isnan (f->slow.course))
-      jo_litf (j, "course", "%f", f->slow.course);
-   if (!isnan (f->slow.speed))
-      jo_litf (j, "speed", "%f", f->slow.speed);
+   if (!isnan (f->slow.speed) && f->slow.speed != 0)
+   {
+      jo_litf (j, "speed", "%.2f", f->slow.speed);
+      if (!isnan (f->slow.course))
+         jo_litf (j, "course", "%.2f", f->slow.course);
+   }
    if (f->setecef && logecef)
    {
       void o (const char *t, int64_t v)
