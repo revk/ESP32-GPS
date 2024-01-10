@@ -164,6 +164,7 @@ struct fix_s
    float vepe;
    uint8_t sats;                // Sats used for fix
    uint8_t corner:1;            // Corner point for packing
+   uint8_t deleted:1;           // Deleted by packing
    uint8_t sett:1;
    uint8_t setsat:1;
    uint8_t setecef:1;
@@ -821,8 +822,10 @@ log_line (fix_t * f)
       }
       if (logepe && f->setepe)
       {
-         jo_litf (j, "hepe", "%f", f->hepe);
-         jo_litf (j, "vepe", "%f", f->vepe);
+         if (f->hepe > 0)
+            jo_litf (j, "hepe", "%f", f->hepe);
+         if (f->vepe > 0)
+            jo_litf (j, "vepe", "%f", f->vepe);
       }
       jo_close (j);
    }
@@ -975,7 +978,7 @@ pack_task (void *z)
       int count = 0;
       fix_t *M = findmax (A, B, &dsq, &count);
       fix_t *E = M ? : B;
-      ESP_LOGE (TAG, "Check %p %p %p (%d) %lld", A, M, B, count, dsq);
+      ESP_LOGE (TAG, "Check %p %p %p (%d/%d) %lld", A, M, B, count, packtry, dsq);
       if (dsq < cutoff && /*b.moving && */ fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
@@ -990,18 +993,14 @@ pack_task (void *z)
          ESP_LOGE (TAG, "Pack %p %p %p (%d) %lld", A, M, B, count, dsq);
          if (dsq < cutoff)
          {                      // Drop all in between as all within margin - otherwise process A to M again.
-            fix_t *X;
             count = 0;
-            while ((X = A->next) != B)
+            for (fix_t * X = A->next; X && X != B; X = X->next)
             {
+               X->deleted = 1;
                count++;
-               xSemaphoreTake (fix_mutex, portMAX_DELAY);
-               A->next = X->next;
-               fixpack.count--;
-               xSemaphoreGive (fix_mutex);
-               fixadd (&fixfree, X);
             }
-            if(count)ESP_LOGE (TAG, "Zapped %d", count);
+            if (count)
+               ESP_LOGE (TAG, "Zapped %d", count);
             // Find next half
             A = B;
             M = A->next;
@@ -1010,13 +1009,15 @@ pack_task (void *z)
          }
       }
       count = 0;
-      ESP_LOGE(TAG,"Process to %p",E);
+      ESP_LOGE (TAG, "Process to %p", E);
       while (fixpack.base && fixpack.base != E)
       {
-         fixadd (&fixsd, fixget (&fixpack));
-         count++;
+         fix_t *X = fixget (&fixpack);
+         if (!X->deleted)
+            count++;
+       fixadd (X->deleted ? &fixfree:&fixsd, X);
       }
-      ESP_LOGE(TAG,"Processed to %p",fixpack.base);
+      ESP_LOGE (TAG, "Processed to %p", fixpack.base);
       if (count)
          ESP_LOGE (TAG, "Processed %d", count);
    }
