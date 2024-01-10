@@ -103,9 +103,11 @@ settings
 #define	ZDARATE	10
 #define	GSARATE	10
 #define	GSVRATE	10
+#define VTGRATE 10
 static uint32_t zdadue = 0;
 static uint32_t gsadue = 0;
 static uint32_t gsvdue = 0;
+static uint32_t vtgdue = 0;
 
 const char sd_mount[] = "/sd";
 static led_strip_handle_t strip = NULL;
@@ -119,6 +121,7 @@ static int gpserrors = 0;       // last count
 static struct
 {
    uint8_t gpsstarted:1;        // GPS started
+   uint8_t gpsreset:1;          // Reset GPS
    uint8_t gpsinit:1;           // Init GPS
    uint8_t doformat:1;          // Format SD
    uint8_t dodismount:1;        // Stop SD until card removed
@@ -129,6 +132,8 @@ struct slow_s
 {
    uint8_t sat[SYSTEMS];        // Count per system
    uint8_t fixmode;             // Fix mode
+   float course;
+   float speed;
 } status;
 
 typedef struct fix_s fix_t;
@@ -147,8 +152,6 @@ struct fix_s
    double lat,
      lon,
      alt;                       // Lat/lon/alt
-   float course;
-   float speed;
    float hepe;
    float vepe;
    uint8_t sats;                // Sats used for fix
@@ -156,7 +159,6 @@ struct fix_s
    uint8_t setsat:1;
    uint8_t setecef:1;
    uint8_t setlla:1;
-   uint8_t setcs:1;
    uint8_t setepe:1;
 };
 
@@ -270,24 +272,24 @@ void
 gps_cmd (const char *fmt, ...)
 {                               // Send command to UART
    if (pmtk)
-      xSemaphoreTake (ack_semaphore, 1000 * portTICK_PERIOD_MS);        // Wait for ACK from last command
+      xSemaphoreTake (ack_semaphore, 10000 * portTICK_PERIOD_MS);       // Wait for ACK from last command
    char s[100];
    va_list ap;
    va_start (ap, fmt);
    vsnprintf (s, sizeof (s) - 5, fmt, ap);
    va_end (ap);
+   if (gpsdebug)
+   {                            // Log (without checksum)
+      jo_t j = jo_create_alloc ();
+      jo_string (j, NULL, s);
+      revk_info ("tx", &j);
+   }
    uint8_t c = 0;
    char *p;
    for (p = s + 1; *p; p++)
       c ^= *p;
    if (*s == '$')
       p += sprintf (p, "*%02X\r\n", c); // We allowed space
-   if (gpsdebug)
-   {
-      jo_t j = jo_create_alloc ();
-      jo_string (j, NULL, s);
-      revk_info ("tx", &j);
-   }
    xSemaphoreTake (cmd_mutex, portMAX_DELAY);
    uart_write_bytes (gpsuart, s, p - s);
    xSemaphoreGive (cmd_mutex);
@@ -313,6 +315,12 @@ app_callback (int client, const char *prefix, const char *target, const char *su
          return "Expecting JSON string";
       if (len > sizeof (value))
          return "Too long";
+   }
+   if (!strcmp (suffix, "reset"))
+   {
+      b.gpsreset = 1;
+      b.gpsinit = 1;
+      return "";
    }
    if (!strcmp (suffix, "init"))
    {
@@ -389,6 +397,12 @@ static void
 gps_init (void)
 {                               // Set up GPS
    b.gpsinit = 0;
+   if (b.gpsreset)
+   {
+      b.gpsreset = 0;
+      gps_cmd ("$PMTK104");     // Factory reset
+      sleep (1);
+   }
    if (gpsbaudnow != gpsbaud)
    {
       gps_cmd ("$PQBAUD,W,%d", gpsbaud);        // 
@@ -430,6 +444,12 @@ nmea_timeout (uint32_t up)
    {
       gsvdue = 0;
       memset (status.sat, 0, sizeof (status.sat));
+   }
+   if (vtgdue && vtgdue < up)
+   {
+      vtgdue = 0;
+      status.course = NAN;
+      status.speed = NAN;
    }
 }
 
@@ -596,8 +616,8 @@ nmea (char *s)
    if (!strcmp (f[0], "PMTK514") && n >= 2)
    {
       unsigned int rates[19] = { 0 };
-      rates[2] = (1000 / fixms ? : 1);  // VTG
-      rates[3] = 1;             // GGA
+      rates[2] = (VTGRATE * 1000 / fixms ? : 1);        // VTG
+      rates[3] = 1;             // GGA every sample
       rates[4] = (GSARATE * 1000 / fixms ? : 1);        // GSA
       rates[5] = (GSVRATE * 1000 / fixms ? : 1);        // GSV
       rates[17] = (ZDARATE * 1000 / fixms ? : 1);       // ZDA
@@ -657,12 +677,9 @@ nmea (char *s)
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "VTG") && n >= 10)
    {
-      if (fix)
-      {
-         fix->course = strtof (f[1], NULL);
-         fix->speed = strtof (f[7], NULL);
-         fix->setcs = 1;
-      }
+      vtgdue = up + VTGRATE + 2;
+      status.course = strtof (f[1], NULL);
+      status.speed = strtof (f[7], NULL);
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSA") && n >= 18)
@@ -690,8 +707,6 @@ nmea_task (void *z)
    uint64_t timeout = esp_timer_get_time () + 10000000;
    while (1)
    {
-      if (b.gpsinit)
-         gps_init ();
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes (gpsuart, p, buf + sizeof (buf) - p, 10 / portTICK_PERIOD_MS);
       if (l <= 0)
@@ -789,6 +804,10 @@ log_line (fix_t * f)
       if (f->slow.fixmode >= 3)
          jo_litf (j, "alt", "%lf", f->alt);
    }
+   if (!isnan (f->slow.course))
+      jo_litf (j, "course", "%f", f->slow.course);
+   if (!isnan (f->slow.speed))
+      jo_litf (j, "speed", "%f", f->slow.speed);
    if (f->setecef && logecef)
    {
       void o (const char *t, int64_t v)
@@ -822,6 +841,8 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
+      if (b.gpsinit)
+         gps_init ();
       if (!fixlog.count || (revk_link_down () && fixlog.count < 100))
       {
          sleep (1);
