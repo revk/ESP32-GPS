@@ -746,7 +746,7 @@ nmea (char *s)
    if (!strcmp (f[0], "PQODO") && n >= 2)
    {
       if (*f[1] == 'R' && !atoi (f[2]))
-         gps_cmd ("$PQODO,W,1");        // Start ODO
+         gps_cmd ("$PQODO,W,1,100000000");      // Start ODO
       if (*f[1] == 'Q' && fix)
       {
          fix->odo = parse (f[2], 2);    // Read ODO
@@ -848,8 +848,6 @@ log_line (fix_t * f)
    }
    if (logseq)
       jo_int (j, "seq", f->seq);
-   if (logodo && f->setodo)
-      jo_litf (j, "odo", "%lld.%02lld", f->odo / 100, f->odo % 100);
    if (logsats)
    {
       jo_object (j, "sats");
@@ -907,6 +905,8 @@ log_line (fix_t * f)
          o ("t", f->ecef.t);
       jo_close (j);
    }
+   if (logodo && f->setodo)
+      jo_litf (j, "odo", "%lld.%02lld", f->odo / 100, f->odo % 100);
    if (gpserrors)
    {
       jo_int (j, "errors", gpserrors);
@@ -1127,7 +1127,7 @@ checkupload (void)
             if (i)
             {
                char *u;
-               asprintf (&u, "%s?%s", url, filename + sizeof (sd_mount));
+               asprintf (&u, "%s?%s-%s", url, revk_id, filename + sizeof (sd_mount));
                esp_http_client_config_t config = {
                   .url = u,
                   .crt_bundle_attach = esp_crt_bundle_attach,
@@ -1412,7 +1412,7 @@ sd_task (void *z)
                fprintf (o, ",\n\"end\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\"",
                         t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
             }
-            fprintf (o, "}\n");
+            fprintf (o, "\n}\n");
             fclose (o);
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Log file closed");
