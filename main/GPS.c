@@ -2,10 +2,9 @@
 // Copyright (c) 2019-2024 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
 // TODO
-// TEST DATA
-// DOP
-// START/STOP - Needs work
 // ACC
+
+//#define       PACKDEBUG
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -21,6 +20,7 @@ static __attribute__((unused))
 #include "esp_http_client.h"
 #include "esp_http_server.h"
 #include "esp_crt_bundle.h"
+#include <driver/i2c.h>
 
 #ifdef	CONFIG_FATFS_LFN_NONE
 #error Need long file names
@@ -43,8 +43,9 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,15,		RGB LEDs)	\
 	bf(ledsd,1,		First RGB is for SD)	\
-     	io(accsda,13,		Accellerometer SDA) \
-     	io(accscl,14,		Accellerometer SCL) \
+	u8(accid,0x18,		Accelerometer I2C ID)	\
+     	io(accsda,13,		Accelerometer SDA) \
+     	io(accscl,14,		Accelerometer SCL) \
 	bl(gpsdebug,N,		GPS debug logging)	\
 	u8(gpsuart,1,		GPS UART ID)	\
 	io(gpsrx,5,		GPS Rx - Tx from GPS GPIO)	\
@@ -901,7 +902,7 @@ log_task (void *z)
    {
       if (b.gpsinit)
          gps_init ();
-      if (!fixlog.count || (revk_link_down () && fixlog.count < 100))
+      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->slow.fixmode > 1 && fixlog.count < VTGRATE * (moven + 1)))
       {
          usleep (100000);
          continue;
@@ -918,7 +919,9 @@ log_task (void *z)
 fix_t *
 findmax (fix_t * a, fix_t * b, int64_t * dsqp)
 {
+#ifdef	PACKDEBUG
    ESP_LOGE (TAG, "Findmax %ld %ld", a ? a->seq : 0, b ? b->seq : 0);
+#endif
    if (dsqp)
       *dsqp = 0;
    if (!a || !b || a == b || a->next == b)
@@ -927,25 +930,25 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
    int64_t cy = (a->ecef.y + b->ecef.y) / 2LL;
    int64_t cz = (a->ecef.z + b->ecef.z) / 2LL;
    int64_t ct = (a->ecef.t + b->ecef.t) / 2LL;
-   int64_t x (fix_t * p)
+   inline int64_t x (fix_t * p)
    {
       return p->ecef.x - cx;
    }
-   int64_t y (fix_t * p)
+   inline int64_t y (fix_t * p)
    {
       return p->ecef.y - cy;
    }
-   int64_t z (fix_t * p)
+   inline int64_t z (fix_t * p)
    {
       return p->ecef.z - cz;
    }
-   int64_t t (fix_t * p)
+   inline int64_t t (fix_t * p)
    {
       if (!packs)
          return 0;              // Time not a factor
       return (p->ecef.t - ct) * packm / packs;  // Scaled packs to packm
    }
-   int64_t distsq (int64_t dx, int64_t dy, int64_t dz, int64_t dt)
+   inline int64_t distsq (int64_t dx, int64_t dy, int64_t dz, int64_t dt)
    {                            // Distance squared in 4D space
       return dx * dx + dy * dy + dz * dz + dt * dt;
    }
@@ -962,7 +965,9 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
    int64_t best = 0;
    for (fix_t * p = a->next; p && p != b; p = p->next)
    {
+#ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %p->%p", p ? p->seq : 0, p, p ? p->next : NULL);
+#endif
       int64_t d = 0;
       if (!LSQ)
          d = distsq (x (p) - xa, y (p) - ya, z (p) - za, t (p) - ta);   // Simple distance from point
@@ -986,7 +991,9 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
    }
    if (dsqp)
       *dsqp = best;
+#ifdef	PACKDEBUG
    ESP_LOGE (TAG, "Found %ld", m ? m->seq : 0);
+#endif
    return m;
 }
 
@@ -997,7 +1004,7 @@ pack_task (void *z)
    int64_t cutoff = packm * 1000000LL * packm * 1000000LL;
    while (1)
    {
-      if (fixpack.count < 2 || ( /*b.moving && */ fixpack.count < packtry))
+      if (fixpack.count < 2 || (b.moving && fixpack.count < packtry))
       {                         // Wait
          sleep (1);
          continue;
@@ -1007,8 +1014,10 @@ pack_task (void *z)
       int64_t dsq = 0;
       fix_t *M = findmax (A, B, &dsq);
       fix_t *E = M ? : B;
+#ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %ld %ld (%ld) %lld", A->seq, M ? M->seq : 0, B->seq, packtry, dsq);
-      if (dsq < cutoff && /*b.moving && */ fixpack.count < packmax)
+#endif
+      if (dsq < cutoff && b.moving && fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
          continue;
@@ -1019,7 +1028,9 @@ pack_task (void *z)
          M->corner = 1;
          B = M;
          M = findmax (A, B, &dsq);
+#ifdef  PACKDEBUG
          ESP_LOGE (TAG, "Pack %ld %ld %ld %lld", A->seq, M ? M->seq : 0, B->seq, dsq);
+#endif
          if (dsq < cutoff)
          {                      // Drop all in between as all within margin - otherwise process A to M again.
             if (A != B)
@@ -1032,21 +1043,21 @@ pack_task (void *z)
                M = M->next;
          }
       }
-#if 1
+#ifdef	PACKDEBUG
       uint32_t sent = 0,
          total = 0;
 #endif
       while (fixpack.base && fixpack.base != E)
       {
          fix_t *X = fixget (&fixpack);
-#if 1
+#ifdef	PACKDEBUG
          if (!X->deleted)
             sent++;
          total++;
 #endif
          fixadd (X->deleted ? &fixfree : &fixsd, X);
       }
-#if 1
+#ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Processed to %ld (sent %ld/%ld)", fixpack.base->seq, sent, total);
 #endif
    }
@@ -1375,6 +1386,44 @@ sd_task (void *z)
 }
 
 void
+acc_task (void *z)
+{
+   if (!accsda || !accscl || !accid)
+   {
+      vTaskDelete (NULL);
+      return;
+   }
+   i2c_config_t config = {
+      .mode = I2C_MODE_MASTER,
+      .sda_io_num = accsda & IO_MASK,
+      .scl_io_num = accscl & IO_MASK,
+      .sda_pullup_en = true,
+      .scl_pullup_en = true,
+      .master.clk_speed = 100000,
+   };
+   esp_err_t e = i2c_driver_install (0, I2C_MODE_MASTER, 0, 0, 0);
+   if (!e)
+      e = i2c_param_config (0, &config);
+   if (e)
+   {
+      jo_t j = jo_object_alloc ();
+      jo_string (j, "error", "I2C failed");
+      jo_int (j, "code", e);
+      jo_int (j, "sda", accsda & IO_MASK);
+      jo_int (j, "scl", accscl & IO_MASK);
+      jo_int (j, "id", accid);
+      revk_error ("ACC", &j);
+      vTaskDelete (NULL);
+      return;
+   }
+
+   while (1)
+   {
+      sleep (1);
+   }
+}
+
+void
 rgb_task (void *z)
 {
    uint8_t blink = 0;
@@ -1527,6 +1576,7 @@ app_main ()
    revk_task ("Log", log_task, NULL, 8);
    revk_task ("Pack", pack_task, NULL, 8);
    revk_task ("SD", sd_task, NULL, 8);
+   revk_task ("Acc", acc_task, NULL, 8);
    // Web interface
    httpd_config_t config = HTTPD_DEFAULT_CONFIG ();
    config.max_uri_handlers = 5 + revk_num_web_handlers ();
