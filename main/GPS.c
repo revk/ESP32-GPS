@@ -1382,7 +1382,7 @@ sd_task (void *z)
                char *l = jo_finisha (&j);
                if (line++)
                   fprintf (o, ",\n");
-               fprintf (o, " %s", l);
+               fprintf (o, "  %s", l);
                free (l);
             } else
                checkupload ();
@@ -1400,7 +1400,7 @@ sd_task (void *z)
          }
          if (o)
          {
-            fprintf (o, "]");
+            fprintf (o, "\n ]");
             if (odo0)
             {
                odo1 -= odo0;
