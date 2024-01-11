@@ -81,7 +81,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
 	u16(packm,2,	 	Pack delta m)	\
-	u16(packs,10,		Pack delta s)	\
+	u16(packs,60,		Pack delta s)	\
 	bl(packe,1,		Pack allow for EPE)	\
 	s(url,,			URL to post data)	\
 
@@ -841,11 +841,11 @@ log_line (fix_t * f)
          jo_int (j, "fix", f->slow.fixmode);
          jo_int (j, "used", f->sats);
       }
-      if (logepe && f->setepe)
+      if (logepe && f->setepe && f->slow.fixmode >= 1)
       {
          if (f->hepe > 0)
             jo_litf (j, "hepe", "%f", f->hepe);
-         if (f->vepe > 0)
+         if (f->vepe > 0 && f->slow.fixmode >= 3)
             jo_litf (j, "vepe", "%f", f->vepe);
       }
       jo_close (j);
