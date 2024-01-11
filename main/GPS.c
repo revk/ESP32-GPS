@@ -1370,7 +1370,7 @@ sd_task (void *z)
                   jo_string (j, "action", "Log file created");
                   jo_string (j, "filename", filename);
                   revk_info ("SD", &j);
-                  fprintf (o, "{\n \"start\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n",
+                  fprintf (o, "{\n \"start\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\n\"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n",
                            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, revk_id, revk_version);
                }
                line = 0;
