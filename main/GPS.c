@@ -42,6 +42,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(charger,-33,		Charger status)	\
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,15,		RGB LEDs)	\
+	bf(ledsd,0,		First RGB is for SD)	\
      	io(accsda,13,		Accellerometer SDA) \
      	io(accscl,14,		Accellerometer SCL) \
 	bl(gpsdebug,N,		GPS debug logging)	\
@@ -70,6 +71,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	b(gpswalking,N,         GPS Walking mode)       \
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
+	bl(logseq,Y,		Log seq)		\
 	bl(logecef,Y,		Log ECEF data)		\
 	bl(logepe,Y,		Log EPE data)		\
 	bl(logsats,Y,		Log Sats data)		\
@@ -79,6 +81,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	u16(packmax,600,	Max samples for pack)	\
 	u16(packm,1,	 	Pack delta m)	\
 	u16(packs,10,		Pack delta s)	\
+	bl(packe,1,		Pack allow for EPE)	\
 	s(url,,			URL to post data)	\
 
 #define u32(n,d,t)	uint32_t n;
@@ -139,7 +142,8 @@ static struct
 typedef struct slow_s slow_t;
 struct slow_s
 {                               // Slow updated data
-   uint8_t sat[SYSTEMS];        // Count per system
+   uint8_t gsv[SYSTEMS];        // Sats in view
+   uint8_t gsa[SYSTEMS];        // Sats active
    uint8_t fixmode;             // Fix mode
    float course;
    float speed;
@@ -149,6 +153,7 @@ typedef struct fix_s fix_t;
 struct fix_s
 {                               // each fix
    fix_t *next;                 // Next in queue
+   uint32_t seq;                // Simple sequence number
    struct
    {                            // Earth centred Earth fixed, used for packing, etc, and time stamp (us)
       int64_t x,
@@ -223,10 +228,12 @@ fixnew (void)
 {
    fix_t *f = fixget (&fixfree);
    if (!f)
-   {
       f = mallocspi (sizeof (*f));
-      if (f)
-         memset (f, 0, sizeof (*f));
+   if (f)
+   {
+      static uint32_t seq = 0;
+      memset (f, 0, sizeof (*f));
+      f->seq = ++seq;
    }
    return f;
 }
@@ -434,11 +441,12 @@ nmea_timeout (uint32_t up)
    {
       gsadue = 0;
       status.fixmode = 0;
+      memset (status.gsa, 0, sizeof (status.gsa));
    }
    if (gsvdue && gsvdue < up)
    {
       gsvdue = 0;
-      memset (status.sat, 0, sizeof (status.sat));
+      memset (status.gsv, 0, sizeof (status.gsv));
    }
    if (vtgdue && vtgdue < up)
    {
@@ -682,8 +690,8 @@ nmea (char *s)
       {
          if (vtgcount < 255)
             vtgcount++;
-         if (b.vtglast && !b.moving && vtgcount >= moven)
-         {                      // TODO maybe high speed is quicker
+         if (b.vtglast && !b.moving && (vtgcount >= moven || (fix && status.speed > fix->hepe)))
+         {
             b.moving = 1;
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
@@ -703,9 +711,18 @@ nmea (char *s)
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSA") && n >= 18)
-   {
+   {                            // $GNGSA,A,3,18,05,15,23,20,,,,,,,,1.33,1.07,0.80,1
       gsadue = up + GSARATE + 2;
       status.fixmode = atoi (f[2]);
+      uint8_t s = atoi (f[18]);
+      if (s && s <= SYSTEMS)
+      {
+         uint8_t c = 0;
+         for (int i = 3; i <= 14; i++)
+            if (atoi (f[i]))
+               c++;
+         status.gsa[s - 1] = c;
+      }
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSV") && n >= 4)
@@ -714,7 +731,7 @@ nmea (char *s)
       int n = atoi (f[3]);
       for (int s = 0; s < SYSTEMS; s++)
          if (f[0][1] == system_code[s])
-            status.sat[s] = n;
+            status.gsv[s] = n;
       return;
    }
 }
@@ -809,12 +826,14 @@ log_line (fix_t * f)
       if (t.tm_year >= 100)
          jo_stringf (j, "ts", temp);
    }
+   if (logseq)
+      jo_int (j, "seq", f->seq);
    if (logsats)
    {
       jo_object (j, "sats");
       for (int s = 0; s < SYSTEMS; s++)
-         if (f->slow.sat[s])
-            jo_int (j, system_name[s], f->slow.sat[s]);
+         if (f->slow.gsa[s])
+            jo_int (j, system_name[s], f->slow.gsa[s]);
       if (f->slow.fixmode)
       {
          jo_int (j, "fix", f->slow.fixmode);
@@ -887,12 +906,12 @@ log_task (void *z)
          continue;
       jo_t j = log_line (f);
       revk_info ("GPS", &j);
-      fixadd (&fixpack, f);
+      fixadd (packm ? &fixpack : &fixsd, f);
    }
 }
 
 fix_t *
-findmax (fix_t * a, fix_t * b, int64_t * dsqp, int *countp)
+findmax (fix_t * a, fix_t * b, int64_t * dsqp, uint32_t * countp)
 {
    if (dsqp)
       *dsqp = 0;
@@ -918,6 +937,8 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, int *countp)
    }
    int64_t t (fix_t * p)
    {
+      if (!packs)
+         return 0;              // Time not a factor
       return (p->ecef.t - ct) * packm / packs;  // Scaled packs to packm
    }
    int64_t distsq (int64_t dx, int64_t dy, int64_t dz, int64_t dt)
@@ -943,11 +964,14 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, int *countp)
          int64_t T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
          d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
       }
-      int64_t e = p->hepe * 1000000 * p->hepe * 1000000;
-      if (e > d)
-         d = 0;
-      else
-         d -= e;
+      if (packe)
+      {
+         int64_t e = p->hepe * 1000000 * p->hepe * 1000000;
+         if (e > d)
+            d = 0;
+         else
+            d -= e;
+      }
       if (m && d <= best)
          continue;
       best = d;
@@ -963,7 +987,7 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, int *countp)
 void
 pack_task (void *z)
 {
-   int packtry = packmin;
+   uint32_t packtry = packmin;
    int64_t cutoff = packm * 1000000LL * packm * 1000000LL;
    while (1)
    {
@@ -975,10 +999,10 @@ pack_task (void *z)
       fix_t *A = fixpack.base;
       fix_t *B = fixpack.last;
       int64_t dsq = 0;
-      int count = 0;
+      uint32_t count = 0;
       fix_t *M = findmax (A, B, &dsq, &count);
       fix_t *E = M ? : B;
-      ESP_LOGE (TAG, "Check %p %p %p (%d/%d) %lld", A, M, B, count, packtry, dsq);
+      ESP_LOGE (TAG, "Check %ld %ld %ld (%ld/%ld) %lld", A->seq, M ? M->seq : 0, B->seq, count, packtry, dsq);
       if (dsq < cutoff && /*b.moving && */ fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
@@ -990,7 +1014,7 @@ pack_task (void *z)
          M->corner = 1;
          B = M;
          M = findmax (A, B, &dsq, &count);
-         ESP_LOGE (TAG, "Pack %p %p %p (%d) %lld", A, M, B, count, dsq);
+         ESP_LOGE (TAG, "Pack %ld %ld %ld (%ld) %lld", A->seq, M ? M->seq : 0, B->seq, count, dsq);
          if (dsq < cutoff)
          {                      // Drop all in between as all within margin - otherwise process A to M again.
             count = 0;
@@ -1000,7 +1024,7 @@ pack_task (void *z)
                count++;
             }
             if (count)
-               ESP_LOGE (TAG, "Zapped %d", count);
+               ESP_LOGE (TAG, "Zapped %ld", count);
             // Find next half
             A = B;
             M = A->next;
@@ -1014,9 +1038,9 @@ pack_task (void *z)
          fix_t *X = fixget (&fixpack);
          if (!X->deleted)
             count++;
-       fixadd (X->deleted ? &fixfree:&fixsd, X);
+         fixadd (X->deleted ? &fixfree : &fixsd, X);
       }
-      ESP_LOGE (TAG, "Processed to %p (%d)", fixpack.base,count);
+      ESP_LOGE (TAG, "Processed to %ld (%ld)", fixpack.base->seq, count);
    }
 }
 
@@ -1024,6 +1048,8 @@ void
 checkupload (void)
 {
    if (revk_link_down () || !*url)
+      return;
+   if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
       return;
    DIR *dir = opendir (sd_mount);
    if (!dir)
@@ -1263,7 +1289,10 @@ sd_task (void *z)
          while (!b.doformat && !b.dodismount)
          {
             if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+            {
+               b.dodismount = 1;
                break;
+            }
             fix_t *f = fixget (&fixsd);
             if (!f)
             {
@@ -1347,13 +1376,13 @@ rgb_task (void *z)
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
-         {                      // Two GPS per sat
-            for (int n = 0; n < status.sat[s] / 2 && l < leds; n++)
+         { // Two active sats per LED
+            for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
                revk_led (strip, l++, 255, revk_rgb (system_colour[s]));
-            if ((status.sat[s] & 1) && l < leds)
+            if ((status.gsa[s] & 1) && l < leds)
                revk_led (strip, l++, 127, revk_rgb (system_colour[s]));
          }
-         if (!l)
+         if (l <= ledsd)
             revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
       }
       while (l < leds)
