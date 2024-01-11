@@ -663,6 +663,7 @@ nmea (char *s)
       gpserrorcount = 0;
       if (strlen (f[1]) == 10)
       {
+         zdadue = up + ZDARATE + 2;
          century = atoi (f[4]) / 100;
          if (century >= 20)
          {
@@ -679,7 +680,6 @@ nmea (char *s)
             v.tv_sec = timegm (&t);
             if (!zdadue)
                esp_sntp_stop ();
-            zdadue = up + ZDARATE + 2;
             settimeofday (&v, NULL);
          }
       }
@@ -1445,7 +1445,7 @@ rgb_task (void *z)
       if (!zdadue && l < leds)
          revk_led (strip, l++, 255, revk_rgb ('R'));    // No GPS clock
       else if (!b.moving && l < leds)
-         revk_led (strip, l++, 255, revk_rgb ('M'));    // Not moving
+         revk_led (strip, l++, 255, revk_rgb (status.fixmode > 1 ? 'B' : 'M')); // Not moving
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
