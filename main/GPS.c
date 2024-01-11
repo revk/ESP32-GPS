@@ -42,7 +42,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(charger,-33,		Charger status)	\
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,15,		RGB LEDs)	\
-	bf(ledsd,0,		First RGB is for SD)	\
+	bf(ledsd,1,		First RGB is for SD)	\
      	io(accsda,13,		Accellerometer SDA) \
      	io(accscl,14,		Accellerometer SCL) \
 	bl(gpsdebug,N,		GPS debug logging)	\
@@ -128,6 +128,7 @@ static SemaphoreHandle_t fix_mutex = NULL;
 static uint8_t gpserrorcount = 0;       // running count
 static uint8_t gpserrors = 0;   // last count
 static uint8_t vtgcount = 0;    // Count of stopped/moving
+static char rgbsd = 'K';
 
 static struct
 {
@@ -871,7 +872,11 @@ log_line (fix_t * f)
             v = 0 - v;
             s = "-";
          }
-         jo_litf (j, t, "%s%lld.%06lld", s, v / 1000000LL, v % 1000000LL);
+         uint32_t us = v % 1000000LL;
+         if (us)
+            jo_litf (j, t, "%s%lld.%06lld", s, v / 1000000LL, v % 1000000LL);
+         else
+            jo_litf (j, t, "%s%lld", s, v / 1000000LL);
       }
       jo_object (j, "ecef");
       o ("x", f->ecef.x);
@@ -1069,6 +1074,7 @@ checkupload (void)
       struct stat s = { 0 };
       if (filename && *filename && !stat (filename, &s))
       {
+         rgbsd = 'C';
          ESP_LOGE (TAG, "Send %s", filename);
          if (!s.st_size)
          {
@@ -1215,6 +1221,7 @@ sd_task (void *z)
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", "Card not present");
             revk_error ("SD", &j);
+            rgbsd = 'B';
          }
          while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
          {
@@ -1254,6 +1261,7 @@ sd_task (void *z)
             jo_string (j, "error", "Failed to iniitialise");
          jo_int (j, "code", ret);
          revk_error ("SD", &j);
+         rgbsd = 'R';
          if (sdcd)
          {
             int try = 60;
@@ -1264,6 +1272,7 @@ sd_task (void *z)
          continue;
       }
       ESP_LOGI (TAG, "Filesystem mounted");
+      rgbsd = 'Y';
 
       if (b.doformat && (ret = esp_vfs_fat_sdcard_format (sd_mount, card)))
       {
@@ -1288,6 +1297,7 @@ sd_task (void *z)
          char filename[100];
          while (!b.doformat && !b.dodismount)
          {
+            rgbsd = (o ? 'G' : 'Y');
             if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
             {
                b.dodismount = 1;
@@ -1319,7 +1329,8 @@ sd_task (void *z)
                   jo_string (j, "action", "Log file created");
                   jo_string (j, "filename", filename);
                   revk_info ("SD", &j);
-                  fprintf (o, "{\n \"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n", revk_id, revk_version);
+                  fprintf (o, "{\n \"start\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n",
+                           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, revk_id, revk_version);
                }
                line = 0;
             }
@@ -1369,6 +1380,8 @@ rgb_task (void *z)
          blink = 0;
       usleep (200000);
       int l = 0;
+      if (ledsd && l < leds)
+         revk_led (strip, l++, 255, revk_rgb (rgbsd));  // SD status
       if (!zdadue && l < leds)
          revk_led (strip, l++, 255, revk_rgb ('R'));    // No GPS clock
       else if (!b.moving && l < leds)
@@ -1376,7 +1389,7 @@ rgb_task (void *z)
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
-         { // Two active sats per LED
+         {                      // Two active sats per LED
             for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
                revk_led (strip, l++, 255, revk_rgb (system_colour[s]));
             if ((status.gsa[s] & 1) && l < leds)
