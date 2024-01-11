@@ -1034,21 +1034,20 @@ pack_task (void *z)
       }
 #if 1
       uint32_t sent = 0,
-         zapped = 0;
+         total = 0;
 #endif
       while (fixpack.base && fixpack.base != E)
       {
          fix_t *X = fixget (&fixpack);
 #if 1
-         if (X->deleted)
-            zapped++;
-         else
+         if (!X->deleted)
             sent++;
+         total++;
 #endif
          fixadd (X->deleted ? &fixfree : &fixsd, X);
       }
 #if 1
-      ESP_LOGE (TAG, "Processed to %ld (sent %ld/%ld)", fixpack.base->seq, sent, zapped);
+      ESP_LOGE (TAG, "Processed to %ld (sent %ld/%ld)", fixpack.base->seq, sent, total);
 #endif
    }
 }
