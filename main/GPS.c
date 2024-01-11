@@ -490,12 +490,12 @@ nmea (char *s)
       if (*p == '-')
          p++;
       int64_t v = 0;
-      while (isdigit ((int) *p))
+      while (*p && isdigit ((int) *p))
          v = v * 10 + *p++ - '0';
       if (*p == '.')
       {
          p++;
-         while (places && isdigit ((int) *p))
+         while (places && *p && isdigit ((int) *p))
          {
             v = v * 10 + *p++ - '0';
             places--;
