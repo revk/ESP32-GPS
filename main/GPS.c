@@ -949,23 +949,27 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
    {                            // Distance squared in 4D space
       return dx * dx + dy * dy + dz * dz + dt * dt;
    }
-   int64_t DX = x (b) - x (a);
-   int64_t DY = y (b) - y (a);
-   int64_t DZ = z (b) - z (a);
-   int64_t DT = t (b) - t (a);
+   int64_t xa = x (a);
+   int64_t ya = y (a);
+   int64_t za = z (a);
+   int64_t ta = t (a);
+   int64_t DX = x (b) - xa;
+   int64_t DY = y (b) - ya;
+   int64_t DZ = z (b) - za;
+   int64_t DT = t (b) - ta;
    int64_t LSQ = distsq (DX, DY, DZ, DT);
    fix_t *m = NULL;
    int64_t best = 0;
    for (fix_t * p = a->next; p && p != b; p = p->next)
    {
-      ESP_LOGE (TAG, "Check %ld %p->%p", p ? p->seq : 0,p,p?p->next:NULL);
+      ESP_LOGE (TAG, "Check %ld %p->%p", p ? p->seq : 0, p, p ? p->next : NULL);
       int64_t d = 0;
       if (!LSQ)
-         d = distsq (x (p) - x (a), y (p) - y (a), z (p) - z (a), t (p) - t (a));       // Simple distance from point
+         d = distsq (x (p) - xa, y (p) - ya, z (p) - za, t (p) - ta);   // Simple distance from point
       else
       {
-         int64_t T = ((x (p) - x (a)) * DX + (y (p) - y (a)) * DY + (z (p) - z (a)) * DZ + (t (p) - t (a)) * DT) / LSQ;
-         d = distsq (x (a) + T * DX - x (p), y (a) + T * DY - y (p), z (a) + T * DZ - z (p), t (a) + T * DT - t (p));
+         int64_t T = ((x (p) - xa) * DX + (y (p) - ya) * DY + (z (p) - za) * DZ + (t (p) - ta) * DT) / LSQ;
+         d = distsq (xa + T * DX - x (p), ya + T * DY - y (p), za + T * DZ - z (p), ta + T * DT - t (p));
       }
       if (packe)
       {
