@@ -9,8 +9,7 @@
 *.bin
 build/*
 sdkconfig
-gpslog
-gpsout
+json2gpx
 KiCad/*-backups
 KiCad/fp-info-cache
 components/*

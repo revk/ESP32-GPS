@@ -7,7 +7,7 @@ PROJECT_NAME := GPS
 SUFFIX := $(shell components/ESP32-RevK/buildsuffix)
 MODELS := Display Glider L86
 
-all:
+all:	json2gpx
 	@echo Make: build/$(PROJECT_NAME)$(SUFFIX).bin
 	@idf.py build
 	@cp build/$(PROJECT_NAME).bin $(PROJECT_NAME)$(SUFFIX).bin
@@ -50,22 +50,14 @@ update:
 	git submodule update --init --remote --merge --recursive
 	git commit -a -m "Library update"
 
-SQLlib/sqllib.o: SQLlib/sqllib.c
-	make -C SQLlib
+CCOPTS=-I. -I/usr/local/ssl/include -D_GNU_SOURCE -g -Wall -funsigned-char -lm
+OPTS=-L/usr/local/ssl/lib ${CCOPTS}
 
-SQLINC=$(shell mariadb_config --include)
-SQLLIB=$(shell mariadb_config --libs)
-SQLVER=$(shell mariadb_config --version | sed 'sx\..*xx')
-CCOPTS=${SQLINC} -I. -I/usr/local/ssl/include -D_GNU_SOURCE -g -Wall -funsigned-char -lm
-OPTS=-L/usr/local/ssl/lib ${SQLLIB} ${CCOPTS}
+AJL/ajl.o:
+	make -C AJL
 
-gpslog: gpslog.c SQLlib/sqllib.o main/revkgps.h database.sql
-ifneq ($(wildcard /projects/tools/bin/sqlupdate),)
-	/projects/tools/bin/sqlupdate gps database.sql
-endif
-	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o -lcrypto ostn02.c OSTN02_OSGM02_GB.c
-gpsout: gpsout.c SQLlib/sqllib.o
-	cc -O -o $@ $< ${OPTS} -lpopt -lmosquitto -ISQLlib SQLlib/sqllib.o
+json2gpx: json2gpx.c AJL/ajl.o
+	cc -O -o $@ $< -IAJL ${OPTS} -lpopt AJL/ajl.o
 
 PCBCase/case: PCBCase/case.c
 	make -C PCBCase

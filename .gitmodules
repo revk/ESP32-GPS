@@ -7,3 +7,6 @@
 [submodule "PCB/PCBCase"]
 	path = PCB/PCBCase
 	url = https://github.com/revk/PCBCase
+[submodule "AJL"]
+	path = AJL
+	url = https://github.com/revk/AJL

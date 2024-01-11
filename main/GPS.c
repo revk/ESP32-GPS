@@ -697,7 +697,7 @@ nmea (char *s)
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
             revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && vtgcount >= stopn)
+         } else if (!b.vtglast && b.moving && (vtgcount >= stopn || (status.speed == 0 && !revk_link_down ())))
          {
             b.moving = 0;
             jo_t j = jo_object_alloc ();
@@ -1297,7 +1297,7 @@ sd_task (void *z)
          char filename[100];
          while (!b.doformat && !b.dodismount)
          {
-            rgbsd = (o ? 'G' : 'Y');
+            rgbsd = (o ? 'g' : 'Y');
             if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
             {
                b.dodismount = 1;
