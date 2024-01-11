@@ -993,7 +993,7 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
          d = distsq (x (p) - xa, y (p) - ya, z (p) - za, t (p) - ta);   // Simple distance from point
       else
       {
-         int64_t T = ((x (p) - xa) * DX + (y (p) - ya) * DY + (z (p) - za) * DZ + (t (p) - ta) * DT);
+         int64_t T = ((x (p) - xa) * DX + (y (p) - ya) * DY + (z (p) - za) * DZ + (t (p) - ta) * DT); // TODO is this right?
          d = distsq (xa + T * DX / LSQ - x (p), ya + T * DY / LSQ - y (p), za + T * DZ / LSQ - z (p), ta + T * DT / LSQ - t (p));
       }
       if (packe)
@@ -1371,7 +1371,7 @@ sd_task (void *z)
                   jo_string (j, "filename", filename);
                   revk_info ("SD", &j);
                   fprintf (o,
-                           "{\n \"start\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\n\"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n",
+                           "{\n \"start\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\n \"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n",
                            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, revk_id, revk_version);
                }
                line = 0;
@@ -1404,13 +1404,13 @@ sd_task (void *z)
             if (odo0)
             {
                odo1 -= odo0;
-               fprintf (o, ",\n\"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
+               fprintf (o, ",\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
             }
             if (last)
             {
                struct tm t;
                gmtime_r (&last, &t);
-               fprintf (o, ",\n\"end\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\"",
+               fprintf (o, ",\n \"end\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\"",
                         t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
             }
             fprintf (o, "\n}\n");
