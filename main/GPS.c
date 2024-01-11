@@ -79,7 +79,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(logacc,Y,		Log Accelerometer)		\
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
-	u16(packm,1,	 	Pack delta m)	\
+	u16(packm,2,	 	Pack delta m)	\
 	u16(packs,10,		Pack delta s)	\
 	bl(packe,1,		Pack allow for EPE)	\
 	s(url,,			URL to post data)	\
@@ -918,6 +918,7 @@ log_task (void *z)
 fix_t *
 findmax (fix_t * a, fix_t * b, int64_t * dsqp, uint32_t * countp)
 {
+   ESP_LOGE (TAG, "Findmax %ld %ld", a ? a->seq : 0, b ? b->seq : 0);
    if (dsqp)
       *dsqp = 0;
    if (countp)
@@ -960,6 +961,7 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, uint32_t * countp)
    int count = 2;
    for (fix_t * p = a->next; p && p != b; p = p->next)
    {
+	   ESP_LOGE(TAG,"Check %ld",p?p->seq:0);
       count++;
       int64_t d = 0;
       if (!LSQ)
@@ -986,6 +988,7 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, uint32_t * countp)
       *dsqp = best;
    if (countp)
       *countp = count;
+   ESP_LOGE (TAG, "Found %ld", m ? m->seq : 0);
    return m;
 }
 
@@ -1519,10 +1522,10 @@ app_main ()
       gpio_set_direction (gpstick & IO_MASK, GPIO_MODE_INPUT);
    }
    gps_connect (gpsbaud);
-   revk_task ("NMEA", nmea_task, NULL, 4);
-   revk_task ("Log", log_task, NULL, 4);
-   revk_task ("Pack", pack_task, NULL, 4);
-   revk_task ("SD", sd_task, NULL, 4);
+   revk_task ("NMEA", nmea_task, NULL, 8);
+   revk_task ("Log", log_task, NULL, 8);
+   revk_task ("Pack", pack_task, NULL, 8);
+   revk_task ("SD", sd_task, NULL, 8);
    // Web interface
    httpd_config_t config = HTTPD_DEFAULT_CONFIG ();
    config.max_uri_handlers = 5 + revk_num_web_handlers ();
