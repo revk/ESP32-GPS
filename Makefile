@@ -1,0 +1,80 @@
+#
+# This is a project Makefile. It is assumed the directory this Makefile resides in is a
+# project subdirectory.
+#
+
+PROJECT_NAME := GPS
+SUFFIX := $(shell components/ESP32-RevK/buildsuffix)
+MODELS := Display Glider L86
+
+all:	json2gpx
+	@echo Make: build/$(PROJECT_NAME)$(SUFFIX).bin
+	@idf.py build
+	@cp build/$(PROJECT_NAME).bin $(PROJECT_NAME)$(SUFFIX).bin
+	@echo Done: build/$(PROJECT_NAME)$(SUFFIX).bin
+
+issue:
+	-git pull
+	-git submodule update --recursive
+	-git commit -a -m checkpoint
+	@make set
+	cp $(PROJECT_NAME)*.bin release
+	git commit -a -m release
+	git push
+
+set:    s3
+
+s3:
+	components/ESP32-RevK/setbuildsuffix -S1-S3
+	@make
+
+flash:
+	idf.py flash
+
+monitor:
+	idf.py monitor
+
+clean:
+	idf.py clean
+
+menuconfig:
+	idf.py menuconfig
+
+#include $(IDF_PATH)/make/project.mk
+
+pull:
+	git pull
+	git submodule update --recursive
+
+update:
+	git submodule update --init --remote --merge --recursive
+	git commit -a -m "Library update"
+
+CCOPTS=-I. -I/usr/local/ssl/include -D_GNU_SOURCE -g -Wall -funsigned-char -lm
+OPTS=-L/usr/local/ssl/lib ${CCOPTS}
+
+AJL/ajl.o:
+	make -C AJL
+
+json2gpx: json2gpx.c AJL/ajl.o
+	cc -O -o $@ $< -IAJL ${OPTS} -lpopt AJL/ajl.o
+
+PCBCase/case: PCBCase/case.c
+	make -C PCBCase
+
+scad:	$(patsubst %,KiCad/%.scad,$(MODELS))
+stl:	$(patsubst %,KiCad/%.stl,$(MODELS))
+
+%.stl: %.scad
+	echo "Making $@"
+	/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD $< -o $@
+	echo "Made $@"
+
+KiCad/L86.scad: KiCad/L86.kicad_pcb PCBCase/case Makefile
+	PCBCase/case -o $@ $< --edge=2 --top=8 --base=2
+
+KiCad/Display.scad: KiCad/Display.kicad_pcb PCBCase/case Makefile
+	PCBCase/case -o $@ $< --edge=2 --top=10.4 --base=2.6
+
+KiCad/Glider.scad: KiCad/Glider.kicad_pcb PCBCase/case Makefile
+	PCBCase/case -o $@ $< --edge=2 --top=5 --base=2

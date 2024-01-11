@@ -84,7 +84,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
 	u16(packm,2,	 	Pack delta m)	\
-	u16(packs,60,		Pack delta s)	\
+	u16(packs,10,		Pack delta s)	\
 	bl(packe,1,		Pack allow for EPE)	\
 	s(url,,			URL to post data)	\
 
@@ -993,8 +993,8 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
          d = distsq (x (p) - xa, y (p) - ya, z (p) - za, t (p) - ta);   // Simple distance from point
       else
       {
-         int64_t T = ((x (p) - xa) * DX + (y (p) - ya) * DY + (z (p) - za) * DZ + (t (p) - ta) * DT) / LSQ;
-         d = distsq (xa + T * DX - x (p), ya + T * DY - y (p), za + T * DZ - z (p), ta + T * DT - t (p));
+         int64_t T = ((x (p) - xa) * DX + (y (p) - ya) * DY + (z (p) - za) * DZ + (t (p) - ta) * DT);
+         d = distsq (xa + T * DX / LSQ - x (p), ya + T * DY / LSQ - y (p), za + T * DZ / LSQ - z (p), ta + T * DT / LSQ - t (p));
       }
       if (packe)
       {
@@ -1370,7 +1370,8 @@ sd_task (void *z)
                   jo_string (j, "action", "Log file created");
                   jo_string (j, "filename", filename);
                   revk_info ("SD", &j);
-                  fprintf (o, "{\n \"start\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\n\"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n",
+                  fprintf (o,
+                           "{\n \"start\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\n\"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n",
                            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, revk_id, revk_version);
                }
                line = 0;
