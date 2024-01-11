@@ -2780,6 +2780,7 @@
     (at 87.65 108.2 90)
     (descr "SOT, 3 Pin (https://www.jedec.org/system/files/docs/to-236h.pdf variant AB), generated with kicad-footprint-generator ipc_gullwing_generator.py")
     (tags "SOT TO_SOT_SMD")
+    (property "JLCPCB Rotation Offset" "180")
     (property "LCSC Part #" "C3034")
     (property "Note" "Any P-Channel SOT323 that does 3.3V/0.5A")
     (property "Sheetfile" "Logger.kicad_sch")
