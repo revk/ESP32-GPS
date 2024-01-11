@@ -74,6 +74,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	b(gpswalking,N,         GPS Walking mode)       \
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
+	bl(logodo,Y,		Log odometer)		\
 	bl(logseq,Y,		Log seq)		\
 	bl(logecef,Y,		Log ECEF data)		\
 	bl(logepe,Y,		Log EPE data)		\
@@ -166,6 +167,7 @@ struct fix_s
         t;
    } ecef;
    slow_t slow;
+   uint64_t odo;                // Odometer
    double lat,
      lon,
      alt;                       // Lat/lon/alt
@@ -179,6 +181,7 @@ struct fix_s
    uint8_t setecef:1;
    uint8_t setlla:1;
    uint8_t setepe:1;
+   uint8_t setodo:1;
 };
 
 typedef struct fixq_s fixq_t;
@@ -429,6 +432,7 @@ gps_init (void)
    gps_cmd ("$PMTK401");        // Q_DGPS
    gps_cmd ("$PMTK413");        // Q_SBAS
    gps_cmd ("$PMTK869,0");      // Query EASY
+   gps_cmd ("$PQODO,R");        // Read ODO
    //gps_cmd ("$PMTK605");     // Q_RELEASE
    b.gpsstarted = 1;
 }
@@ -683,6 +687,7 @@ nmea (char *s)
             settimeofday (&v, NULL);
          }
       }
+      gps_cmd ("$PQODO,Q");     // Read ODO
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "VTG") && n >= 10)
@@ -736,6 +741,17 @@ nmea (char *s)
       for (int s = 0; s < SYSTEMS; s++)
          if (f[0][1] == system_code[s])
             status.gsv[s] = n;
+      return;
+   }
+   if (!strcmp (f[0], "PQODO") && n >= 2)
+   {
+      if (*f[1] == 'R' && !atoi (f[2]))
+         gps_cmd ("$PQODO,W,1");        // Start ODO
+      if (*f[1] == 'Q' && fix)
+      {
+         fix->odo = parse (f[2], 2);    // Read ODO
+         fix->setodo = 1;
+      }
       return;
    }
 }
@@ -832,6 +848,8 @@ log_line (fix_t * f)
    }
    if (logseq)
       jo_int (j, "seq", f->seq);
+   if (logodo && f->setodo)
+      jo_litf (j, "odo", "%lld.%02lld", f->odo / 100, f->odo % 100);
    if (logsats)
    {
       jo_object (j, "sats");
@@ -1315,6 +1333,9 @@ sd_task (void *z)
          FILE *o = NULL;
          int line = 0;
          char filename[100];
+         uint64_t odo0 = 0,
+            odo1 = 0;
+         time_t last = 0;
          while (!b.doformat && !b.dodismount)
          {
             rgbsd = (o ? 'g' : 'Y');
@@ -1364,13 +1385,34 @@ sd_task (void *z)
                free (l);
             } else
                checkupload ();
+            if (f->setodo)
+            {
+               if (!odo0)
+                  odo0 = f->odo;
+               odo1 = f->odo;
+            }
+            if (f->sett)
+               last = f->ecef.t / 1000000LL;
             fixadd (&fixfree, f);       // Discard
-            if (o && !b.moving && fixsd.count > 1 && !fixpack.count)
+            if (o && !b.moving && !fixsd.count && fixpack.count < 2)
                break;           // Stopped moving
          }
          if (o)
          {
-            fprintf (o, "\n]}\n");
+            fprintf (o, "]");
+            if (odo0)
+            {
+               odo1 -= odo0;
+               fprintf (o, ",\n\"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
+            }
+            if (last)
+            {
+               struct tm t;
+               gmtime_r (&last, &t);
+               fprintf (o, ",\n\"end\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\"",
+                        t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+            }
+            fprintf (o, "}\n");
             fclose (o);
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Log file closed");
