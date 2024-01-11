@@ -1006,7 +1006,7 @@ pack_task (void *z)
    {
       if (fixpack.count < 2 || (b.moving && fixpack.count < packtry))
       {                         // Wait
-         sleep (1);
+         usleep (100000);
          continue;
       }
       fix_t *A = fixpack.base;
@@ -1023,26 +1023,30 @@ pack_task (void *z)
          continue;
       }
       packtry = packmin;
-      while (A && M)
-      {                         // Check A to M
-         M->corner = 1;
-         B = M;
-         M = findmax (A, B, &dsq);
+      if (dsq < cutoff)
+         for (fix_t * X = A->next; X && X != B; X = X->next)
+            X->deleted = 1;     // All within cutoff
+      else
+         while (A && M)
+         {                      // Check A to M - recursively
+            M->corner = 1;
+            B = M;
+            M = findmax (A, B, &dsq);
 #ifdef  PACKDEBUG
-         ESP_LOGE (TAG, "Pack %ld %ld %ld %lld", A->seq, M ? M->seq : 0, B->seq, dsq);
+            ESP_LOGE (TAG, "Pack %ld %ld %ld %lld", A->seq, M ? M->seq : 0, B->seq, dsq);
 #endif
-         if (dsq < cutoff)
-         {                      // Drop all in between as all within margin - otherwise process A to M again.
-            if (A != B)
-               for (fix_t * X = A->next; X && X != B; X = X->next)
-                  X->deleted = 1;
-            // Find next half
-            A = B;
-            M = A->next;
-            while (M && !M->corner)
-               M = M->next;
+            if (dsq < cutoff)
+            {                   // Drop all in between as all within margin - otherwise process A to M again.
+               if (A != B)
+                  for (fix_t * X = A->next; X && X != B; X = X->next)
+                     X->deleted = 1;
+               // Find next half
+               A = B;
+               M = A->next;
+               while (M && !M->corner)
+                  M = M->next;
+            }
          }
-      }
 #ifdef	PACKDEBUG
       uint32_t sent = 0,
          total = 0;
@@ -1320,7 +1324,7 @@ sd_task (void *z)
             fix_t *f = fixget (&fixsd);
             if (!f)
             {
-               sleep (1);
+               usleep (100000);
                continue;
             }
             if (!o && f->sett && f->slow.fixmode > 1 && b.moving)
@@ -1359,7 +1363,7 @@ sd_task (void *z)
             } else
                checkupload ();
             fixadd (&fixfree, f);       // Discard
-            if (o && !b.moving && !fixsd.count && !fixpack.count)
+            if (o && !b.moving && fixsd.count > 1 && !fixpack.count)
                break;           // Stopped moving
          }
          if (o)
@@ -1420,6 +1424,7 @@ acc_task (void *z)
    while (1)
    {
       sleep (1);
+      // TODO
    }
 }
 
@@ -1585,4 +1590,12 @@ app_main ()
       register_get_uri ("/", web_root);
       revk_web_settings_add (webserver);
    }
+}
+
+
+void
+revk_web_extra (httpd_req_t * req)
+{
+   revk_web_send (req, "<tr><td>Upload URL</td><td><input size=80 name=url value='%s'></td><td>"        //
+                  , url);
 }
