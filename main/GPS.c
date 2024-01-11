@@ -180,7 +180,7 @@ struct fix_s
 
 typedef struct fixq_s fixq_t;
 struct fixq_s
-{
+{                               // A queue of fixes
    fix_t *base;
    fix_t *last;
    uint32_t count;
@@ -232,8 +232,8 @@ fixnew (void)
       f = mallocspi (sizeof (*f));
    if (f)
    {
-      static uint32_t seq = 0;
       memset (f, 0, sizeof (*f));
+      static uint32_t seq = 0;
       f->seq = ++seq;
    }
    return f;
@@ -916,13 +916,11 @@ log_task (void *z)
 }
 
 fix_t *
-findmax (fix_t * a, fix_t * b, int64_t * dsqp, uint32_t * countp)
+findmax (fix_t * a, fix_t * b, int64_t * dsqp)
 {
    ESP_LOGE (TAG, "Findmax %ld %ld", a ? a->seq : 0, b ? b->seq : 0);
    if (dsqp)
       *dsqp = 0;
-   if (countp)
-      *countp = ((a == b) ? 1 : (a && b) ? 2 : 0);
    if (!a || !b || a == b || a->next == b)
       return NULL;
    int64_t cx = (a->ecef.x + b->ecef.x) / 2LL;
@@ -958,11 +956,9 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, uint32_t * countp)
    int64_t LSQ = distsq (DX, DY, DZ, DT);
    fix_t *m = NULL;
    int64_t best = 0;
-   int count = 2;
    for (fix_t * p = a->next; p && p != b; p = p->next)
    {
-	   ESP_LOGE(TAG,"Check %ld",p?p->seq:0);
-      count++;
+      ESP_LOGE (TAG, "Check %ld %p->%p", p ? p->seq : 0,p,p?p->next:NULL);
       int64_t d = 0;
       if (!LSQ)
          d = distsq (x (p) - x (a), y (p) - y (a), z (p) - z (a), t (p) - t (a));       // Simple distance from point
@@ -986,8 +982,6 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp, uint32_t * countp)
    }
    if (dsqp)
       *dsqp = best;
-   if (countp)
-      *countp = count;
    ESP_LOGE (TAG, "Found %ld", m ? m->seq : 0);
    return m;
 }
@@ -1007,10 +1001,9 @@ pack_task (void *z)
       fix_t *A = fixpack.base;
       fix_t *B = fixpack.last;
       int64_t dsq = 0;
-      uint32_t count = 0;
-      fix_t *M = findmax (A, B, &dsq, &count);
+      fix_t *M = findmax (A, B, &dsq);
       fix_t *E = M ? : B;
-      ESP_LOGE (TAG, "Check %ld %ld %ld (%ld/%ld) %lld", A->seq, M ? M->seq : 0, B->seq, count, packtry, dsq);
+      ESP_LOGE (TAG, "Check %ld %ld %ld (%ld) %lld", A->seq, M ? M->seq : 0, B->seq, packtry, dsq);
       if (dsq < cutoff && /*b.moving && */ fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
@@ -1021,18 +1014,13 @@ pack_task (void *z)
       {                         // Check A to M
          M->corner = 1;
          B = M;
-         M = findmax (A, B, &dsq, &count);
-         ESP_LOGE (TAG, "Pack %ld %ld %ld (%ld) %lld", A->seq, M ? M->seq : 0, B->seq, count, dsq);
+         M = findmax (A, B, &dsq);
+         ESP_LOGE (TAG, "Pack %ld %ld %ld %lld", A->seq, M ? M->seq : 0, B->seq, dsq);
          if (dsq < cutoff)
          {                      // Drop all in between as all within margin - otherwise process A to M again.
-            count = 0;
-            for (fix_t * X = A->next; X && X != B; X = X->next)
-            {
-               X->deleted = 1;
-               count++;
-            }
-            if (count)
-               ESP_LOGE (TAG, "Zapped %ld", count);
+            if (A != B)
+               for (fix_t * X = A->next; X && X != B; X = X->next)
+                  X->deleted = 1;
             // Find next half
             A = B;
             M = A->next;
@@ -1040,15 +1028,24 @@ pack_task (void *z)
                M = M->next;
          }
       }
-      count = 0;
+#if 1
+      uint32_t sent = 0,
+         zapped = 0;
+#endif
       while (fixpack.base && fixpack.base != E)
       {
          fix_t *X = fixget (&fixpack);
-         if (!X->deleted)
-            count++;
+#if 1
+         if (X->deleted)
+            zapped++;
+         else
+            sent++;
+#endif
          fixadd (X->deleted ? &fixfree : &fixsd, X);
       }
-      ESP_LOGE (TAG, "Processed to %ld (%ld)", fixpack.base->seq, count);
+#if 1
+      ESP_LOGE (TAG, "Processed to %ld (sent %ld/%ld)", fixpack.base->seq, sent, zapped);
+#endif
    }
 }
 
@@ -1224,7 +1221,7 @@ sd_task (void *z)
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", "Card not present");
             revk_error ("SD", &j);
-            rgbsd = 'B';
+            rgbsd = 'M';
          }
          while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
          {
@@ -1362,6 +1359,7 @@ sd_task (void *z)
          }
          checkupload ();
       }
+      rgbsd = 'B';
       // All done, unmount partition and disable SPI peripheral
       esp_vfs_fat_sdcard_unmount (sd_mount, card);
       ESP_LOGI (TAG, "Card unmounted");
