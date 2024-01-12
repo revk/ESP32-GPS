@@ -84,7 +84,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(logdsq,Y,		Log pack deviation)	\
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
-	u16(packm,2,	 	Pack delta m)	\
+	u16(packm,0,	 	Pack delta m)	\
 	u16(packs,10,		Pack delta s)	\
 	bl(packe,1,		Pack allow for EPE)	\
 	s(url,,			URL to post data)	\
@@ -943,7 +943,7 @@ log_task (void *z)
          continue;
       jo_t j = log_line (f);
       revk_info ("GPS", &j);
-      fixadd (packm ? &fixpack : &fixsd, f);
+      fixadd (packm || packe ? &fixpack : &fixsd, f);
    }
 }
 
@@ -1017,13 +1017,7 @@ findmax (fix_t * a, fix_t * b, float *dsqp)
 #endif
       p->dsq = d;               // Before epe adjut
       if (packe && p->setepe)
-      {                         // Adjust for HEPE
-         float e = (float) p->hepe * (float) p->hepe;
-         if (e > d)
-            d = 0;
-         else
-            d -= e;
-      }
+         d -= (float) p->hepe * (float) p->hepe;;
       if (m && d <= best)
          continue;
       best = d;
@@ -1601,7 +1595,7 @@ app_main ()
    revk_register ("gps", 0, sizeof (gpsdebug), &gpsdebug, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
    revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
    revk_register ("log", 0, sizeof (logacc), &logacc, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
-   revk_register ("pack", 0, sizeof (packm), &packm, "1", SETTING_SECRET);
+   revk_register ("pack", 0, sizeof (packe), &packe, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bf(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_FIX);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
