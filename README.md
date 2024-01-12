@@ -52,7 +52,7 @@ There are a string of LEDs, more LEDs means more active satellites. There is als
 
 ## Point reduction
 
-The *pack* logic uses a modified Ramer–Douglas–Peucker algorithm, which can use 4 dimensions (time as well), and adjust for `hepe`. It also does not work on fixed time periods - allowing a `packmin` minimum samples, but up to `packmax` if no *corners* found. It also packs to the *corner*, and then considers from that with more points.
+The *pack* logic uses a modified Ramer–Douglas–Peucker algorithm, and adjust for `hepe`. It also does not work on fixed time periods - allowing a `packmin` minimum samples, but up to `packmax` if no *corners* found. It also packs to the *corner*, and then considers from that with more points.
 
 The effect is that if you go at constant speed in a straight line you may only see a point every 10 minutes. If you stop/start or turn, then that point is logged. Lost points are discarded if within a distance from a straight line that is logged, this allows detail and consise logs.
 

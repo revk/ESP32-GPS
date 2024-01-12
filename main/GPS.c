@@ -6,7 +6,8 @@
 // Check PACK logic carefully
 // Documentation
 
-//#define       PACKDEBUG
+#define       PACKDEBUG
+//#define	PACK4D
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -941,7 +942,7 @@ log_task (void *z)
 }
 
 fix_t *
-findmax (fix_t * a, fix_t * b, int64_t * dsqp)
+findmax (fix_t * a, fix_t * b, float * dsqp)
 {
 #ifdef	PACKDEBUG
    ESP_LOGE (TAG, "Findmax %ld %ld", a ? a->seq : 0, b ? b->seq : 0);
@@ -953,56 +954,86 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
    int64_t cx = (a->ecef.x + b->ecef.x) / 2LL;
    int64_t cy = (a->ecef.y + b->ecef.y) / 2LL;
    int64_t cz = (a->ecef.z + b->ecef.z) / 2LL;
+#ifdef PACK4D
    int64_t ct = (a->ecef.t + b->ecef.t) / 2LL;
-   inline int64_t x (fix_t * p)
+#endif
+   inline float x (fix_t * p)
    {
-      return p->ecef.x - cx;
+      return (float)(p->ecef.x - cx)/1000000.0;
    }
-   inline int64_t y (fix_t * p)
+   inline float y (fix_t * p)
    {
-      return p->ecef.y - cy;
+      return (float)(p->ecef.y - cy)/1000000.0;
    }
-   inline int64_t z (fix_t * p)
+   inline float z (fix_t * p)
    {
-      return p->ecef.z - cz;
+      return (float)(p->ecef.z - cz)/1000000.0;
    }
-   inline int64_t t (fix_t * p)
+#ifdef PACK4D
+   inline float t (fix_t * p)
    {
       if (!packs)
          return 0;              // Time not a factor
       return (p->ecef.t - ct) * packm / packs;  // Scaled packs to packm
    }
-   inline int64_t distsq (int64_t dx, int64_t dy, int64_t dz, int64_t dt)
-   {                            // Distance squared in 4D space
-      return dx * dx + dy * dy + dz * dz + dt * dt;
+#endif
+   inline float distsq (float dx, float dy, float dz
+#ifdef PACK4D
+		   , float dt
+#endif
+		   )
+   {                            // Distance squared in space
+      return dx * dx + dy * dy + dz * dz
+#ifdef PACK4D
+	      + dt * dt
+#endif
+	      ;
    }
-   int64_t xa = x (a);
-   int64_t ya = y (a);
-   int64_t za = z (a);
-   int64_t ta = t (a);
-   int64_t DX = x (b) - xa;
-   int64_t DY = y (b) - ya;
-   int64_t DZ = z (b) - za;
-   int64_t DT = t (b) - ta;
-   int64_t LSQ = distsq (DX, DY, DZ, DT);
+   float xa = x (a);
+   float ya = y (a);
+   float za = z (a);
+#ifdef PACK4D
+   float ta = t (a);
+#endif
+   float abx = x (b) - xa;
+   float aby = y (b) - ya;
+   float abz = z (b) - za;
+#ifdef PACK4D
+   float abt = t (b) - ta;
+#endif
+   float LSQ = distsq (abx,aby, abz
+#ifdef PACK4D
+		   , abt
+#endif
+		   );
    fix_t *m = NULL;
-   int64_t best = 0;
+   float best = 0;
    for (fix_t * p = a->next; p && p != b; p = p->next)
    {
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %p->%p", p ? p->seq : 0, p, p ? p->next : NULL);
 #endif
-      int64_t d = 0;
+      float d = 0;
       if (!LSQ)
-         d = distsq (x (p) - xa, y (p) - ya, z (p) - za, t (p) - ta);   // Simple distance from point
+         d = distsq (x (p) - xa, y (p) - ya, z (p) - za
+#ifdef PACK4D
+			 , t (p) - ta
+#endif
+			 );   // Simple distance from point
       else
-      {
-         int64_t T = ((x (p) - xa) * DX + (y (p) - ya) * DY + (z (p) - za) * DZ + (t (p) - ta) * DT);   // TODO is this right?
-         d = distsq (xa + T * DX / LSQ - x (p), ya + T * DY / LSQ - y (p), za + T * DZ / LSQ - z (p), ta + T * DT / LSQ - t (p));
+      { // Distance (squared)
+	      // TODO work out how to do in 4D
+	      float apx=x(p)-xa;
+	      float apy=y(p)-ya;
+	      float apz=z(p)-za;
+	      float cx=apx*abx;
+	      float cy=apy*aby;
+	      float cz=apz*abz;
+	      d=cx*cx+cy*cy+cz*cz;
       }
       if (packe)
-      {
-         int64_t e = p->hepe * 1000000 * p->hepe * 1000000;
+      { // Adjust for HEPE
+         float e = (float)p->hepe * (float)p->hepe;
          if (e > d)
             d = 0;
          else
@@ -1016,7 +1047,7 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
    if (dsqp)
       *dsqp = best;
 #ifdef	PACKDEBUG
-   ESP_LOGE (TAG, "Found %ld", m ? m->seq : 0);
+   ESP_LOGE (TAG, "Found %ld %f", m ? m->seq : 0,best);
 #endif
    return m;
 }
@@ -1025,29 +1056,36 @@ void
 pack_task (void *z)
 {
    uint32_t packtry = packmin;
-   int64_t cutoff = packm * 1000000LL * packm * 1000000LL;
    while (1)
    {
-      if (fixpack.count < 2 || (b.moving && fixpack.count < packtry))
+      if (fixpack.count < 2 || (
+#ifndef	PACKDEBUG
+			      b.moving &&
+#endif
+			      fixpack.count < packtry))
       {                         // Wait
          usleep (100000);
          continue;
       }
       fix_t *A = fixpack.base;
       fix_t *B = fixpack.last;
-      int64_t dsq = 0;
+      float dsq = 0;
       fix_t *M = findmax (A, B, &dsq);
       fix_t *E = M ? : B;
 #ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Check %ld %ld %ld (%ld) %lld", A->seq, M ? M->seq : 0, B->seq, packtry, dsq);
+      ESP_LOGE (TAG, "Check %ld %ld %ld (%ld) %f", A->seq, M ? M->seq : 0, B->seq, packtry, dsq);
 #endif
-      if (dsq < cutoff && b.moving && fixpack.count < packmax)
+      if (dsq < packm &&
+#ifndef	PACKDEBUG
+		      b.moving &&
+#endif
+		      fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
          continue;
       }
       packtry = packmin;
-      if (dsq < cutoff)
+      if (dsq < packm)
          for (fix_t * X = A->next; X && X != B; X = X->next)
             X->deleted = 1;     // All within cutoff
       else
@@ -1057,9 +1095,9 @@ pack_task (void *z)
             B = M;
             M = findmax (A, B, &dsq);
 #ifdef  PACKDEBUG
-            ESP_LOGE (TAG, "Pack %ld %ld %ld %lld", A->seq, M ? M->seq : 0, B->seq, dsq);
+            ESP_LOGE (TAG, "Pack %ld %ld %ld %f", A->seq, M ? M->seq : 0, B->seq, dsq);
 #endif
-            if (dsq < cutoff)
+            if (dsq < packm)
             {                   // Drop all in between as all within margin - otherwise process A to M again.
                if (A != B)
                   for (fix_t * X = A->next; X && X != B; X = X->next)
