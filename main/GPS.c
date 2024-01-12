@@ -44,7 +44,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(pwr,-15,		System PWR)	\
      	io(charger,-33,		Charger status)	\
      	io(rgb,34,		RGB LED Strip)	\
-     	u8f(leds,15,		RGB LEDs)	\
+     	u8f(leds,17,		RGB LEDs)	\
 	bf(ledsd,1,		First RGB is for SD)	\
 	u8(accid,0x18,		Accelerometer I2C ID)	\
      	io(accsda,13,		Accelerometer SDA) \
@@ -1274,6 +1274,7 @@ sd_task (void *z)
    ret = spi_bus_initialize (host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
    if (ret != ESP_OK)
    {
+         rgbsd = 'R';
       jo_t j = jo_object_alloc ();
       jo_string (j, "error", cardstatus = "SPI failed");
       jo_int (j, "code", ret);
@@ -1290,6 +1291,7 @@ sd_task (void *z)
       {
          if (b.dodismount)
          {
+            rgbsd = 'B';
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Remove card");
             revk_info ("SD", &j);
