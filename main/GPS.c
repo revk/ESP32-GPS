@@ -1010,9 +1010,6 @@ findmax (fix_t * a, fix_t * b, float * dsqp)
    float best = 0;
    for (fix_t * p = a->next; p && p != b; p = p->next)
    {
-#ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Check %ld %p->%p", p ? p->seq : 0, p, p ? p->next : NULL);
-#endif
       float d = 0;
       if (!LSQ)
          d = distsq (x (p) - xa, y (p) - ya, z (p) - za
@@ -1031,6 +1028,9 @@ findmax (fix_t * a, fix_t * b, float * dsqp)
 	      float cz=apz*abz;
 	      d=cx*cx+cy*cy+cz*cz;
       }
+#ifdef	PACKDEBUG
+      ESP_LOGE (TAG, "Check %ld %p->%p %f", p ? p->seq : 0, p, p ? p->next : NULL,d);
+#endif
       if (packe)
       { // Adjust for HEPE
          float e = (float)p->hepe * (float)p->hepe;
