@@ -122,8 +122,8 @@ static uint32_t gsadue = 0;
 static uint32_t gsvdue = 0;
 static uint32_t vtgdue = 0;
 
-httpd_handle_t webserver = NULL;
-const char sd_mount[] = "/sd";
+static httpd_handle_t webserver = NULL;
+static const char sd_mount[] = "/sd";
 static led_strip_handle_t strip = NULL;
 static SemaphoreHandle_t cmd_mutex = NULL;
 static SemaphoreHandle_t ack_semaphore = NULL;
@@ -133,6 +133,7 @@ static uint8_t gpserrorcount = 0;       // running count
 static uint8_t gpserrors = 0;   // last count
 static uint8_t vtgcount = 0;    // Count of stopped/moving
 static char rgbsd = 'K';
+static const char *cardstatus = NULL;
 
 static struct
 {
@@ -142,6 +143,7 @@ static struct
    uint8_t dodismount:1;        // Stop SD until card removed
    uint8_t vtglast:1;           // Was last VTG moving
    uint8_t moving:1;            // We seem to be moving
+   uint8_t connect:1;           // MQTT connect
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -363,6 +365,7 @@ app_callback (int client, const char *prefix, const char *target, const char *su
    }
    if (!strcmp (suffix, "connect"))
    {
+      b.connect = 1;
       return "";
    }
    if (!strcmp (suffix, "gpstx") && len)
@@ -590,6 +593,8 @@ nmea (char *s)
          fix->ecef.z = parse (f[4], 6);
          fix->setecef = 1;
       }
+      if (logodo)
+         gps_cmd ("$PQODO,Q");  // Read ODO every sample
       return;
    }
    if (!strcmp (f[0], "PMTK869") && n >= 4)
@@ -687,7 +692,8 @@ nmea (char *s)
             settimeofday (&v, NULL);
          }
       }
-      gps_cmd ("$PQODO,Q");     // Read ODO
+      if (!logodo)
+         gps_cmd ("$PQODO,Q");  // Read ODO periodically
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "VTG") && n >= 10)
@@ -920,8 +926,6 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      if (b.gpsinit)
-         gps_init ();
       if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->slow.fixmode > 1 && fixlog.count < VTGRATE * (moven + 1)))
       {
          usleep (100000);
@@ -993,7 +997,7 @@ findmax (fix_t * a, fix_t * b, int64_t * dsqp)
          d = distsq (x (p) - xa, y (p) - ya, z (p) - za, t (p) - ta);   // Simple distance from point
       else
       {
-         int64_t T = ((x (p) - xa) * DX + (y (p) - ya) * DY + (z (p) - za) * DZ + (t (p) - ta) * DT); // TODO is this right?
+         int64_t T = ((x (p) - xa) * DX + (y (p) - ya) * DY + (z (p) - za) * DZ + (t (p) - ta) * DT);   // TODO is this right?
          d = distsq (xa + T * DX / LSQ - x (p), ya + T * DY / LSQ - y (p), za + T * DZ / LSQ - z (p), ta + T * DT / LSQ - t (p));
       }
       if (packe)
@@ -1231,7 +1235,7 @@ sd_task (void *z)
    if (ret != ESP_OK)
    {
       jo_t j = jo_object_alloc ();
-      jo_string (j, "error", "SPI failed");
+      jo_string (j, "error", cardstatus = "SPI failed");
       jo_int (j, "code", ret);
       jo_int (j, "MOSI", sdmosi & IO_MASK);
       jo_int (j, "MISO", sdmiso & IO_MASK);
@@ -1247,7 +1251,7 @@ sd_task (void *z)
          if (b.dodismount)
          {
             jo_t j = jo_object_alloc ();
-            jo_string (j, "action", "Remove card");
+            jo_string (j, "action", cardstatus = "Remove card");
             revk_info ("SD", &j);
             b.dodismount = 0;
             while (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))
@@ -1257,7 +1261,7 @@ sd_task (void *z)
          if (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
          {
             jo_t j = jo_object_alloc ();
-            jo_string (j, "error", "Card not present");
+            jo_string (j, "error", cardstatus = "Card not present");
             revk_error ("SD", &j);
             rgbsd = 'M';
          }
@@ -1294,9 +1298,9 @@ sd_task (void *z)
       {
          jo_t j = jo_object_alloc ();
          if (ret == ESP_FAIL)
-            jo_string (j, "error", "Failed to mount");
+            jo_string (j, "error", cardstatus = "Failed to mount");
          else
-            jo_string (j, "error", "Failed to iniitialise");
+            jo_string (j, "error", cardstatus = "Failed to iniitialise");
          jo_int (j, "code", ret);
          revk_error ("SD", &j);
          rgbsd = 'R';
@@ -1315,13 +1319,13 @@ sd_task (void *z)
       if (b.doformat && (ret = esp_vfs_fat_sdcard_format (sd_mount, card)))
       {
          jo_t j = jo_object_alloc ();
-         jo_string (j, "error", "Failed to format");
+         jo_string (j, "error", cardstatus = "Failed to format");
          jo_int (j, "code", ret);
          revk_error ("SD", &j);
       }
       {
          jo_t j = jo_object_alloc ();
-         jo_string (j, "action", b.doformat ? "formatted" : "mounted");
+         jo_string (j, "action", cardstatus = (b.doformat ? "formatted" : "mounted"));
          // TODO size?
          revk_info ("SD", &j);
       }
@@ -1361,13 +1365,13 @@ sd_task (void *z)
                if (!o)
                {
                   jo_t j = jo_object_alloc ();
-                  jo_string (j, "error", "Failed to create file");
+                  jo_string (j, "error", cardstatus = "Failed to create file");
                   jo_string (j, "filename", filename);
                   revk_error ("SD", &j);
                } else
                {
                   jo_t j = jo_object_alloc ();
-                  jo_string (j, "action", "Log file created");
+                  jo_string (j, "action", cardstatus = "Log file created");
                   jo_string (j, "filename", filename);
                   revk_info ("SD", &j);
                   fprintf (o,
@@ -1416,7 +1420,7 @@ sd_task (void *z)
             fprintf (o, "\n}\n");
             fclose (o);
             jo_t j = jo_object_alloc ();
-            jo_string (j, "action", "Log file closed");
+            jo_string (j, "action", cardstatus = "Log file closed");
             jo_string (j, "filename", filename);
             revk_info ("SD", &j);
          }
@@ -1428,7 +1432,7 @@ sd_task (void *z)
       ESP_LOGI (TAG, "Card unmounted");
       {
          jo_t j = jo_object_alloc ();
-         jo_string (j, "action", "dismounted");
+         jo_string (j, "action", cardstatus = "Dismounted");
          revk_info ("SD", &j);
       }
    }
@@ -1485,26 +1489,26 @@ rgb_task (void *z)
       int l = 0;
       if (ledsd && l < leds)
          revk_led (strip, l++, 255, revk_rgb (rgbsd));  // SD status
-      if(leds>ledsd)
+      if (leds > ledsd)
       {
-      if (status.fixmode >= blink)
-      {
-         for (int s = 0; s < SYSTEMS; s++)
-         {                      // Two active sats per LED
-            for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
-               revk_led (strip, l++, 255, revk_rgb (system_colour[s]));
-            if ((status.gsa[s] & 1) && l < leds)
-               revk_led (strip, l++, 127, revk_rgb (system_colour[s]));
+         if (status.fixmode >= blink)
+         {
+            for (int s = 0; s < SYSTEMS; s++)
+            {                   // Two active sats per LED
+               for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
+                  revk_led (strip, l++, 255, revk_rgb (system_colour[s]));
+               if ((status.gsa[s] & 1) && l < leds)
+                  revk_led (strip, l++, 127, revk_rgb (system_colour[s]));
+            }
+            if (l <= ledsd)
+               revk_led (strip, l++, 255, revk_rgb ('R'));      // No sats
          }
-         if (l <= ledsd)
-            revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
-      }
-      while (l < leds)
-         revk_led (strip, leds-1, 255, revk_rgb ('K'));
-      if (!zdadue)
-         revk_led (strip, leds-1, 255, revk_rgb ('R'));    // No GPS clock
-      else if (!b.moving)
-         revk_led (strip, leds-1, 255, revk_rgb (status.fixmode > 1 ? 'B' : 'M')); // Not moving
+         while (l < leds)
+            revk_led (strip, leds - 1, 255, revk_rgb ('K'));
+         if (!zdadue)
+            revk_led (strip, leds - 1, 255, revk_rgb ('R'));    // No GPS clock
+         else if (!b.moving)
+            revk_led (strip, leds - 1, 255, revk_rgb (status.fixmode > 1 ? 'B' : 'M')); // Not moving
       }
       led_strip_refresh (strip);
    }
@@ -1547,6 +1551,13 @@ web_root (httpd_req_t * req)
       return revk_web_settings (req);   // Direct to web set up
    web_head (req, *hostname ? hostname : appname);
    return revk_web_foot (req, 0, 1, NULL);
+}
+
+void
+revk_web_extra (httpd_req_t * req)
+{
+   revk_web_send (req, "<tr><td>Upload URL</td><td><input size=80 name=url value='%s'></td><td>"        //
+                  , url);
 }
 
 void
@@ -1638,12 +1649,21 @@ app_main ()
       register_get_uri ("/", web_root);
       revk_web_settings_add (webserver);
    }
-}
+   while (1)
+   {
+      sleep (1);
+      if (b.gpsinit)
+         gps_init ();
+      if (b.connect)
+      {
+         b.connect = 0;
+         if (cardstatus)
+         {
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "status", cardstatus);
+            revk_info ("SD", &j);
+         }
+      }
 
-
-void
-revk_web_extra (httpd_req_t * req)
-{
-   revk_web_send (req, "<tr><td>Upload URL</td><td><input size=80 name=url value='%s'></td><td>"        //
-                  , url);
+   }
 }
