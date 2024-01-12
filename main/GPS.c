@@ -54,8 +54,8 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	io(gpstx,7,		GPS Tx - Rx yo GPS GPIO)	\
 	io(gpstick,3,		GPS Tick GPIO)	\
         u32(gpsbaud,115200,	GPS Baud)	\
-	u8l(moven,1,		How many VTG before moving) \
-	u8l(stopn,10,		How many VTG before stopped) \
+	u8l(moven,3,		How many VTG before moving if slow) \
+	u8l(stopn,10,		How many VTG before stopped if not home) \
 	bf(sdled,N,		First LED is SD)	\
 	io(sdss,8,		MicroSD SS)    \
         io(sdmosi,9,		MicroSD MOSI)     \
@@ -1485,10 +1485,8 @@ rgb_task (void *z)
       int l = 0;
       if (ledsd && l < leds)
          revk_led (strip, l++, 255, revk_rgb (rgbsd));  // SD status
-      if (!zdadue && l < leds)
-         revk_led (strip, l++, 255, revk_rgb ('R'));    // No GPS clock
-      else if (!b.moving && l < leds)
-         revk_led (strip, l++, 255, revk_rgb (status.fixmode > 1 ? 'B' : 'M')); // Not moving
+      if(leds>ledsd)
+      {
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
@@ -1502,7 +1500,12 @@ rgb_task (void *z)
             revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
       }
       while (l < leds)
-         revk_led (strip, l++, 255, revk_rgb ('K'));
+         revk_led (strip, leds-1, 255, revk_rgb ('K'));
+      if (!zdadue)
+         revk_led (strip, leds-1, 255, revk_rgb ('R'));    // No GPS clock
+      else if (!b.moving)
+         revk_led (strip, leds-1, 255, revk_rgb (status.fixmode > 1 ? 'B' : 'M')); // Not moving
+      }
       led_strip_refresh (strip);
    }
 }

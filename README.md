@@ -73,5 +73,7 @@ The fix point data is generally self explanatory. `speed` is metres/second. `odo
 
 Note that the odometer logic is internal to the L86, and may track distance travelled if stationary without clear satellite coverage (such as indoors). As such it makes sense to use this for a definite journey if not kept in good view of sky, or off when not in use.
 
+Whilst location data (`lat`/`lon`/`alt`/`ecef`) is per fix, some data is slower, such as `course`, `speeds`, `epe`, and active sats, and as such they do not change every fix.
+
 --
 Copyright © 2019-24 Andrews & Arnold Ltd, Adrian Kennard. See LICENSE file (GPL).
