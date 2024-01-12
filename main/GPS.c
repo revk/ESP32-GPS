@@ -7,7 +7,6 @@
 // Documentation
 
 //#define       PACKDEBUG               // Lots of LOGE for packing
-//#define       PACK4D                  // 4D pack logic (not yet working)
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -82,6 +81,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(logsats,Y,		Log Sats data)		\
 	bl(logcs,Y,		Log Course/speed)		\
 	bl(logacc,Y,		Log Accelerometer)		\
+	bl(logdsq,Y,		Log pack deviation)	\
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
 	u16(packm,2,	 	Pack delta m)	\
@@ -174,8 +174,9 @@ struct fix_s
    double lat,
      lon,
      alt;                       // Lat/lon/alt
-   float hepe;
+   float hepe;                  // Estimated position error
    float vepe;
+   float dsq;                   // Square of deviation from line from packing
    uint8_t sats;                // Sats used for fix
    uint8_t corner:1;            // Corner point for packing
    uint8_t deleted:1;           // Deleted by packing
@@ -244,6 +245,9 @@ fixnew (void)
       memset (f, 0, sizeof (*f));
       static uint32_t seq = 0;
       f->seq = ++seq;
+      f->hepe = NAN;
+      f->vepe = NAN;
+      f->dsq = NAN;
    }
    return f;
 }
@@ -912,6 +916,10 @@ log_line (fix_t * f)
          o ("t", f->ecef.t);
       jo_close (j);
    }
+   if (logdsq && !isnan (f->dsq))
+      jo_litf (j, "dsq", "%f", f->dsq);
+   if (logdsq && f->corner)
+      jo_bool (j, "corner", 1);
    if (logodo && f->setodo)
       jo_litf (j, "odo", "%lld.%02lld", f->odo / 100, f->odo % 100);
    if (gpserrors)
@@ -951,12 +959,10 @@ findmax (fix_t * a, fix_t * b, float *dsqp)
       *dsqp = 0;
    if (!a || !b || a == b || a->next == b)
       return NULL;
-   int64_t cx = (a->ecef.x + b->ecef.x) / 2LL;
+   int64_t cx = (a->ecef.x + b->ecef.x) / 2LL;  // Centre point for reference (to keep numbers smaller)
    int64_t cy = (a->ecef.y + b->ecef.y) / 2LL;
    int64_t cz = (a->ecef.z + b->ecef.z) / 2LL;
-#ifdef PACK4D
    int64_t ct = (a->ecef.t + b->ecef.t) / 2LL;
-#endif
    inline float x (fix_t * p)
    {
       return (float) (p->ecef.x - cx) / 1000000.0;
@@ -969,43 +975,25 @@ findmax (fix_t * a, fix_t * b, float *dsqp)
    {
       return (float) (p->ecef.z - cz) / 1000000.0;
    }
-#ifdef PACK4D
    inline float t (fix_t * p)
    {
       if (!packs)
          return 0;              // Time not a factor
       return (float) ((p->ecef.t - ct) * packm / packs) / 1000000.0;    // Scaled packs to packm
    }
-#endif
-   inline float distsq (float dx, float dy, float dz
-#ifdef PACK4D
-                        , float dt
-#endif
-      )
+   inline float distsq (float dx, float dy, float dz, float dt)
    {                            // Distance squared in space
-      return dx * dx + dy * dy + dz * dz
-#ifdef PACK4D
-         + dt * dt
-#endif
-         ;
+      return dx * dx + dy * dy + dz * dz + dt * dt;
    }
    float xa = x (a);
    float ya = y (a);
    float za = z (a);
-#ifdef PACK4D
    float ta = t (a);
-#endif
    float abx = x (b) - xa;
    float aby = y (b) - ya;
    float abz = z (b) - za;
-#ifdef PACK4D
    float abt = t (b) - ta;
-#endif
-   float LSQ = distsq (abx, aby, abz
-#ifdef PACK4D
-                       , abt
-#endif
-      );
+   float LSQ = distsq (abx, aby, abz, abt);
    fix_t *m = NULL;
    float best = 0;
    for (fix_t * p = a->next; p && p != b; p = p->next)
@@ -1014,14 +1002,10 @@ findmax (fix_t * a, fix_t * b, float *dsqp)
          continue;
       float d = 0;
       if (!LSQ)
-         d = distsq (x (p) - xa, y (p) - ya, z (p) - za
-#ifdef PACK4D
-                     , t (p) - ta
-#endif
-            );                  // Simple distance from point
+         d = distsq (x (p) - xa, y (p) - ya, z (p) - za, t (p) - ta);   // Simple distance from point
       else
       {                         // Distance (squared)
-         // TODO work out how to do in 4D
+         // TODO work out how to do in 4D - for now time is ignored
          float apx = x (p) - xa;
          float apy = y (p) - ya;
          float apz = z (p) - za;
@@ -1033,7 +1017,8 @@ findmax (fix_t * a, fix_t * b, float *dsqp)
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %p->%p %f", p ? p->seq : 0, p, p ? p->next : NULL, d);
 #endif
-      if (packe)
+      p->dsq=d; // Before epe adjut
+      if (packe && p->setepe)
       {                         // Adjust for HEPE
          float e = (float) p->hepe * (float) p->hepe;
          if (e > d)
@@ -1086,6 +1071,7 @@ pack_task (void *z)
          packtry += packmin;
          continue;
       }
+      A->corner = 1;
       packtry = packmin;
       if (dsq < packm)
          for (fix_t * X = A->next; X && X != B; X = X->next)
@@ -1274,7 +1260,7 @@ sd_task (void *z)
    ret = spi_bus_initialize (host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
    if (ret != ESP_OK)
    {
-         rgbsd = 'R';
+      rgbsd = 'R';
       jo_t j = jo_object_alloc ();
       jo_string (j, "error", cardstatus = "SPI failed");
       jo_int (j, "code", ret);
