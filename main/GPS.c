@@ -918,8 +918,6 @@ log_line (fix_t * f)
    }
    if (logdsq && !isnan (f->dsq))
       jo_litf (j, "dsq", "%f", f->dsq);
-   if (logdsq && f->corner)
-      jo_bool (j, "corner", 1);
    if (logodo && f->setodo)
       jo_litf (j, "odo", "%lld.%02lld", f->odo / 100, f->odo % 100);
    if (gpserrors)
@@ -1009,15 +1007,15 @@ findmax (fix_t * a, fix_t * b, float *dsqp)
          float apx = x (p) - xa;
          float apy = y (p) - ya;
          float apz = z (p) - za;
-         float cx = apx * abx;
-         float cy = apy * aby;
-         float cz = apz * abz;
-         d = cx * cx + cy * cy + cz * cz;
+         float cx = apy * abz - apz * aby;      // Cross product
+         float cy = apz * abx - apx * abz;
+         float cz = apx * aby - apy * apx;
+         d = distsq (cx, cy, cz, 0) / LSQ;
       }
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %p->%p %f", p ? p->seq : 0, p, p ? p->next : NULL, d);
 #endif
-      p->dsq=d; // Before epe adjut
+      p->dsq = d;               // Before epe adjut
       if (packe && p->setepe)
       {                         // Adjust for HEPE
          float e = (float) p->hepe * (float) p->hepe;
