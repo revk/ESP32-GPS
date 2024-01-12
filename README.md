@@ -50,6 +50,29 @@ When back on WiFi, and not moving, all log files on the SD card are uploaded as 
 
 There are a string of LEDs, more LEDs means more active satellites. There is also an LED for the SD card.
 
+Main LED strip conists of a number of green, yellow, and cyan LEDs for active NAVSTAR, GLONAS, and GALILEO satellites. These are two satellites per LED with the last in each colour dimmed if it is 1 satellite.
+
+The LED by the SD card (or first LED in the strip if no SD card LED) shows SD card status.
+
+|Colour|Meaning|
+|------|-------|
+|Red|ome problem with SD card|
+|Magenta|Card not present|
+|Yellow|Card mounted|
+|Green|Card being written to - don't power off in this state if possible|
+|Blue|Card unmounted, safe to remove|
+|Cyan|Data being uploaded from card|
+
+In addition, the last LED in the strip may be overridden in some cases.
+
+|Colour|Meaning|
+|------|-------|
+|Red|No GPS connected|
+|Blue|Not moving, but we have a fix|
+|Magenta|Not moving, and no fix, e.g. indoors|
+
+If not one of these cases the active satellites show using this LED if there are enough.
+
 ## Point reduction
 
 The *pack* logic uses a modified Ramer–Douglas–Peucker algorithm, and adjust for `hepe`. It also does not work on fixed time periods - allowing a `packmin` minimum samples, but up to `packmax` if no *corners* found. It also packs to the *corner*, and then considers from that with more points.
