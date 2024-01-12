@@ -1594,8 +1594,7 @@ web_root (httpd_req_t * req)
 void
 revk_web_extra (httpd_req_t * req)
 {
-   revk_web_send (req, "<tr><td>Upload URL</td><td><input size=80 name=url value='%s'></td><td>"        //
-                  , url);
+	revk_web_setting_s (req, "Upload URL","url",url,"URL",NULL,0);
 }
 
 void
