@@ -6,8 +6,8 @@
 // Check PACK logic carefully
 // Documentation
 
-#define       PACKDEBUG
-//#define	PACK4D
+//#define       PACKDEBUG               // Lots of LOGE for packing
+//#define       PACK4D                  // 4D pack logic (not yet working)
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -942,7 +942,7 @@ log_task (void *z)
 }
 
 fix_t *
-findmax (fix_t * a, fix_t * b, float * dsqp)
+findmax (fix_t * a, fix_t * b, float *dsqp)
 {
 #ifdef	PACKDEBUG
    ESP_LOGE (TAG, "Findmax %ld %ld", a ? a->seq : 0, b ? b->seq : 0);
@@ -959,35 +959,35 @@ findmax (fix_t * a, fix_t * b, float * dsqp)
 #endif
    inline float x (fix_t * p)
    {
-      return (float)(p->ecef.x - cx)/1000000.0;
+      return (float) (p->ecef.x - cx) / 1000000.0;
    }
    inline float y (fix_t * p)
    {
-      return (float)(p->ecef.y - cy)/1000000.0;
+      return (float) (p->ecef.y - cy) / 1000000.0;
    }
    inline float z (fix_t * p)
    {
-      return (float)(p->ecef.z - cz)/1000000.0;
+      return (float) (p->ecef.z - cz) / 1000000.0;
    }
 #ifdef PACK4D
    inline float t (fix_t * p)
    {
       if (!packs)
          return 0;              // Time not a factor
-      return (p->ecef.t - ct) * packm / packs;  // Scaled packs to packm
+      return (float) ((p->ecef.t - ct) * packm / packs) / 1000000.0;    // Scaled packs to packm
    }
 #endif
    inline float distsq (float dx, float dy, float dz
 #ifdef PACK4D
-		   , float dt
+                        , float dt
 #endif
-		   )
+      )
    {                            // Distance squared in space
       return dx * dx + dy * dy + dz * dz
 #ifdef PACK4D
-	      + dt * dt
+         + dt * dt
 #endif
-	      ;
+         ;
    }
    float xa = x (a);
    float ya = y (a);
@@ -1001,39 +1001,41 @@ findmax (fix_t * a, fix_t * b, float * dsqp)
 #ifdef PACK4D
    float abt = t (b) - ta;
 #endif
-   float LSQ = distsq (abx,aby, abz
+   float LSQ = distsq (abx, aby, abz
 #ifdef PACK4D
-		   , abt
+                       , abt
 #endif
-		   );
+      );
    fix_t *m = NULL;
    float best = 0;
    for (fix_t * p = a->next; p && p != b; p = p->next)
    {
+      if (!p->setecef)
+         continue;
       float d = 0;
       if (!LSQ)
          d = distsq (x (p) - xa, y (p) - ya, z (p) - za
 #ifdef PACK4D
-			 , t (p) - ta
+                     , t (p) - ta
 #endif
-			 );   // Simple distance from point
+            );                  // Simple distance from point
       else
-      { // Distance (squared)
-	      // TODO work out how to do in 4D
-	      float apx=x(p)-xa;
-	      float apy=y(p)-ya;
-	      float apz=z(p)-za;
-	      float cx=apx*abx;
-	      float cy=apy*aby;
-	      float cz=apz*abz;
-	      d=cx*cx+cy*cy+cz*cz;
+      {                         // Distance (squared)
+         // TODO work out how to do in 4D
+         float apx = x (p) - xa;
+         float apy = y (p) - ya;
+         float apz = z (p) - za;
+         float cx = apx * abx;
+         float cy = apy * aby;
+         float cz = apz * abz;
+         d = cx * cx + cy * cy + cz * cz;
       }
 #ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Check %ld %p->%p %f", p ? p->seq : 0, p, p ? p->next : NULL,d);
+      ESP_LOGE (TAG, "Check %ld %p->%p %f", p ? p->seq : 0, p, p ? p->next : NULL, d);
 #endif
       if (packe)
-      { // Adjust for HEPE
-         float e = (float)p->hepe * (float)p->hepe;
+      {                         // Adjust for HEPE
+         float e = (float) p->hepe * (float) p->hepe;
          if (e > d)
             d = 0;
          else
@@ -1047,7 +1049,7 @@ findmax (fix_t * a, fix_t * b, float * dsqp)
    if (dsqp)
       *dsqp = best;
 #ifdef	PACKDEBUG
-   ESP_LOGE (TAG, "Found %ld %f", m ? m->seq : 0,best);
+   ESP_LOGE (TAG, "Found %ld %f", m ? m->seq : 0, best);
 #endif
    return m;
 }
@@ -1060,9 +1062,9 @@ pack_task (void *z)
    {
       if (fixpack.count < 2 || (
 #ifndef	PACKDEBUG
-			      b.moving &&
+                                  b.moving &&
 #endif
-			      fixpack.count < packtry))
+                                  fixpack.count < packtry))
       {                         // Wait
          usleep (100000);
          continue;
@@ -1077,9 +1079,9 @@ pack_task (void *z)
 #endif
       if (dsq < packm &&
 #ifndef	PACKDEBUG
-		      b.moving &&
+          b.moving &&
 #endif
-		      fixpack.count < packmax)
+          fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
          continue;
@@ -1518,6 +1520,11 @@ acc_task (void *z)
 void
 rgb_task (void *z)
 {
+   if (!leds || !strip)
+   {
+      vTaskDelete (NULL);
+      return;
+   }
    uint8_t blink = 0;
    while (1)
    {
@@ -1525,29 +1532,27 @@ rgb_task (void *z)
          blink = 0;
       usleep (200000);
       int l = 0;
-      if (ledsd && l < leds)
+      if (ledsd)
          revk_led (strip, l++, 255, revk_rgb (rgbsd));  // SD status
-      if (leds > ledsd)
+      if (status.fixmode >= blink)
       {
-         if (status.fixmode >= blink)
-         {
-            for (int s = 0; s < SYSTEMS; s++)
-            {                   // Two active sats per LED
-               for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
-                  revk_led (strip, l++, 255, revk_rgb (system_colour[s]));
-               if ((status.gsa[s] & 1) && l < leds)
-                  revk_led (strip, l++, 127, revk_rgb (system_colour[s]));
-            }
-            if (l <= ledsd)
-               revk_led (strip, l++, 255, revk_rgb ('R'));      // No sats
+         for (int s = 0; s < SYSTEMS; s++)
+         {                      // Two active sats per LED
+            for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
+               revk_led (strip, l++, 255, revk_rgb (system_colour[s]));
+            if ((status.gsa[s] & 1) && l < leds)
+               revk_led (strip, l++, 127, revk_rgb (system_colour[s]));
          }
-         while (l < leds)
-            revk_led (strip, leds - 1, 255, revk_rgb ('K'));
-         if (!zdadue)
-            revk_led (strip, leds - 1, 255, revk_rgb ('R'));    // No GPS clock
-         else if (!b.moving)
-            revk_led (strip, leds - 1, 255, revk_rgb (status.fixmode > 1 ? 'B' : 'M')); // Not moving
+         if (l <= ledsd)
+            revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
       }
+      while (l < leds)
+         revk_led (strip, l++, 255, revk_rgb ('K'));
+      // Flag isues in last LED
+      if (!zdadue)
+         revk_led (strip, leds - 1, 255, revk_rgb ('R'));       // No GPS clock
+      else if (!b.moving)
+         revk_led (strip, leds - 1, 255, revk_rgb (status.fixmode > 1 ? 'B' : 'M'));    // Not moving
       led_strip_refresh (strip);
    }
 }
@@ -1594,7 +1599,7 @@ web_root (httpd_req_t * req)
 void
 revk_web_extra (httpd_req_t * req)
 {
-	revk_web_setting_s (req, "Upload URL","url",url,"URL",NULL,0);
+   revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
 }
 
 void
