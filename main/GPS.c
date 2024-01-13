@@ -992,15 +992,18 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
    float best = 0;
    for (fix_t * C = A->next; C && C != B; C = C->next)
    {
+#ifdef	PACKDEBUG
+      ESP_LOGE (TAG, "Check %ld %p->%pf", C ? C->seq : 0, C, C ? C->next : NULL );
+#endif
       if (!C->setecef)
          continue;
       float h2 = 0;
-      float a2 = dist2 (A, C);
+      float a2 = dist2 (A, C),c2=0;
       if (b2 == 0.0)
          h2 = a2;               // A/B same, so distance from A
       else
       {
-         float c2 = dist2 (C, B);
+         c2 = dist2 (C, B);
          if (c2 - b2 >= a2)
             h2 = a2;            // Off end of A
          else if (a2 - b2 >= c2)
@@ -1009,7 +1012,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
             h2 = (4 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / b2 / 4;      // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
       }
 #ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Check %ld %p->%p %f", C ? C->seq : 0, C, C ? C->next : NULL, h2);
+      ESP_LOGE (TAG, "Checked a=%f b=%f c=%f h=%f",a2,b2,c2,h2);
 #endif
       C->dsq = h2;              // Before EPE adjust
       // Yes, this is just a way to reduce the distance on poor quality points
