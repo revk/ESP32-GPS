@@ -81,7 +81,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(logsats,Y,		Log Sats data)		\
 	bl(logcs,Y,		Log Course/speed)		\
 	bl(logacc,Y,		Log Accelerometer)		\
-	bl(logdsq,Y,		Log pack deviation)	\
+	bl(logdsq,N,		Log pack deviation)	\
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
 	u16(packm,0,	 	Pack delta m)	\
@@ -948,19 +948,19 @@ log_task (void *z)
 }
 
 fix_t *
-findmax (fix_t * a, fix_t * b, float *dsqp)
+findmax (fix_t * A, fix_t * B, float *dsqp)
 {
 #ifdef	PACKDEBUG
-   ESP_LOGE (TAG, "Findmax %ld %ld", a ? a->seq : 0, b ? b->seq : 0);
+   ESP_LOGE (TAG, "Findmax %ld %ld", A ? A->seq : 0, B ? B->seq : 0);
 #endif
    if (dsqp)
       *dsqp = 0;
-   if (!a || !b || a == b || a->next == b)
+   if (!A || !B || A == B || A->next == B)
       return NULL;
-   int64_t cx = (a->ecef.x + b->ecef.x) / 2LL;  // Centre point for reference (to keep numbers smaller)
-   int64_t cy = (a->ecef.y + b->ecef.y) / 2LL;
-   int64_t cz = (a->ecef.z + b->ecef.z) / 2LL;
-   int64_t ct = (a->ecef.t + b->ecef.t) / 2LL;
+   int64_t cx = (A->ecef.x + B->ecef.x) / 2LL;  // Centre point for reference (to keep numbers smaller)
+   int64_t cy = (A->ecef.y + B->ecef.y) / 2LL;
+   int64_t cz = (A->ecef.z + B->ecef.z) / 2LL;
+   int64_t ct = (A->ecef.t + B->ecef.t) / 2LL;
    inline float x (fix_t * p)
    {
       return (float) (p->ecef.x - cx) / 1000000.0;
@@ -983,45 +983,45 @@ findmax (fix_t * a, fix_t * b, float *dsqp)
    {                            // Distance squared in space
       return dx * dx + dy * dy + dz * dz + dt * dt;
    }
-   float xa = x (a);
-   float ya = y (a);
-   float za = z (a);
-   float ta = t (a);
-   float abx = x (b) - xa;
-   float aby = y (b) - ya;
-   float abz = z (b) - za;
-   float abt = t (b) - ta;
-   float LSQ = distsq (abx, aby, abz, abt);
+   inline float dist2 (fix_t * A, fix_t * B)
+   {
+      float X = x (A) - x (B);
+      float Y = y (A) - y (B);
+      float Z = z (A) - z (B);
+      float T = t (A) - t (B);
+      return X * X + Y * Y + Z * Z + T * T;
+   }
+   float b2 = dist2 (A, B);
    fix_t *m = NULL;
    float best = 0;
-   for (fix_t * p = a->next; p && p != b; p = p->next)
+   for (fix_t * C = A->next; C && C != B; C = C->next)
    {
-      if (!p->setecef)
+      if (!C->setecef)
          continue;
-      float d = 0;
-      if (!LSQ)
-         d = distsq (x (p) - xa, y (p) - ya, z (p) - za, t (p) - ta);   // Simple distance from point
+      float h2 = 0;
+      float a2 = dist2 (A, C);
+      if (b2 == 0)
+         h2 = a2;               // A/B same, so distance from A
       else
-      {                         // Distance (squared)
-         // TODO work out how to do in 4D - for now time is ignored
-         float apx = x (p) - xa;
-         float apy = y (p) - ya;
-         float apz = z (p) - za;
-         float cx = apy * abz - apz * aby;      // Cross product
-         float cy = apz * abx - apx * abz;
-         float cz = apx * aby - apy * apx;
-         d = distsq (cx, cy, cz, 0) / LSQ;
+      {
+         float c2 = dist2 (B, C);
+         if (c2 - b2 >= a2)
+            h2 = a2;            // Off end of A
+         else if (a2 - b2 >= c2)
+            h2 = c2;            // Off end of B
+         else
+            h2 = (3 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / b2 / 4;      // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
       }
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %p->%p %f", p ? p->seq : 0, p, p ? p->next : NULL, d);
 #endif
-      p->dsq = d;               // Before epe adjut
-      if (packe && p->setepe)
-         d -= (float) p->hepe * (float) p->hepe;;
-      if (m && d <= best)
+      C->dsq = h2;              // Before EPE adjust
+      if (packe && C->setepe)
+         h2 -= (float) C->hepe * (float) C->hepe;;
+      if (m && h2 <= best)
          continue;
-      best = d;
-      m = p;
+      best = h2;
+      m = C;
    }
    if (dsqp)
       *dsqp = best;
