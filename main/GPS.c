@@ -955,7 +955,7 @@ dist2 (fix_t * A, fix_t * B)
    float Z = ((float) (A->ecef.z - B->ecef.z)) / 1000000.0;
    float T = 0;
    if (packs)
-    T = ((float) ((A->ecef.t - B->ecef.t) * packm / packs)) / 1000000.0:0.0;
+      T = ((float) ((A->ecef.t - B->ecef.t) * packm / packs)) / 1000000.0;
    return X * X + Y * Y + Z * Z + T * T;
 }
 
@@ -967,7 +967,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
 #endif
    if (dsqp)
       *dsqp = 0;
-   if (!A || !B || A == B || A->next == B || !A->setecef || !B->setecef || !A->sett || !B->sett)
+   if (!A || !B || A == B || A->next == B)
       return NULL;
    float b2 = dist2 (B, A);
    fix_t *m = NULL;
@@ -977,7 +977,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %p->%p", C ? C->seq : 0, C, C ? C->next : NULL);
 #endif
-      if (!C->setecef)
+      if (!C->setecef || !C->sett)
          continue;
       float h2 = 0;
       float a2 = dist2 (A, C),
