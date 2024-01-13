@@ -6,7 +6,7 @@
 // Check PACK logic carefully
 // Documentation
 
-//#define       PACKDEBUG               // Lots of LOGE for packing
+#define       PACKDEBUG               // Lots of LOGE for packing
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -955,7 +955,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
 #endif
    if (dsqp)
       *dsqp = 0;
-   if (!A || !B || A == B || A->next == B || !A->setecef || !B->setecf)
+   if (!A || !B || A == B || A->next == B || !A->setecef || !B->setecef)
       return NULL;
    int64_t cx = (A->ecef.x + B->ecef.x) / 2LL;  // Centre point for reference (to keep numbers smaller)
    int64_t cy = (A->ecef.y + B->ecef.y) / 2LL;
