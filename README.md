@@ -2,13 +2,15 @@
 
 The software/hardware system provides a non cloud based GPS logger application, ideal for vehicle usage. It is not a "live" tracker, but a logger - providing automatic upload of logs when returning to base, via WiFi.
 
+Main application is installed in vehicles, such as company car, etc, for automatic logging of all journeys without any manual intervention.
+
 ## Logger board
 
-This code is designs to work on a GPS Logger board (see PCB directory). The logger board connects to a GPS module which is based on the [Quectel L86](https://www.quectel.com/wp-content/uploads/pdfupload/Quectel_L86_GNSS_Specification_V1.3.pdf) GNSS, which is a powerful GPS module that can track NAVSTAR (US GPS), GLONASS (Russian GPS), and Galileo (EU GPS) Satellites.
+This code is designed to work on the GPS Logger board (see PCB directory). The logger board connects to a GPS module which is based on the [Quectel L86](https://www.quectel.com/wp-content/uploads/pdfupload/Quectel_L86_GNSS_Specification_V1.3.pdf) GNSS, which is a powerful GPS module that can track NAVSTAR (US GPS), GLONASS (Russian GPS), and Galileo (EU GPS) Satellites.
 
 The two boards can be directly connected to make a compact unit, or connected via a 5 core lead (or 4 core as PPS signal is not needed). This allows the smaller GPS module to be installed on a dash board or somewhere with a better view of the sky, and the main logger to be separate.
 
-The logger board is powered vi a USB-C connectot, but also supports a small LiPo battery, with built in battery charger, ideal for cases where USB is switched with car ignition.
+The logger board is powered vi a USB-C connector, but also supports a small LiPo battery, with built in battery charger, ideal for cases where USB is switched with car ignition.
 
 An SD card is needed (up to 16GB) for logs to be stored until uploaded. Do not drop power whilst logging as log file will be lost (this may be improved in future). This is another reason for using a LiPo as well as USB power.
 
@@ -20,7 +22,11 @@ The s/w uses the [RevK library](https://github.com/revk/ESP32-RevK) which provid
 
 When back on WiFi, and not moving, all log files on the SD card are uploaded as a POST to specified URL (which can be https if using known certificates, including Let's Encrypt). Once uploaded it is deleted from the SD card. If no URL is set, the file stays on the SD card and can be accesses using a card reader as needed.
 
+The post includes a *query* string that is the MAC and start date/time as a filename. But this is included in the JSON data.
+
 ## Important settings
+
+Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GPS/packm 2` to set `packm` to `2`. Settings can also be sent in JSON format. To see settings, send just `settings/GPS`.
 
 |Setting|Meaning|
 |-------|-------|
@@ -43,14 +49,14 @@ When back on WiFi, and not moving, all log files on the SD card are uploaded as 
 |`packmin`|Min samples to be packed, normally `60`, set this to zero to disable packing|
 |`packmax`|Max samples to be packed, normally `600` which means if travelling straight you get a sample at least this often|
 |`packm`|Discard points that are within this many metres of straight line, `0` means don't pack|
-|`packs`|Discard points taht are within this many seconds of constant speed, `0` means ignore time when packing|
-|`packe`|If set, reduce distance based on `hepe` when packing, means lower quality points tend to get discarded|
+|`packs`|Discard points that are within this many seconds of constant speed, `0` means ignore time when packing|
+|`packe`|If set, reduce distance based on `hepe` when packing, means lower quality points tend to get discarded more easily|
 
 ## LEDs
 
-There are a string of LEDs, more LEDs means more active satellites. There is also an LED for the SD card.
+There are a string of LEDs to show status and how many active satellites are in use.
 
-Main LED strip conists of a number of green, yellow, and cyan LEDs for active NAVSTAR, GLONAS, and GALILEO satellites. These are two satellites per LED with the last in each colour dimmed if it is 1 satellite.
+Main LED strip consists of a number of green, yellow, and cyan LEDs for active NAVSTAR, GLONAS, and GALILEO satellites. These are two satellites per LED with the last in each colour dimmed if it is 1 satellite (i.e. odd number).
 
 The LED by the SD card (or first LED in the strip if no SD card LED) shows SD card status.
 
