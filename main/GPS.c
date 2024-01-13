@@ -6,7 +6,7 @@
 // Check PACK logic carefully
 // Documentation
 
-#define       PACKDEBUG               // Lots of LOGE for packing
+//#define       PACKDEBUG         // Lots of LOGE for packing
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -955,36 +955,14 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
 #endif
    if (dsqp)
       *dsqp = 0;
-   if (!A || !B || A == B || A->next == B || !A->setecef || !B->setecef)
+   if (!A || !B || A == B || A->next == B || !A->setecef || !B->setecef || !A->sett || !B->sett)
       return NULL;
-   int64_t cx = (A->ecef.x + B->ecef.x) / 2LL;  // Centre point for reference (to keep numbers smaller)
-   int64_t cy = (A->ecef.y + B->ecef.y) / 2LL;
-   int64_t cz = (A->ecef.z + B->ecef.z) / 2LL;
-   int64_t ct = (A->ecef.t + B->ecef.t) / 2LL;
-   inline float x (fix_t * p)
-   {
-      return (float) (p->ecef.x - cx) / 1000000.0;
-   }
-   inline float y (fix_t * p)
-   {
-      return (float) (p->ecef.y - cy) / 1000000.0;
-   }
-   inline float z (fix_t * p)
-   {
-      return (float) (p->ecef.z - cz) / 1000000.0;
-   }
-   inline float t (fix_t * p)
-   {
-      if (!packs)
-         return 0;              // Time not a factor
-      return (float) ((p->ecef.t - ct) * packm / packs) / 1000000.0;    // Scaled packs to packm
-   }
    inline float dist2 (fix_t * A, fix_t * B)
    {
-      float X = x (A) - x (B);
-      float Y = y (A) - y (B);
-      float Z = z (A) - z (B);
-      float T = t (A) - t (B);
+      float X = ((float) (A->ecef.x - B->ecef.x)) / 1000000.0;
+      float Y = ((float) (A->ecef.y - B->ecef.y)) / 1000000.0;
+      float Z = ((float) (A->ecef.z - B->ecef.z)) / 1000000.0;
+      float T = packs ? ((float) ((A->ecef.t - B->ecef.t) * packm / packs)) / 1000000.0 : 0.0;
       return X * X + Y * Y + Z * Z + T * T;
    }
    float b2 = dist2 (B, A);
@@ -993,12 +971,13 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
    for (fix_t * C = A->next; C && C != B; C = C->next)
    {
 #ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Check %ld %p->%pf", C ? C->seq : 0, C, C ? C->next : NULL );
+      ESP_LOGE (TAG, "Check %ld %p->%p", C ? C->seq : 0, C, C ? C->next : NULL);
 #endif
       if (!C->setecef)
          continue;
       float h2 = 0;
-      float a2 = dist2 (A, C),c2=0;
+      float a2 = dist2 (A, C),
+         c2 = 0;
       if (b2 == 0.0)
          h2 = a2;               // A/B same, so distance from A
       else
@@ -1012,7 +991,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
             h2 = (4 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / b2 / 4;      // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
       }
 #ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Checked a=%f b=%f c=%f h=%f",a2,b2,c2,h2);
+      ESP_LOGE (TAG, "Checked a=%f b=%f c=%f h=%f", a2, b2, c2, h2);
 #endif
       C->dsq = h2;              // Before EPE adjust
       // Yes, this is just a way to reduce the distance on poor quality points
@@ -1048,6 +1027,11 @@ pack_task (void *z)
          continue;
       }
       fix_t *A = fixpack.base;
+      if (!A->setecef || !A->sett)
+      {                         // Can't use data - not packed
+         fixadd (&fixsd, fixget (&fixpack));
+         continue;
+      }
       fix_t *B = fixpack.last;
       float dsq = 0;
       fix_t *M = findmax (A, B, &dsq);
@@ -1659,11 +1643,11 @@ app_main ()
       gpio_set_direction (gpstick & IO_MASK, GPIO_MODE_INPUT);
    }
    gps_connect (gpsbaud);
-   revk_task ("NMEA", nmea_task, NULL, 8);
-   revk_task ("Log", log_task, NULL, 8);
-   revk_task ("Pack", pack_task, NULL, 8);
-   revk_task ("SD", sd_task, NULL, 8);
-   revk_task ("Acc", acc_task, NULL, 8);
+   revk_task ("NMEA", nmea_task, NULL, 10);
+   revk_task ("Log", log_task, NULL, 10);
+   revk_task ("Pack", pack_task, NULL, 10);
+   revk_task ("SD", sd_task, NULL, 10);
+   revk_task ("Acc", acc_task, NULL, 10);
    // Web interface
    httpd_config_t config = HTTPD_DEFAULT_CONFIG ();
    config.max_uri_handlers = 5 + revk_num_web_handlers ();
