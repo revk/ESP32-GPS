@@ -934,7 +934,7 @@ log_task (void *z)
    while (1)
    {
       if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->slow.fixmode > 1 && fixlog.count < VTGRATE * (moven + 1)))
-      {
+      {                         // Waiting - holds pre-moving daqta
          usleep (100000);
          continue;
       }
@@ -943,7 +943,8 @@ log_task (void *z)
          continue;
       jo_t j = log_line (f);
       revk_info ("GPS", &j);
-      fixadd ((packm && packmin) ? &fixpack : &fixsd, f);
+      // Pass on - if TS and ECEF, to packing or direct to SD if no packing set
+      fixadd (!f->sett || !f->setecef ? &fixfree : (packm && packmin) ? &fixpack : &fixsd, f);
    }
 }
 
@@ -977,8 +978,6 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %p->%p", C ? C->seq : 0, C, C ? C->next : NULL);
 #endif
-      if (!C->setecef || !C->sett)
-         continue;
       float h2 = 0;
       float a2 = dist2 (A, C),
          c2 = 0;
@@ -992,7 +991,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
          else if (a2 - b2 >= c2)
             h2 = c2;            // Off end of B
          else
-            h2 = (4 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / b2 / 4;      // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
+            h2 = (4 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / (b2 * 4);    // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
       }
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Checked a=%f b=%f c=%f h=%f", a2, b2, c2, h2);
@@ -1017,7 +1016,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
 
 void
 pack_task (void *z)
-{
+{                               // Packing - only gets data with ECEF and time set
    uint32_t packtry = packmin;
    while (1)
    {
@@ -1031,11 +1030,6 @@ pack_task (void *z)
          continue;
       }
       fix_t *A = fixpack.base;
-      if (!A->setecef || !A->sett)
-      {                         // Can't use data - not packed
-         fixadd (&fixsd, fixget (&fixpack));
-         continue;
-      }
       fix_t *B = fixpack.last;
       float dsq = 0;
       fix_t *M = findmax (A, B, &dsq);
