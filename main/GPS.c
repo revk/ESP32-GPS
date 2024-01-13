@@ -84,7 +84,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(logdsq,N,		Log pack deviation)	\
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
-	u16(packm,0,	 	Pack delta m)	\
+	u16(packm,1,	 	Pack delta m)	\
 	u16(packs,10,		Pack delta s)	\
 	bl(packe,1,		Pack allow for EPE)	\
 	s(url,,			URL to post data)	\
@@ -943,7 +943,7 @@ log_task (void *z)
          continue;
       jo_t j = log_line (f);
       revk_info ("GPS", &j);
-      fixadd (packm || packe ? &fixpack : &fixsd, f);
+      fixadd ((packm && packmin) ? &fixpack : &fixsd, f);
    }
 }
 
@@ -1017,7 +1017,9 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
 #endif
       C->dsq = h2;              // Before EPE adjust
       if (packe && C->setepe)
-         h2 -= (float) C->hepe * (float) C->hepe;;
+         h2 -= C->hepe;
+      // Yes, this is just a way to reduce the distance on poor quality points
+      // In an ideal would you take hepe off h, but that is slow and would invert if that went negative, so this is a crude adjustment for poor hepe
       if (m && h2 <= best)
          continue;
       best = h2;
