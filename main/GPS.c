@@ -1010,7 +1010,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
          else if (a2 - b2 >= c2)
             h2 = c2;            // Off end of B
          else
-            h2 = (3 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / b2 / 4;      // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
+            h2 = (4 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / b2 / 4;      // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
       }
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %p->%p %f", p ? p->seq : 0, p, p ? p->next : NULL, d);
