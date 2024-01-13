@@ -1,5 +1,9 @@
 ﻿Designator,Mid X,Mid Y,Rotation,Layer
 BT1,100.0,-97.0,0,bottom
 C1,113.0,-105.0,270,bottom
+D1,98.75,-109.0,270,bottom
+D2,101.25,-109.0,270,bottom
+D3,96.25,-109.0,270,bottom
+D4,103.75,-109.0,270,bottom
 J1,100.0,-109.87,0,bottom
 U1,100.0,-100.0,270,top
