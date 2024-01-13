@@ -947,6 +947,18 @@ log_task (void *z)
    }
 }
 
+float
+dist2 (fix_t * A, fix_t * B)
+{                               // Distance between two fixes
+   float X = ((float) (A->ecef.x - B->ecef.x)) / 1000000.0;
+   float Y = ((float) (A->ecef.y - B->ecef.y)) / 1000000.0;
+   float Z = ((float) (A->ecef.z - B->ecef.z)) / 1000000.0;
+   float T = 0;
+   if (packs)
+    T = ((float) ((A->ecef.t - B->ecef.t) * packm / packs)) / 1000000.0:0.0;
+   return X * X + Y * Y + Z * Z + T * T;
+}
+
 fix_t *
 findmax (fix_t * A, fix_t * B, float *dsqp)
 {
@@ -957,14 +969,6 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
       *dsqp = 0;
    if (!A || !B || A == B || A->next == B || !A->setecef || !B->setecef || !A->sett || !B->sett)
       return NULL;
-   inline float dist2 (fix_t * A, fix_t * B)
-   {
-      float X = ((float) (A->ecef.x - B->ecef.x)) / 1000000.0;
-      float Y = ((float) (A->ecef.y - B->ecef.y)) / 1000000.0;
-      float Z = ((float) (A->ecef.z - B->ecef.z)) / 1000000.0;
-      float T = packs ? ((float) ((A->ecef.t - B->ecef.t) * packm / packs)) / 1000000.0 : 0.0;
-      return X * X + Y * Y + Z * Z + T * T;
-   }
    float b2 = dist2 (B, A);
    fix_t *m = NULL;
    float best = 0;
