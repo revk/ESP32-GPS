@@ -955,7 +955,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
 #endif
    if (dsqp)
       *dsqp = 0;
-   if (!A || !B || A == B || A->next == B)
+   if (!A || !B || A == B || A->next == B || !A->setecef || !B->setecf)
       return NULL;
    int64_t cx = (A->ecef.x + B->ecef.x) / 2LL;  // Centre point for reference (to keep numbers smaller)
    int64_t cy = (A->ecef.y + B->ecef.y) / 2LL;
@@ -979,10 +979,6 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
          return 0;              // Time not a factor
       return (float) ((p->ecef.t - ct) * packm / packs) / 1000000.0;    // Scaled packs to packm
    }
-   inline float distsq (float dx, float dy, float dz, float dt)
-   {                            // Distance squared in space
-      return dx * dx + dy * dy + dz * dz + dt * dt;
-   }
    inline float dist2 (fix_t * A, fix_t * B)
    {
       float X = x (A) - x (B);
@@ -991,7 +987,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
       float T = t (A) - t (B);
       return X * X + Y * Y + Z * Z + T * T;
    }
-   float b2 = dist2 (A, B);
+   float b2 = dist2 (B, A);
    fix_t *m = NULL;
    float best = 0;
    for (fix_t * C = A->next; C && C != B; C = C->next)
@@ -1000,11 +996,11 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
          continue;
       float h2 = 0;
       float a2 = dist2 (A, C);
-      if (b2 == 0)
+      if (b2 == 0.0)
          h2 = a2;               // A/B same, so distance from A
       else
       {
-         float c2 = dist2 (B, C);
+         float c2 = dist2 (C, B);
          if (c2 - b2 >= a2)
             h2 = a2;            // Off end of A
          else if (a2 - b2 >= c2)
@@ -1013,15 +1009,15 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
             h2 = (4 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / b2 / 4;      // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
       }
 #ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Check %ld %p->%p %f", p ? p->seq : 0, p, p ? p->next : NULL, d);
+      ESP_LOGE (TAG, "Check %ld %p->%p %f", C ? C->seq : 0, C, C ? C->next : NULL, h2);
 #endif
       C->dsq = h2;              // Before EPE adjust
-      if (packe && C->setepe)
-         h2 -= C->hepe;
       // Yes, this is just a way to reduce the distance on poor quality points
       // In an ideal would you take hepe off h, but that is slow and would invert if that went negative, so this is a crude adjustment for poor hepe
+      if (packe && C->setepe)
+         h2 -= C->hepe;
       if (m && h2 <= best)
-         continue;
+         continue;              // Not bigger
       best = h2;
       m = C;
    }
