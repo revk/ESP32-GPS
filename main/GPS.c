@@ -1061,7 +1061,7 @@ log_task (void *z)
    while (1)
    {
       if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->slow.fixmode > 1 && fixlog.count < VTGRATE * (moven + 1)))
-      {                         // Waiting - holds pre-moving daqta
+      {                         // Waiting - holds pre-moving data
          usleep (100000);
          continue;
       }
@@ -1181,7 +1181,7 @@ pack_task (void *z)
 void
 checkupload (void)
 {
-   if (b.sdempty || (!b.sdwaiting && !b.sdempty) || revk_link_down () || !*url)
+   if (b.sdempty || revk_link_down () || !*url)
       return;
    if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
       return;
