@@ -2,7 +2,6 @@
 // Copyright (c) 2019-2024 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
 // TODO
-// ACC
 // ACC ADC for battery
 // POWER/BATTERY - sleeping on SDCD and CHARGER
 
@@ -507,9 +506,9 @@ acc_init (void)
       return;
    }
    acc_write (0x20, 0x17);      // 1Hz high resolution
-   acc_write (0x23, 0xF8);      // High resolution ±16g
-   acc_write (0x2E, 0x80);      // Stream
-   acc_write (0x24, 0x40);      // FIFO enabled
+   acc_write (0x23, 0x38);      // High resolution ±16g
+   acc_write (0x2E, 0x00);      // Bypass
+   acc_write (0x24, 0x00);      // FIFO disable
    b.accok = 1;
 }
 
@@ -518,19 +517,15 @@ acc_get (fix_t * f)
 {                               // Get acc data for a fix
    if (!f || !b.accok)
       return;
-#if 0
-   uint8_t status = 0;
-   acc_read (0x27, 1, &status);
-   uint8_t fifo = 0;
-   acc_read (0x2F, 1, &fifo);
-   int16_t a[3];
-   acc_read (0x28, sizeof (a), &a);
-   f->acc.x = a[0];
-   f->acc.y = a[1];
-   f->acc.z = a[2];
-   f->setacc = 1;
-   ESP_LOGE (TAG, "ACC STATUS %02X FIFO %02X", status, fifo);
-#endif
+   uint8_t data[7] = { 0 };
+   acc_read (0x80 + 0x27, sizeof (data), data);
+   if (data[0] & 0x08)
+   {
+      f->acc.x = data[1] + (data[2] << 8);
+      f->acc.y = data[3] + (data[4] << 8);
+      f->acc.z = data[5] + (data[6] << 8);
+      f->setacc = 1;
+   }
 }
 
 static void
@@ -1037,11 +1032,10 @@ log_line (fix_t * f)
    if (f->setacc && logacc)
    {
       jo_object (j, "acc");
-      jo_int (j, "x", f->acc.x);
-      jo_int (j, "y", f->acc.y);
-      jo_int (j, "z", f->acc.z);
+      jo_litf (j, "x", "%.3f", (float) (f->acc.x) / 1200.0); // 16g high res says 12 mg/digit but in practice this looks right?
+      jo_litf (j, "y", "%.3f", (float) (f->acc.y) / 1200.0);
+      jo_litf (j, "z", "%.3f", (float) (f->acc.z) / 1200.0);
       jo_close (j);
-
    }
    if (logdsq && !isnan (f->dsq))
       jo_litf (j, "dsq", "%f", f->dsq);
@@ -1340,7 +1334,6 @@ sd_task (void *z)
    // Example: for fixed frequency of 10MHz, use host.max_freq_khz = 10000;
    sdmmc_host_t host = SDSPI_HOST_DEFAULT ();
    host.max_freq_khz = SDMMC_FREQ_PROBING;
-
    spi_bus_config_t bus_cfg = {
       .mosi_io_num = sdmosi & IO_MASK,
       .miso_io_num = sdmiso & IO_MASK,
@@ -1398,7 +1391,6 @@ sd_task (void *z)
       }
 
       wait (1);
-
       esp_vfs_fat_sdmmc_mount_config_t mount_config = {
          .format_if_mount_failed = 1,
          .max_files = 1,
@@ -1407,14 +1399,11 @@ sd_task (void *z)
       };
       sdmmc_card_t *card;
       ESP_LOGI (TAG, "Initializing SD card");
-
       sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
       slot_config.gpio_cs = sdss & IO_MASK;
       slot_config.host_id = host.slot;
-
       ESP_LOGI (TAG, "Mounting filesystem");
       ret = esp_vfs_fat_sdspi_mount (sd_mount, &host, &slot_config, &mount_config, &card);
-
       if (ret != ESP_OK)
       {
          jo_t j = jo_object_alloc ();
@@ -1436,7 +1425,6 @@ sd_task (void *z)
       }
       ESP_LOGI (TAG, "Filesystem mounted");
       rgbsd = 'Y';
-
       if (b.doformat && (ret = esp_vfs_fat_spiflash_format_rw_wl (sd_mount, "GPS")))
       {
          jo_t j = jo_object_alloc ();
@@ -1455,7 +1443,6 @@ sd_task (void *z)
          revk_info ("SD", &j);
       }
       b.doformat = 0;
-
       checkupload ();
       while (!b.doformat && !b.dodismount)
       {
@@ -1488,8 +1475,8 @@ sd_task (void *z)
                struct tm t;
                time_t now = f->ecef.t / 1000000LL;
                gmtime_r (&now, &t);
-               sprintf (filename, "%s/%04d-%02d-%02dT%02d-%02d-%02d.json", sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
-                        t.tm_hour, t.tm_min, t.tm_sec);
+               sprintf (filename, "%s/%04d-%02d-%02dT%02d-%02d-%02d.json",
+                        sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
                o = fopen (filename, "w");
                if (!o)
                {
