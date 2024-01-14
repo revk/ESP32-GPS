@@ -1032,12 +1032,13 @@ pack_task (void *z)
       fix_t *A = fixpack.base;
       fix_t *B = fixpack.last;
       float dsq = 0;
+      float cutoff=(float)packm*(float)packm;
       fix_t *M = findmax (A, B, &dsq);
       fix_t *E = M ? : B;
 #ifdef	PACKDEBUG
       ESP_LOGE (TAG, "Check %ld %ld %ld (%ld) %f", A->seq, M ? M->seq : 0, B->seq, packtry, dsq);
 #endif
-      if (dsq < packm &&
+      if (dsq < cutoff &&
 #ifndef	PACKDEBUG
           b.moving &&
 #endif
@@ -1048,7 +1049,7 @@ pack_task (void *z)
       }
       A->corner = 1;
       packtry = packmin;
-      if (dsq < packm)
+      if (dsq < cutoff)
          for (fix_t * X = A->next; X && X != B; X = X->next)
             X->deleted = 1;     // All within cutoff
       else
@@ -1060,7 +1061,7 @@ pack_task (void *z)
 #ifdef  PACKDEBUG
             ESP_LOGE (TAG, "Pack %ld %ld %ld %f", A->seq, M ? M->seq : 0, B->seq, dsq);
 #endif
-            if (dsq < packm)
+            if (dsq < cutoff)
             {                   // Drop all in between as all within margin - otherwise process A to M again.
                if (A != B)
                   for (fix_t * X = A->next; X && X != B; X = X->next)
