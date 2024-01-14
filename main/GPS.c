@@ -1181,7 +1181,9 @@ pack_task (void *z)
 void
 checkupload (void)
 {
-   if (b.sdempty || revk_link_down () || !*url)
+   uint32_t up = uptime ();
+   static uint32_t delay = 0;
+   if (b.sdempty || revk_link_down () || !*url || delay > up)
       return;
    if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
       return;
@@ -1295,12 +1297,13 @@ checkupload (void)
             jo_t j = makeerr ("Failed to delete");
             revk_error ("Upload", &j);
          }
-         sleep (1);
-      } else
-         sleep (60);            // Some issue
+      }
       free (filename);
       if (!zap)
+      {
+         delay = up + 60;
          return;
+      }
    }
 }
 
