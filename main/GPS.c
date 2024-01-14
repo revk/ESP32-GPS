@@ -1319,7 +1319,7 @@ sd_task (void *z)
       gpio_reset_pin (sdcd & IO_MASK);
       gpio_set_direction (sdcd & IO_MASK, GPIO_MODE_INPUT);
    }
-   / By default, SD card frequency is initialized to SDMMC_FREQ_DEFAULT (20MHz)
+   // By default, SD card frequency is initialized to SDMMC_FREQ_DEFAULT (20MHz)
    // For setting a specific frequency, use host.max_freq_khz (range 400kHz - 20MHz for SDSPI)
    // Example: for fixed frequency of 10MHz, use host.max_freq_khz = 10000;
    sdmmc_host_t host = SDSPI_HOST_DEFAULT ();
@@ -1558,6 +1558,7 @@ rgb_task (void *z)
    {
       if (++blink > 3)
          blink = 0;
+	   if(!blink)ESP_LOGE(TAG,"LED RGB %c",rgbsd);
       usleep (200000);
       int l = 0;
       if (ledsd)
