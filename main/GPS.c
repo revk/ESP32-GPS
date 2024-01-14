@@ -3,10 +3,7 @@
 
 // TODO
 // ACC
-// Check PACK logic carefully
-// Documentation
-
-//#define       PACKDEBUG         // Lots of LOGE for packing
+// POWER/BATTERY
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -84,9 +81,8 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(logdsq,N,		Log pack deviation)	\
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
-	u16(packm,1,	 	Pack delta m)	\
+	u16(packm,0,	 	Pack delta m)	\
 	u16(packs,10,		Pack delta s)	\
-	bl(packe,1,		Pack allow for EPE)	\
 	s(url,,			URL to post data)	\
 
 #define u32(n,d,t)	uint32_t n;
@@ -145,6 +141,8 @@ static struct
    uint8_t vtglast:1;           // Was last VTG moving
    uint8_t moving:1;            // We seem to be moving
    uint8_t connect:1;           // MQTT connect
+   uint8_t sdwaiting:1;         // SD has data
+   uint8_t sdempty:1;           // SD has no data
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -943,8 +941,8 @@ log_task (void *z)
          continue;
       jo_t j = log_line (f);
       revk_info ("GPS", &j);
-      // Pass on - if TS and ECEF, to packing or direct to SD if no packing set
-      fixadd (!f->sett || !f->setecef ? &fixfree : (packm && packmin) ? &fixpack : &fixsd, f);
+      // Pass on - if packing, and TS and ECEF, to packing, else if packing and no TS or ECEF then drop as packing does not do those. Else direct to SD
+      fixadd (packm && packmin ? !f->sett || !f->setecef ? &fixfree : &fixpack : &fixsd, f);
    }
 }
 
@@ -963,9 +961,6 @@ dist2 (fix_t * A, fix_t * B)
 fix_t *
 findmax (fix_t * A, fix_t * B, float *dsqp)
 {
-#ifdef	PACKDEBUG
-   ESP_LOGE (TAG, "Findmax %ld %ld", A ? A->seq : 0, B ? B->seq : 0);
-#endif
    if (dsqp)
       *dsqp = 0;
    if (!A || !B || A == B || A->next == B)
@@ -975,9 +970,6 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
    float best = 0;
    for (fix_t * C = A->next; C && C != B; C = C->next)
    {
-#ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Check %ld %p->%p", C ? C->seq : 0, C, C ? C->next : NULL);
-#endif
       float h2 = 0;
       float a2 = dist2 (A, C),
          c2 = 0;
@@ -993,14 +985,7 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
          else
             h2 = (4 * a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / (b2 * 4);    // see https://www.revk.uk/2024/01/distance-of-point-to-lie-in-four.html
       }
-#ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Checked a=%f b=%f c=%f h=%f", a2, b2, c2, h2);
-#endif
       C->dsq = h2;              // Before EPE adjust
-      // Yes, this is just a way to reduce the distance on poor quality points
-      // In an ideal would you take hepe off h, but that is slow and would invert if that went negative, so this is a crude adjustment for poor hepe
-      if (packe && C->setepe)
-         h2 -= C->hepe;
       if (m && h2 <= best)
          continue;              // Not bigger
       best = h2;
@@ -1008,9 +993,6 @@ findmax (fix_t * A, fix_t * B, float *dsqp)
    }
    if (dsqp)
       *dsqp = best;
-#ifdef	PACKDEBUG
-   ESP_LOGE (TAG, "Found %ld %f", m ? m->seq : 0, best);
-#endif
    return m;
 }
 
@@ -1020,11 +1002,7 @@ pack_task (void *z)
    uint32_t packtry = packmin;
    while (1)
    {
-      if (fixpack.count < 2 || (
-#ifndef	PACKDEBUG
-                                  b.moving &&
-#endif
-                                  fixpack.count < packtry))
+      if (fixpack.count < 2 || (b.moving && fixpack.count < packtry))
       {                         // Wait
          usleep (100000);
          continue;
@@ -1032,17 +1010,10 @@ pack_task (void *z)
       fix_t *A = fixpack.base;
       fix_t *B = fixpack.last;
       float dsq = 0;
-      float cutoff=(float)packm*(float)packm;
+      float cutoff = (float) packm * (float) packm;
       fix_t *M = findmax (A, B, &dsq);
       fix_t *E = M ? : B;
-#ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Check %ld %ld %ld (%ld) %f", A->seq, M ? M->seq : 0, B->seq, packtry, dsq);
-#endif
-      if (dsq < cutoff &&
-#ifndef	PACKDEBUG
-          b.moving &&
-#endif
-          fixpack.count < packmax)
+      if (dsq < cutoff && b.moving && fixpack.count < packmax)
       {                         // wait for more
          packtry += packmin;
          continue;
@@ -1058,9 +1029,6 @@ pack_task (void *z)
             M->corner = 1;
             B = M;
             M = findmax (A, B, &dsq);
-#ifdef  PACKDEBUG
-            ESP_LOGE (TAG, "Pack %ld %ld %ld %f", A->seq, M ? M->seq : 0, B->seq, dsq);
-#endif
             if (dsq < cutoff)
             {                   // Drop all in between as all within margin - otherwise process A to M again.
                if (A != B)
@@ -1073,30 +1041,18 @@ pack_task (void *z)
                   M = M->next;
             }
          }
-#ifdef	PACKDEBUG
-      uint32_t sent = 0,
-         total = 0;
-#endif
       while (fixpack.base && fixpack.base != E)
       {
          fix_t *X = fixget (&fixpack);
-#ifdef	PACKDEBUG
-         if (!X->deleted)
-            sent++;
-         total++;
-#endif
          fixadd (X->deleted ? &fixfree : &fixsd, X);
       }
-#ifdef	PACKDEBUG
-      ESP_LOGE (TAG, "Processed to %ld (sent %ld/%ld)", fixpack.base->seq, sent, total);
-#endif
    }
 }
 
 void
 checkupload (void)
 {
-   if (revk_link_down () || !*url)
+   if ((!b.sdwaiting && !b.sdempty) || revk_link_down () || !*url)
       return;
    if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
       return;
@@ -1115,6 +1071,20 @@ checkupload (void)
          if (entry->d_type == DT_REG)
             asprintf (&filename, "%s/%s", sd_mount, entry->d_name);
       closedir (dir);
+      if (filename)
+      {
+         b.sdwaiting = 1;
+         b.sdempty = 0;
+      } else
+      {
+         b.sdwaiting = 0;
+         b.sdempty = 1;
+      }
+      if (revk_link_down () || !*url)
+      {
+         free (filename);
+         break;
+      }
       struct stat s = { 0 };
       if (filename && *filename && !stat (filename, &s))
       {
@@ -1182,7 +1152,14 @@ checkupload (void)
       }
       if (zap)
       {
-         unlink (filename);
+         if (unlink (filename))
+         {
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "error", "Failed to delete");
+            jo_string (j, "filename", filename);
+            jo_int (j, "size", s.st_size);
+            revk_error ("Upload", &j);
+         }
          sleep (1);
       }
       free (filename);
@@ -1286,7 +1263,8 @@ sd_task (void *z)
       esp_vfs_fat_sdmmc_mount_config_t mount_config = {
          .format_if_mount_failed = 1,
          .max_files = 1,
-         .allocation_unit_size = 16 * 1024
+         .allocation_unit_size = 16 * 1024,
+         .disk_status_check_enable = 1,
       };
       sdmmc_card_t *card;
       ESP_LOGI (TAG, "Initializing SD card");
@@ -1320,7 +1298,7 @@ sd_task (void *z)
       ESP_LOGI (TAG, "Filesystem mounted");
       rgbsd = 'Y';
 
-      if (b.doformat && (ret = esp_vfs_fat_sdcard_format (sd_mount, card)))
+      if (b.doformat && (ret = esp_vfs_fat_spiflash_format_rw_wl (sd_mount, "GPS")))
       {
          jo_t j = jo_object_alloc ();
          jo_string (j, "error", cardstatus = "Failed to format");
@@ -1328,9 +1306,13 @@ sd_task (void *z)
          revk_error ("SD", &j);
       }
       {
+         uint64_t sdout = 0,
+            sdfree = 0;
+         esp_vfs_fat_info (sd_mount, &sdout, &sdfree);
          jo_t j = jo_object_alloc ();
-         jo_string (j, "action", cardstatus = (b.doformat ? "formatted" : "mounted"));
-         // TODO size?
+         jo_string (j, "action", cardstatus = (b.doformat ? "Formatted" : "Mounted"));
+         jo_int (j, "size", sdout);
+         jo_int (j, "free", sdfree);
          revk_info ("SD", &j);
       }
       b.doformat = 0;
@@ -1433,7 +1415,7 @@ sd_task (void *z)
       rgbsd = 'B';
       // All done, unmount partition and disable SPI peripheral
       esp_vfs_fat_sdcard_unmount (sd_mount, card);
-      ESP_LOGI (TAG, "Card unmounted");
+      ESP_LOGI (TAG, "Card dismounted");
       {
          jo_t j = jo_object_alloc ();
          jo_string (j, "action", cardstatus = "Dismounted");
@@ -1497,7 +1479,7 @@ rgb_task (void *z)
       usleep (200000);
       int l = 0;
       if (ledsd)
-         revk_led (strip, l++, 255, revk_rgb (rgbsd));  // SD status
+         revk_led (strip, l++, 255, !b.sdwaiting && blink < 1 ? 'K' : revk_rgb (rgbsd));        // SD status (blink if data waiting)
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
@@ -1579,7 +1561,7 @@ app_main ()
    revk_register ("gps", 0, sizeof (gpsdebug), &gpsdebug, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
    revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
    revk_register ("log", 0, sizeof (logacc), &logacc, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
-   revk_register ("pack", 0, sizeof (packe), &packe, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
+   revk_register ("pack", 0, sizeof (packm), &packm, "0", SETTING_SECRET | SETTING_LIVE);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bf(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_FIX);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);

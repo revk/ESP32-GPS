@@ -50,15 +50,15 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`packmax`|Max samples to be packed, normally `600` which means if travelling straight you get a sample at least this often|
 |`packm`|Discard points that are within this many metres of straight line, `0` means don't pack|
 |`packs`|Discard points that are within this many seconds of constant speed, `0` means ignore time when packing|
-|`packe`|If set, reduce distance based on `hepe` when packing, means lower quality points tend to get discarded more easily|
 
 ## LEDs
 
 There are a string of LEDs to show status and how many active satellites are in use.
 
 Main LED strip consists of a number of green, yellow, and cyan LEDs for active NAVSTAR, GLONAS, and GALILEO satellites. These are two satellites per LED with the last in each colour dimmed if it is 1 satellite (i.e. odd number).
+If there are no active satellites, then the first satellite LED shows red. If there is not a full 3D fix, the satellite LEDs blink.
 
-The LED by the SD card (or first LED in the strip if no SD card LED) shows SD card status.
+The LED by the SD card (or first LED in the strip if no SD card LED) shows SD card status. If there is data waiting to upload, this blinks.
 
 |Colour|Meaning|
 |------|-------|
@@ -81,9 +81,11 @@ If not one of these cases the active satellites show using this LED if there are
 
 ## Point reduction
 
-The *pack* logic uses a modified Ramer–Douglas–Peucker algorithm, and adjust for `hepe`. It also does not work on fixed time periods - allowing a `packmin` minimum samples, but up to `packmax` if no *corners* found. It also packs to the *corner*, and then considers from that with more points.
+The optional *pack* logic uses a modified Ramer–Douglas–Peucker algorithm. It does not work on fixed time periods - allowing a `packmin` minimum samples, but up to `packmax` if no *corners* found. It also packs to the *corner*, and then considers from that with more points.
 
-The effect is that if you go at constant speed in a straight line you may only see a point every 10 minutes. If you stop/start or turn, then that point is logged. Lost points are discarded if within a distance from a straight line that is logged, this allows detail and consise logs.
+The effect is that if you go at constant speed in a straight line you may only see a point every 10 minutes. If you stop/start or turn, then that point is logged. Lost points are discarded if within a distance from a straight line that is logged, this allows detail and concise logs.
+
+Point reduction on device is optional, and only if `packm` is set. `packs` being set (seconds) allows time to be included in the calculations. However, packing can be done as a port processing operation using the `json2gpx` tool.
 
 ## Log format
 
