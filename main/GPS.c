@@ -478,10 +478,11 @@ acc_init (void)
    esp_err_t e = i2c_driver_install (I2CPORT, I2C_MODE_MASTER, 0, 0, 0);
    if (!e)
       e = i2c_param_config (I2CPORT, &config);
-   jo_t makeerr (const char *er)
+   jo_t makeerr (const char *e)
    {
+      ESP_LOGE (TAG, "ACC fail %s", e);
       jo_t j = jo_object_alloc ();
-      jo_string (j, "error", er);
+      jo_string (j, "error", e);
       jo_int (j, "sda", accsda & IO_MASK);
       jo_int (j, "scl", accscl & IO_MASK);
       jo_int (j, "address", accaddress);
@@ -521,9 +522,9 @@ acc_get (fix_t * f)
    acc_read (0x80 + 0x27, sizeof (data), data);
    if (data[0] & 0x08)
    {
-      f->acc.x = ((float)((int16_t)(data[1] + (data[2] << 8))))/16.0*12.0/1000.0; // 12 bits and 12mG/unit
-      f->acc.y = ((float)((int16_t)(data[3] + (data[4] << 8))))/16.0*12.0/1000.0; // 12 bits and 12mG/unit
-      f->acc.z = ((float)((int16_t)(data[5] + (data[6] << 8))))/16.0*12.0/1000.0; // 12 bits and 12mG/unit
+      f->acc.x = ((float) ((int16_t) (data[1] + (data[2] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
+      f->acc.y = ((float) ((int16_t) (data[3] + (data[4] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
+      f->acc.z = ((float) ((int16_t) (data[5] + (data[6] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       f->setacc = 1;
    }
 }
@@ -664,8 +665,9 @@ nmea (char *s)
             1000000LL * (sod * 86400 + (fixtod / 10000000LL) * 3600 + (fixtod / 100000LL % 100LL) * 60 +
                          (fixtod / 1000LL % 100LL)) + (fixtod % 1000LL) * 1000LL;
          fix->sett = 1;
-         acc_get (fix);
       }
+      if (fix)
+         acc_get (fix);
    }
    if (!b.gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_link_down ()))
       b.gpsinit = 1;            // Time to send init
@@ -819,7 +821,7 @@ nmea (char *s)
       vtgdue = up + VTGRATE + 2;
       status.course = strtof (f[1], NULL);
       status.speed = strtof (f[7], NULL);
-      if (b.vtglast == (status.fixmode<=1||status.speed == 0 ? 0 : 1))
+      if (b.vtglast == (status.fixmode <= 1 || status.speed == 0 ? 0 : 1))
       {
          if (vtgcount < 255)
             vtgcount++;
