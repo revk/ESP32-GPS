@@ -1558,7 +1558,6 @@ rgb_task (void *z)
    {
       if (++blink > 3)
          blink = 0;
-	   if(!blink)ESP_LOGE(TAG,"LED RGB %c",rgbsd);
       usleep (200000);
       int l = 0;
       if (ledsd)
