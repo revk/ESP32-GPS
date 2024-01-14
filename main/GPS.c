@@ -181,7 +181,7 @@ struct fix_s
    float dsq;                   // Square of deviation from line from packing
    struct acc
    {                            // Acc data
-      int16_t x,
+      float x,
         y,
         z;
    } acc;
@@ -506,7 +506,7 @@ acc_init (void)
       return;
    }
    acc_write (0x20, 0x17);      // 1Hz high resolution
-   acc_write (0x23, 0x38);      // High resolution ±16g
+   acc_write (0x23, 0xB8);      // High resolution ±16g
    acc_write (0x2E, 0x00);      // Bypass
    acc_write (0x24, 0x00);      // FIFO disable
    b.accok = 1;
@@ -521,9 +521,9 @@ acc_get (fix_t * f)
    acc_read (0x80 + 0x27, sizeof (data), data);
    if (data[0] & 0x08)
    {
-      f->acc.x = data[1] + (data[2] << 8);
-      f->acc.y = data[3] + (data[4] << 8);
-      f->acc.z = data[5] + (data[6] << 8);
+      f->acc.x = ((float)((int16_t)(data[1] + (data[2] << 8))))/16.0*12.0/1000.0; // 12 bits and 12mG/unit
+      f->acc.y = ((float)((int16_t)(data[3] + (data[4] << 8))))/16.0*12.0/1000.0; // 12 bits and 12mG/unit
+      f->acc.z = ((float)((int16_t)(data[5] + (data[6] << 8))))/16.0*12.0/1000.0; // 12 bits and 12mG/unit
       f->setacc = 1;
    }
 }
@@ -819,7 +819,7 @@ nmea (char *s)
       vtgdue = up + VTGRATE + 2;
       status.course = strtof (f[1], NULL);
       status.speed = strtof (f[7], NULL);
-      if (b.vtglast == (status.speed == 0 ? 0 : 1))
+      if (b.vtglast == (status.fixmode<=1||status.speed == 0 ? 0 : 1))
       {
          if (vtgcount < 255)
             vtgcount++;
@@ -829,7 +829,7 @@ nmea (char *s)
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
             revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && (vtgcount >= stopn || (status.speed == 0 && !revk_link_down ())))
+         } else if (!b.vtglast && b.moving && (vtgcount >= stopn || !revk_link_down ()))
          {
             b.moving = 0;
             jo_t j = jo_object_alloc ();
@@ -1032,9 +1032,9 @@ log_line (fix_t * f)
    if (f->setacc && logacc)
    {
       jo_object (j, "acc");
-      jo_litf (j, "x", "%.3f", (float) (f->acc.x) / 1200.0); // 16g high res says 12 mg/digit but in practice this looks right?
-      jo_litf (j, "y", "%.3f", (float) (f->acc.y) / 1200.0);
-      jo_litf (j, "z", "%.3f", (float) (f->acc.z) / 1200.0);
+      jo_litf (j, "x", "%.3f", f->acc.x);
+      jo_litf (j, "y", "%.3f", f->acc.y);
+      jo_litf (j, "z", "%.3f", f->acc.z);
       jo_close (j);
    }
    if (logdsq && !isnan (f->dsq))
@@ -1319,17 +1319,7 @@ sd_task (void *z)
       gpio_reset_pin (sdcd & IO_MASK);
       gpio_set_direction (sdcd & IO_MASK, GPIO_MODE_INPUT);
    }
-#if 0                           // Should be done by system
-   if (sdmosi)
-      gpio_set_direction (sdmosi & IO_MASK, GPIO_MODE_OUTPUT);
-   if (sdss)
-      gpio_set_direction (sdss & IO_MASK, GPIO_MODE_OUTPUT);
-   if (sdsck)
-      gpio_set_direction (sdsck & IO_MASK, GPIO_MODE_OUTPUT);
-   if (sdmiso)
-      gpio_set_direction (sdmiso & IO_MASK, GPIO_MODE_INPUT);
-#endif
-   // By default, SD card frequency is initialized to SDMMC_FREQ_DEFAULT (20MHz)
+   / By default, SD card frequency is initialized to SDMMC_FREQ_DEFAULT (20MHz)
    // For setting a specific frequency, use host.max_freq_khz (range 400kHz - 20MHz for SDSPI)
    // Example: for fixed frequency of 10MHz, use host.max_freq_khz = 10000;
    sdmmc_host_t host = SDSPI_HOST_DEFAULT ();
@@ -1487,7 +1477,7 @@ sd_task (void *z)
                   revk_error ("SD", &j);
                } else
                {
-                  ESP_LOGE (TAG, "Open file %s", filename);
+                  ESP_LOGD (TAG, "Open file %s", filename);
                   jo_t j = jo_object_alloc ();
                   jo_string (j, "action", cardstatus = "Log file created");
                   jo_string (j, "filename", filename);
@@ -1571,7 +1561,7 @@ rgb_task (void *z)
       usleep (200000);
       int l = 0;
       if (ledsd)
-         revk_led (strip, l++, 255, b.sdwaiting && blink < 1 ? 'K' : revk_rgb (rgbsd)); // SD status (blink if data waiting)
+         revk_led (strip, l++, 255, b.sdwaiting && blink > 1 ? 'K' : revk_rgb (rgbsd)); // SD status (blink if data waiting)
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
