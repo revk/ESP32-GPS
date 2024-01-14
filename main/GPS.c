@@ -1215,6 +1215,20 @@ checkupload (void)
          break;
       }
       struct stat s = { 0 };
+      jo_t makeerr (const char *e)
+      {
+         jo_t j = jo_object_alloc ();
+         if (e)
+         {
+            jo_string (j, "error", e);
+            ESP_LOGE (TAG, "%s: %s", e, filename);
+         }
+         jo_string (j, "filename", filename);
+         jo_string (j, "url", url);
+         if (s.st_size)
+            jo_int (j, "size", s.st_size);
+         return j;
+      }
       if (filename && *filename && !stat (filename, &s))
       {                         // Send
          rgbsd = 'C';
@@ -1222,9 +1236,7 @@ checkupload (void)
          if (!s.st_size)
          {
             zap = 1;            // Empty
-            jo_t j = jo_object_alloc ();
-            jo_string (j, "error", "Empty file");
-            jo_string (j, "filename", filename);
+            jo_t j = makeerr ("Empty file");
             revk_error ("Upload", &j);
          } else
          {
@@ -1259,23 +1271,20 @@ checkupload (void)
                free (u);
                if (response / 100 == 2)
                {
-                  jo_t j = jo_object_alloc ();
-                  jo_string (j, "filename", filename);
-                  jo_string (j, "url", url);
-                  jo_int (j, "size", s.st_size);
+                  jo_t j = makeerr (NULL);
                   revk_info ("Uploaded", &j);
                   zap = 1;
                } else
                {
-                  jo_t j = jo_object_alloc ();
-                  jo_string (j, "error", "Failed to upload");
-                  jo_string (j, "filename", filename);
-                  jo_string (j, "url", url);
-                  jo_int (j, "size", s.st_size);
+                  jo_t j = makeerr ("Failed to upload");
                   jo_int (j, "response", response);
                   revk_error ("Upload", &j);
                }
                fclose (i);
+            } else
+            {
+               jo_t j = makeerr ("Failed to open");
+               revk_error ("Upload", &j);
             }
          }
       }
@@ -1283,10 +1292,7 @@ checkupload (void)
       {
          if (unlink (filename))
          {
-            jo_t j = jo_object_alloc ();
-            jo_string (j, "error", "Failed to delete");
-            jo_string (j, "filename", filename);
-            jo_int (j, "size", s.st_size);
+            jo_t j = makeerr ("Failed to delete");
             revk_error ("Upload", &j);
          }
          sleep (1);
@@ -1460,20 +1466,22 @@ sd_task (void *z)
          {
             rgbsd = (o ? 'g' : 'Y');
             if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-            {
+            {                   // card removed
                b.dodismount = 1;
                break;
             }
             fix_t *f = fixget (&fixsd);
             if (!f)
-            {
+            {                   // End of queue
+               if (o && !b.moving && fixpack.count < 2)
+                  break;        // Stopped moving, close file, upload
                if (!o)
                   checkupload ();
                usleep (100000);
                continue;
             }
             if (!o && f->sett && f->slow.fixmode > 1 && b.moving)
-            { // Open file
+            {                   // Open file
                struct tm t;
                time_t now = f->ecef.t / 1000000LL;
                gmtime_r (&now, &t);
@@ -1482,12 +1490,14 @@ sd_task (void *z)
                o = fopen (filename, "w");
                if (!o)
                {
+                  ESP_LOGE (TAG, "Failed open file %s", filename);
                   jo_t j = jo_object_alloc ();
                   jo_string (j, "error", cardstatus = "Failed to create file");
                   jo_string (j, "filename", filename);
                   revk_error ("SD", &j);
                } else
                {
+                  ESP_LOGE (TAG, "Open file %s", filename);
                   jo_t j = jo_object_alloc ();
                   jo_string (j, "action", cardstatus = "Log file created");
                   jo_string (j, "filename", filename);
@@ -1516,11 +1526,10 @@ sd_task (void *z)
             if (f->sett)
                last = f->ecef.t / 1000000LL;
             fixadd (&fixfree, f);       // Discard
-            if (o && !b.moving && !fixsd.count && fixpack.count < 2)
-               break;           // Stopped moving
          }
          if (o)
-         { // Close file
+         {                      // Close file
+            ESP_LOGE (TAG, "Close file");
             fprintf (o, "\n ]");
             if (odo0)
             {
