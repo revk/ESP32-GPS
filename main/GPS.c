@@ -1473,7 +1473,7 @@ sd_task (void *z)
                continue;
             }
             if (!o && f->sett && f->slow.fixmode > 1 && b.moving)
-            {
+            { // Open file
                struct tm t;
                time_t now = f->ecef.t / 1000000LL;
                gmtime_r (&now, &t);
@@ -1520,7 +1520,7 @@ sd_task (void *z)
                break;           // Stopped moving
          }
          if (o)
-         {
+         { // Close file
             fprintf (o, "\n ]");
             if (odo0)
             {
