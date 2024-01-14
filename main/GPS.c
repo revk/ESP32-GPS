@@ -3,7 +3,8 @@
 
 // TODO
 // ACC
-// POWER/BATTERY
+// ACC ADC for battery
+// POWER/BATTERY - sleeping on SDCD and CHARGER
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -30,9 +31,12 @@ static __attribute__((unused))
 //#endif
 
 #define	SYSTEMS	3
+
      static const char system_code[SYSTEMS] = { 'P', 'L', 'A' };
 static const char system_colour[SYSTEMS] = { 'g', 'Y', 'C' };
 static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
+
+#define	I2CPORT	0
 
 #define IO_MASK         0x3F
 #define IO_INV          0x40
@@ -42,7 +46,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,17,		RGB LEDs)	\
 	bf(ledsd,1,		First RGB is for SD)	\
-	u8(accid,0x18,		Accelerometer I2C ID)	\
+	u8f(accaddress,0x19,	Accelerometer I2C ID)	\
      	io(accsda,13,		Accelerometer SDA) \
      	io(accscl,14,		Accelerometer SCL) \
 	bl(gpsdebug,N,		GPS debug logging)	\
@@ -143,6 +147,7 @@ static struct
    uint8_t connect:1;           // MQTT connect
    uint8_t sdwaiting:1;         // SD has data
    uint8_t sdempty:1;           // SD has no data
+   uint8_t accok:1;             // ACC OK
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -175,15 +180,22 @@ struct fix_s
    float hepe;                  // Estimated position error
    float vepe;
    float dsq;                   // Square of deviation from line from packing
+   struct acc
+   {                            // Acc data
+      int16_t x,
+        y,
+        z;
+   } acc;
    uint8_t sats;                // Sats used for fix
    uint8_t corner:1;            // Corner point for packing
    uint8_t deleted:1;           // Deleted by packing
-   uint8_t sett:1;
+   uint8_t sett:1;              // Fields set
    uint8_t setsat:1;
    uint8_t setecef:1;
    uint8_t setlla:1;
    uint8_t setepe:1;
    uint8_t setodo:1;
+   uint8_t setacc:1;
 };
 
 typedef struct fixq_s fixq_t;
@@ -414,6 +426,113 @@ app_callback (int client, const char *prefix, const char *target, const char *su
    return NULL;
 }
 
+esp_err_t
+acc_write (uint8_t reg, uint8_t val)
+{
+   esp_err_t e;
+   i2c_cmd_handle_t txn = i2c_cmd_link_create ();
+   i2c_master_start (txn);
+   i2c_master_write_byte (txn, (accaddress << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte (txn, reg, true);
+   i2c_master_write_byte (txn, val, true);
+   i2c_master_stop (txn);
+   if ((e = i2c_master_cmd_begin (I2CPORT, txn, 10 / portTICK_PERIOD_MS)))
+      ESP_LOGE (TAG, "Write fail %02X %02X %d", reg, val, e);
+   i2c_cmd_link_delete (txn);
+   return e;
+}
+
+esp_err_t
+acc_read (uint8_t reg, uint8_t len, void *data)
+{
+   esp_err_t e;
+   i2c_cmd_handle_t txn = i2c_cmd_link_create ();
+   i2c_master_start (txn);
+   i2c_master_write_byte (txn, (accaddress << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte (txn, reg, true);
+   i2c_master_start (txn);
+   i2c_master_write_byte (txn, (accaddress << 1) | I2C_MASTER_READ, true);
+   i2c_master_read (txn, data, len, I2C_MASTER_LAST_NACK);
+   i2c_master_stop (txn);
+   if ((e = i2c_master_cmd_begin (I2CPORT, txn, 10 / portTICK_PERIOD_MS)))
+      ESP_LOGE (TAG, "Read fail %d", e);
+   i2c_cmd_link_delete (txn);
+   return e;
+}
+
+void
+acc_init (void)
+{
+   if (!accsda || !accscl || !accaddress)
+   {
+      ESP_LOGE (TAG, "No ACC");
+      return;
+   }
+   i2c_config_t config = {
+      .mode = I2C_MODE_MASTER,
+      .sda_io_num = accsda & IO_MASK,
+      .scl_io_num = accscl & IO_MASK,
+      .sda_pullup_en = true,
+      .scl_pullup_en = true,
+      .master.clk_speed = 100000,
+   };
+   esp_err_t e = i2c_driver_install (I2CPORT, I2C_MODE_MASTER, 0, 0, 0);
+   if (!e)
+      e = i2c_param_config (I2CPORT, &config);
+   jo_t makeerr (const char *er)
+   {
+      jo_t j = jo_object_alloc ();
+      jo_string (j, "error", er);
+      jo_int (j, "sda", accsda & IO_MASK);
+      jo_int (j, "scl", accscl & IO_MASK);
+      jo_int (j, "address", accaddress);
+      return j;
+   }
+   if (e)
+   {
+      jo_t j = makeerr ("I2C failed");
+      jo_int (j, "code", e);
+      revk_error ("ACC", &j);
+      vTaskDelete (NULL);
+      return;
+   }
+   uint8_t id = 0;
+   acc_read (0x0F, 1, &id);
+   if (id != 0x33)
+   {
+      jo_t j = makeerr ("Wrong ID");
+      jo_int (j, "id", id);
+      revk_error ("ACC", &j);
+      vTaskDelete (NULL);
+      return;
+   }
+   acc_write (0x20, 0x17);      // 1Hz high resolution
+   acc_write (0x23, 0xF8);      // High resolution ±16g
+   acc_write (0x2E, 0x80);      // Stream
+   acc_write (0x24, 0x40);      // FIFO enabled
+   b.accok = 1;
+}
+
+void
+acc_get (fix_t * f)
+{                               // Get acc data for a fix
+   if (!f || !b.accok)
+      return;
+#if 0
+   uint8_t status = 0;
+   acc_read (0x27, 1, &status);
+   uint8_t fifo = 0;
+   acc_read (0x2F, 1, &fifo);
+   int16_t a[3];
+   acc_read (0x28, sizeof (a), &a);
+   f->acc.x = a[0];
+   f->acc.y = a[1];
+   f->acc.z = a[2];
+   f->setacc = 1;
+   ESP_LOGE (TAG, "ACC STATUS %02X FIFO %02X", status, fifo);
+#endif
+}
+
 static void
 gps_init (void)
 {                               // Set up GPS
@@ -550,6 +669,7 @@ nmea (char *s)
             1000000LL * (sod * 86400 + (fixtod / 10000000LL) * 3600 + (fixtod / 100000LL % 100LL) * 60 +
                          (fixtod / 1000LL % 100LL)) + (fixtod % 1000LL) * 1000LL;
          fix->sett = 1;
+         acc_get (fix);
       }
    }
    if (!b.gpsstarted && *f[0] == 'G' && !strcmp (f[0] + 2, "GGA") && (esp_timer_get_time () > 10000000 || !revk_link_down ()))
@@ -914,6 +1034,15 @@ log_line (fix_t * f)
          o ("t", f->ecef.t);
       jo_close (j);
    }
+   if (f->setacc && logacc)
+   {
+      jo_object (j, "acc");
+      jo_int (j, "x", f->acc.x);
+      jo_int (j, "y", f->acc.y);
+      jo_int (j, "z", f->acc.z);
+      jo_close (j);
+
+   }
    if (logdsq && !isnan (f->dsq))
       jo_litf (j, "dsq", "%f", f->dsq);
    if (logodo && f->setodo)
@@ -1052,7 +1181,7 @@ pack_task (void *z)
 void
 checkupload (void)
 {
-   if ((!b.sdwaiting && !b.sdempty) || revk_link_down () || !*url)
+   if (b.sdempty || (!b.sdwaiting && !b.sdempty) || revk_link_down () || !*url)
       return;
    if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
       return;
@@ -1080,14 +1209,14 @@ checkupload (void)
          b.sdwaiting = 0;
          b.sdempty = 1;
       }
-      if (revk_link_down () || !*url)
-      {
+      if (b.sdempty || revk_link_down () || !*url)
+      {                         // Don't send
          free (filename);
          break;
       }
       struct stat s = { 0 };
       if (filename && *filename && !stat (filename, &s))
-      {
+      {                         // Send
          rgbsd = 'C';
          ESP_LOGE (TAG, "Send %s", filename);
          if (!s.st_size)
@@ -1161,7 +1290,8 @@ checkupload (void)
             revk_error ("Upload", &j);
          }
          sleep (1);
-      }
+      } else
+         sleep (60);            // Some issue
       free (filename);
       if (!zap)
          return;
@@ -1337,6 +1467,8 @@ sd_task (void *z)
             fix_t *f = fixget (&fixsd);
             if (!f)
             {
+               if (!o)
+                  checkupload ();
                usleep (100000);
                continue;
             }
@@ -1374,8 +1506,7 @@ sd_task (void *z)
                   fprintf (o, ",\n");
                fprintf (o, "  %s", l);
                free (l);
-            } else
-               checkupload ();
+            }
             if (f->setodo)
             {
                if (!odo0)
@@ -1409,6 +1540,7 @@ sd_task (void *z)
             jo_string (j, "action", cardstatus = "Log file closed");
             jo_string (j, "filename", filename);
             revk_info ("SD", &j);
+            b.sdempty = 0;
          }
          checkupload ();
       }
@@ -1421,45 +1553,6 @@ sd_task (void *z)
          jo_string (j, "action", cardstatus = "Dismounted");
          revk_info ("SD", &j);
       }
-   }
-}
-
-void
-acc_task (void *z)
-{
-   if (!accsda || !accscl || !accid)
-   {
-      vTaskDelete (NULL);
-      return;
-   }
-   i2c_config_t config = {
-      .mode = I2C_MODE_MASTER,
-      .sda_io_num = accsda & IO_MASK,
-      .scl_io_num = accscl & IO_MASK,
-      .sda_pullup_en = true,
-      .scl_pullup_en = true,
-      .master.clk_speed = 100000,
-   };
-   esp_err_t e = i2c_driver_install (0, I2C_MODE_MASTER, 0, 0, 0);
-   if (!e)
-      e = i2c_param_config (0, &config);
-   if (e)
-   {
-      jo_t j = jo_object_alloc ();
-      jo_string (j, "error", "I2C failed");
-      jo_int (j, "code", e);
-      jo_int (j, "sda", accsda & IO_MASK);
-      jo_int (j, "scl", accscl & IO_MASK);
-      jo_int (j, "id", accid);
-      revk_error ("ACC", &j);
-      vTaskDelete (NULL);
-      return;
-   }
-
-   while (1)
-   {
-      sleep (1);
-      // TODO
    }
 }
 
@@ -1479,7 +1572,7 @@ rgb_task (void *z)
       usleep (200000);
       int l = 0;
       if (ledsd)
-         revk_led (strip, l++, 255, !b.sdwaiting && blink < 1 ? 'K' : revk_rgb (rgbsd));        // SD status (blink if data waiting)
+         revk_led (strip, l++, 255, b.sdwaiting && blink < 1 ? 'K' : revk_rgb (rgbsd)); // SD status (blink if data waiting)
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
@@ -1624,11 +1717,11 @@ app_main ()
       gpio_set_direction (gpstick & IO_MASK, GPIO_MODE_INPUT);
    }
    gps_connect (gpsbaud);
+   acc_init ();
    revk_task ("NMEA", nmea_task, NULL, 10);
    revk_task ("Log", log_task, NULL, 10);
    revk_task ("Pack", pack_task, NULL, 10);
    revk_task ("SD", sd_task, NULL, 10);
-   revk_task ("Acc", acc_task, NULL, 10);
    // Web interface
    httpd_config_t config = HTTPD_DEFAULT_CONFIG ();
    config.max_uri_handlers = 5 + revk_num_web_handlers ();
