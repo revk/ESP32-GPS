@@ -177,19 +177,19 @@ main (int argc, const char *argv[])
                   const char *lat = j_get (e, "lat");
                   const char *lon = j_get (e, "lon");
                   const char *alt = j_get (e, "alt");
-                  const char *pdop = j_get (e, "sats.pdop");
                   const char *hdop = j_get (e, "sats.hdop");
                   const char *vdop = j_get (e, "sats.vdop");
+                  const char *pdop = j_get (e, "sats.pdop");
                   fprintf (o, "<trkpt lat=\"%s\" lon=\"%s\">", lat, lon);
                   if (alt)
                      fprintf (o, "<ele>%s</ele>", alt);
-                  if (pdop)
-                     fprintf (o, "<pdop>%s</pdop>", pdop);
+                  fprintf (o, "<time>%s</time>", ts);
                   if (hdop)
                      fprintf (o, "<hdop>%s</hdop>", hdop);
                   if (vdop)
                      fprintf (o, "<vdop>%s</vdop>", vdop);
-                  fprintf (o, "<time>%s</time>", ts);
+                  if (pdop)
+                     fprintf (o, "<pdop>%s</pdop>", pdop);
                   fprintf (o, "</trkpt>\n");
                }
                fprintf (o, "</trkseg></trk>\n"  //
