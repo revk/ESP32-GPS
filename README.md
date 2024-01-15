@@ -26,7 +26,7 @@ The post includes a *query* string that is the MAC and start date/time as a file
 
 ## Important settings
 
-Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GPS/packm 2` to set `packm` to `2`. Settings can also be sent in JSON format. To see settings, send just `settings/GPS`.
+Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GPS/packdist 2` to set `packdist` to `2`. Settings can also be sent in JSON format. To see settings, send just `settings/GPS`.
 
 |Setting|Meaning|
 |-------|-------|
@@ -48,14 +48,14 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`stopn`|How many VTG samples (10 second) have to be zero to be stopped, or zero speed when back on WiFi and logs flushed|
 |`packmin`|Min samples to be packed, normally `60`, set this to zero to disable packing|
 |`packmax`|Max samples to be packed, normally `600` which means if travelling straight you get a sample at least this often|
-|`packm`|Discard points that are within this many metres of straight line, `0` means don't pack|
-|`packs`|Discard points that are within this many seconds of constant speed, `0` means ignore time when packing|
+|`packdist`|If non zero this enables point reduction *packing*, with this being the allowed deviation (in metres)|
+|`packtime`|If *packing* and this is non zero then time is also a factor, with this being the allowed deviation in seconds|
 
 ## LEDs
 
 There are a string of LEDs to show status and how many active satellites are in use.
 
-Main LED strip consists of a number of green, yellow, and cyan LEDs for active NAVSTAR, GLONAS, and GALILEO satellites. These are two satellites per LED with the last in each colour dimmed if it is 1 satellite (i.e. odd number).
+Main LED strip consists of a number of green, yellow, and cyan LEDs for active NAVSTAR, GLONASS, and GALILEO satellites. These are two satellites per LED with the last in each colour dimmed if it is 1 satellite (i.e. odd number).
 If there are no active satellites, then the first satellite LED shows red. If there is not a full 3D fix, the satellite LEDs blink.
 
 The LED by the SD card (or first LED in the strip if no SD card LED) shows SD card status. If there is data waiting to upload, this blinks.
@@ -85,7 +85,7 @@ The optional *pack* logic uses a modified Ramer–Douglas–Peucker algorithm. I
 
 The effect is that if you go at constant speed in a straight line you may only see a point every 10 minutes. If you stop/start or turn, then that point is logged. Lost points are discarded if within a distance from a straight line that is logged, this allows detail and concise logs.
 
-Point reduction on device is optional, and only if `packm` is set. `packs` being set (seconds) allows time to be included in the calculations. However, packing can be done as a port processing operation using the `json2gpx` tool.
+Point reduction on device is optional, and only if `packdist` is set. `packtime` being set (seconds) allows time to be included in the calculations. However, packing can be done as a port processing operation using the `json2gpx` tool.
 
 ## Log format
 

@@ -32,7 +32,7 @@ static __attribute__((unused))
 #define	SYSTEMS	3
 
      static const char system_code[SYSTEMS] = { 'P', 'L', 'A' };
-static const char system_colour[SYSTEMS] = { 'g', 'Y', 'C' };
+static const char system_colour[SYSTEMS] = { 'G', 'Y', 'C' };
 static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 
 #define	I2CPORT	0
@@ -63,17 +63,18 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
         io(sdcd,-11,		MicroSD CD)      \
         io(sdmiso,12,		MicroSD MISO)     \
 	u16(fixms,1000,		Fix rate)	\
-        b(navstar,Y,            GPS track NAVSTAR GPS)  \
-        b(glonass,Y,            GPS track GLONASS GPS)  \
-        b(galileo,Y,            GPS track GALILEO GPS)  \
-        b(waas,Y,               GPS enable WAAS)        \
-        b(sbas,Y,               GPS enable SBAS)        \
-        b(qzss,N,               GPS enable QZSS)        \
-        b(aic,Y,                GPS enable AIC) \
-        b(easy,Y,               GPS enable Easy)        \
+        b(gpsnavstar,Y,            GPS track NAVSTAR GPS)  \
+        b(gpsglonass,Y,            GPS track GLONASS GPS)  \
+        b(gpsgalileo,Y,            GPS track GALILEO GPS)  \
+        b(gpswaas,Y,               GPS enable WAAS)        \
+        b(gpssbas,Y,               GPS enable SBAS)        \
+        b(gpsqzss,N,               GPS enable QZSS)        \
+        b(gpsaic,Y,                GPS enable AIC) \
+        b(gpseasy,Y,               GPS enable Easy)        \
 	b(gpswalking,N,         GPS Walking mode)       \
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
+	bl(logll,Y,		Log lat/lon)		\
 	bl(logodo,Y,		Log odometer)		\
 	bl(logseq,Y,		Log seq)		\
 	bl(logecef,Y,		Log ECEF data)		\
@@ -84,8 +85,8 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(logdsq,N,		Log pack deviation)	\
 	u16(packmin,60,		Min samples for pack)	\
 	u16(packmax,600,	Max samples for pack)	\
-	u16(packm,0,	 	Pack delta m)	\
-	u16(packs,10,		Pack delta s)	\
+	u16(packdist,0,	 	Pack delta m)	\
+	u16(packtime,0,		Pack delta s)	\
 	s(url,,			URL to post data)	\
 
 #define u32(n,d,t)	uint32_t n;
@@ -540,9 +541,9 @@ gps_init (void)
       sleep (1);
       gps_connect (gpsbaud);
    }
-   gps_cmd ("$PMTK286,%d", aic ? 1 : 0);        // AIC
-   gps_cmd ("$PMTK353,%d,%d,%d,0,0", navstar, glonass, galileo);
-   gps_cmd ("$PMTK352,%d", qzss ? 0 : 1);       // QZSS (yes, 1 is disable)
+   gps_cmd ("$PMTK286,%d", gpsaic ? 1 : 0);     // AIC
+   gps_cmd ("$PMTK353,%d,%d,%d,0,0", gpsnavstar, gpsglonass, gpsgalileo);
+   gps_cmd ("$PMTK352,%d", gpsqzss ? 0 : 1);    // QZSS (yes, 1 is disable)
    gps_cmd ("$PQTXT,W,0,1");    // Disable TXT
    gps_cmd ("$PQECEF,W,1,1");   // Enable ECEF
    gps_cmd ("$PQEPE,W,1,1");    // Enable EPE
@@ -725,14 +726,14 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "PMTK513") && n >= 2)
    {                            // Set SBAS
-      if (atoi (f[1]) != sbas)
-         gps_cmd ("$PMTK313,%d", sbas ? 1 : 0);
+      if (atoi (f[1]) != gpssbas)
+         gps_cmd ("$PMTK313,%d", gpssbas ? 1 : 0);
       return;
    }
    if (!strcmp (f[0], "PMTK501") && n >= 2)
    {                            // Set DGPS
-      if (atoi (f[1]) != ((sbas || waas) ? 2 : 0))
-         gps_cmd ("$PMTK301,%d", (sbas || waas) ? 2 : 0);
+      if (atoi (f[1]) != ((gpssbas || gpswaas) ? 2 : 0))
+         gps_cmd ("$PMTK301,%d", (gpssbas || gpswaas) ? 2 : 0);
       return;
    }
    if (!strcmp (f[0], "PMTK500") && n >= 2)
@@ -994,7 +995,7 @@ log_line (fix_t * f)
       }
       jo_close (j);
    }
-   if (f->setlla)
+   if (loglll && f->setlla)
    {
       jo_litf (j, "lat", "%lf", f->lat);
       jo_litf (j, "lon", "%lf", f->lon);
@@ -1067,7 +1068,7 @@ log_task (void *z)
       jo_t j = log_line (f);
       revk_info ("GPS", &j);
       // Pass on - if packing, and TS and ECEF, to packing, else if packing and no TS or ECEF then drop as packing does not do those. Else direct to SD
-      fixadd (packm && packmin ? !f->sett || !f->setecef ? &fixfree : &fixpack : &fixsd, f);
+      fixadd (packdist && packmin ? !f->sett || !f->setecef ? &fixfree : &fixpack : &fixsd, f);
    }
 }
 
@@ -1078,8 +1079,8 @@ dist2 (fix_t * A, fix_t * B)
    float Y = ((float) (A->ecef.y - B->ecef.y)) / 1000000.0;
    float Z = ((float) (A->ecef.z - B->ecef.z)) / 1000000.0;
    float T = 0;
-   if (packs)
-      T = ((float) ((A->ecef.t - B->ecef.t) * packm / packs)) / 1000000.0;
+   if (packtime)
+      T = ((float) ((A->ecef.t - B->ecef.t) * packdist / packtime)) / 1000000.0;
    return X * X + Y * Y + Z * Z + T * T;
 }
 
@@ -1135,7 +1136,7 @@ pack_task (void *z)
       fix_t *A = fixpack.base;
       fix_t *B = fixpack.last;
       float dsq = 0;
-      float cutoff = (float) packm * (float) packm;
+      float cutoff = (float) packdist * (float) packdist;
       fix_t *M = findmax (A, B, &dsq);
       fix_t *E = M ? : B;
       if (dsq < cutoff && b.moving && fixpack.count < packmax)
@@ -1446,7 +1447,7 @@ sd_task (void *z)
          time_t last = 0;
          while (!b.doformat && !b.dodismount)
          {
-            rgbsd = (o ? 'g' : 'Y');
+            rgbsd = (o ? 'G' : 'Y');
             if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
             {                   // card removed
                b.dodismount = 1;
@@ -1563,7 +1564,7 @@ rgb_task (void *z)
       usleep (200000);
       int l = 0;
       if (ledsd)
-         revk_led (strip, l++, 255, b.sdwaiting && blink > 1 ? 'K' : revk_rgb (rgbsd)); // SD status (blink if data waiting)
+         revk_led (strip, l++, 255, revk_rgb (b.sdwaiting && blink > 1 ? tolower (rgbsd) : rgbsd));     // SD status (blink if data waiting)
       if (status.fixmode >= blink)
       {
          for (int s = 0; s < SYSTEMS; s++)
@@ -1642,10 +1643,11 @@ app_main ()
    xSemaphoreGive (fix_mutex);
    vSemaphoreCreateBinary (ack_semaphore);
 #define str(x) #x
-   revk_register ("gps", 0, sizeof (gpsdebug), &gpsdebug, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
+   revk_register ("gps", 0, sizeof (gposuart), &gposuart, NULL, SETTING_SECRET);
    revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
-   revk_register ("log", 0, sizeof (logacc), &logacc, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
-   revk_register ("pack", 0, sizeof (packm), &packm, "0", SETTING_SECRET | SETTING_LIVE);
+   revk_register ("log", 0, sizeof (logll), &logll, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
+   revk_register ("pack", 0, sizeof (packdist), &packdist, "0", SETTING_SECRET | SETTING_LIVE);
+   revk_register ("acc", 0, sizeof (accaddress), &accaddress, "0x19", SETTING_SECRET | SETTING_FIX);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
 #define bf(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_FIX);
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
