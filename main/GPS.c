@@ -790,7 +790,7 @@ nmea (char *s)
             fix->hdop = strtof (f[8], NULL);
          if (*f[9])
             fix->alt = strtof (f[9], NULL);
-         if (*f[11])
+         if (*f[19])
             fix->und = strtof (f[19], NULL);
          if (strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
          {

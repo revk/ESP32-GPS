@@ -176,6 +176,7 @@ main (int argc, const char *argv[])
                   const char *ts = j_get (e, "ts");
                   const char *lat = j_get (e, "lat");
                   const char *lon = j_get (e, "lon");
+		  if(!ts||!lat||!lon)continue;
                   const char *alt = j_get (e, "alt");
                   const char *hdop = j_get (e, "hdop");
                   const char *vdop = j_get (e, "vdop");
