@@ -75,6 +75,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
 	bl(logll,Y,		Log lat/lon)		\
+	bl(logund,Y,		Log undulation)		\
 	bl(logdop,Y,		Lod dop)		\
 	bl(logodo,Y,		Log odometer)		\
 	bl(logseq,Y,		Log seq)		\
@@ -156,11 +157,10 @@ struct slow_s
 {                               // Slow updated data
    uint8_t gsv[SYSTEMS];        // Sats in view
    uint8_t gsa[SYSTEMS];        // Sats active
-   uint8_t fixmode;             // Fix mode
+   uint8_t fixmode;             // Fix mode from slow update
    float course;
    float speed;
    float pdop;
-   float hdop;
    float vdop;
 } status;
 
@@ -179,8 +179,10 @@ struct fix_s
    slow_t slow;
    uint64_t odo;                // Odometer
    double lat,
-     lon,
-     alt;                       // Lat/lon/alt
+     lon;
+   float alt;
+   float und;
+   float hdop;
    float hepe;                  // Estimated position error
    float vepe;
    float dsq;                   // Square of deviation from line from packing
@@ -190,6 +192,7 @@ struct fix_s
         y,
         z;
    } acc;
+   uint8_t fixmode;             // Fix mode from, fast update
    uint8_t sats;                // Sats used for fix
    uint8_t corner:1;            // Corner point for packing
    uint8_t deleted:1;           // Deleted by packing
@@ -579,7 +582,6 @@ nmea_timeout (uint32_t up)
       status.course = NAN;
       status.speed = NAN;
       status.pdop = NAN;
-      status.hdop = NAN;
       status.vdop = NAN;
    }
    if (gsvdue && gsvdue < up)
@@ -782,8 +784,14 @@ nmea (char *s)
       startfix (f[1]);
       if (fix)
       {
+         fix->fixmode = atoi (f[6]);    // Fast fix mode
          fix->sats = atoi (f[7]);
-         fix->alt = strtod (f[9], NULL);
+         if (*f[8])
+            fix->hdop = strtof (f[8], NULL);
+         if (*f[9])
+            fix->alt = strtof (f[9], NULL);
+         if (*f[11])
+            fix->und = strtof (f[19], NULL);
          if (strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
          {
             fix->lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtod (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
@@ -831,6 +839,7 @@ nmea (char *s)
       vtgdue = up + VTGRATE + 2;
       status.course = strtof (f[1], NULL);
       status.speed = strtof (f[7], NULL);
+      // Start/stop
       if (b.vtglast == (status.fixmode <= 1 || status.speed == 0 ? 0 : 1))
       {
          if (vtgcount < 255)
@@ -858,7 +867,7 @@ nmea (char *s)
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSA") && n >= 18)
    {                            // $GNGSA,A,3,18,05,15,23,20,,,,,,,,1.33,1.07,0.80,1
       gsadue = up + GSARATE + 2;
-      status.fixmode = atoi (f[2]);
+      status.fixmode = atoi (f[2]);     // Slow
       uint8_t s = atoi (f[18]);
       if (s && s <= SYSTEMS)
       {
@@ -870,8 +879,6 @@ nmea (char *s)
       }
       if (*f[15])
          status.pdop = strtof (f[15], NULL);
-      if (*f[16])
-         status.hdop = strtof (f[16], NULL);
       if (*f[17])
          status.vdop = strtof (f[17], NULL);
       return;
@@ -996,35 +1003,36 @@ log_line (fix_t * f)
       for (int s = 0; s < SYSTEMS; s++)
          if (f->slow.gsa[s])
             jo_int (j, system_name[s], f->slow.gsa[s]);
-      if (f->slow.fixmode)
-      {
-         jo_int (j, "fix", f->slow.fixmode);
+      if (f->sats)
          jo_int (j, "used", f->sats);
-      }
-      if (logepe && f->setepe && f->slow.fixmode >= 1)
-      {
-         if (f->hepe > 0)
-            jo_litf (j, "hepe", "%f", f->hepe);
-         if (f->vepe > 0 && f->slow.fixmode >= 3)
-            jo_litf (j, "vepe", "%f", f->vepe);
-      }
-      if (logdop)
-      {
-         if (!isnan (f->slow.pdop))
-            jo_litf (j, "pdop", "%.1f", f->slow.pdop);
-         if (!isnan (f->slow.hdop))
-            jo_litf (j, "hdop", "%.1f", f->slow.hdop);
-         if (!isnan (f->slow.vdop))
-            jo_litf (j, "vdop", "%.1f", f->slow.vdop);
-      }
       jo_close (j);
    }
+   if (f->fixmode)
+      jo_int (j, "fix", f->fixmode);
    if (logll && f->setlla)
    {
-      jo_litf (j, "lat", "%lf", f->lat);
-      jo_litf (j, "lon", "%lf", f->lon);
-      if (f->slow.fixmode >= 3)
-         jo_litf (j, "alt", "%lf", f->alt);
+      jo_litf (j, "lat", "%.8lf", f->lat);
+      jo_litf (j, "lon", "%.8lf", f->lon);
+      if (f->fixmode >= 3 && !isnan (f->alt))
+         jo_litf (j, "alt", "%.2f", f->alt);
+   }
+   if (logund && f->fixmode >= 3 && !isnan (f->und))
+      jo_litf (j, "und", "%.2f", f->und);
+   if (logepe && f->setepe && f->slow.fixmode >= 1)
+   {
+      if (f->hepe > 0)
+         jo_litf (j, "hepe", "%f", f->hepe);
+      if (f->vepe > 0 && f->slow.fixmode >= 3)
+         jo_litf (j, "vepe", "%f", f->vepe);
+   }
+   if (logdop)
+   {
+      if (!isnan (f->hdop))
+         jo_litf (j, "hdop", "%.1f", f->hdop);
+      if (!isnan (f->slow.pdop))
+         jo_litf (j, "pdop", "%.1f", f->slow.pdop);
+      if (!isnan (f->slow.vdop))
+         jo_litf (j, "vdop", "%.1f", f->slow.vdop);
    }
    if (logcs && !isnan (f->slow.speed) && f->slow.speed != 0)
    {
@@ -1081,7 +1089,7 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->slow.fixmode > 1 && fixlog.count < VTGRATE * (moven + 1)))
+      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->fixmode > 1 && fixlog.count < VTGRATE * (moven + 1)))
       {                         // Waiting - holds pre-moving data
          usleep (100000);
          continue;
@@ -1487,7 +1495,7 @@ sd_task (void *z)
                usleep (100000);
                continue;
             }
-            if (!o && f->sett && f->slow.fixmode > 1 && b.moving)
+            if (!o && f->sett && f->fixmode > 1 && b.moving)
             {                   // Open file
                struct tm t;
                time_t now = f->ecef.t / 1000000LL;

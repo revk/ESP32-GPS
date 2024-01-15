@@ -165,7 +165,7 @@ main (int argc, const char *argv[])
                const char *id = j_get (j, "id");
                fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"       //
                         "<gpx version=\"1.0\">\n"       //
-                        "<name>%s</name>\n"     //
+                        "<metadata><name>%s</name></metadata>\n"     //
                         "<trk><trkseg>\n", id);
                if (rdp)
                   dordp (j_first (g), NULL);
@@ -177,9 +177,10 @@ main (int argc, const char *argv[])
                   const char *lat = j_get (e, "lat");
                   const char *lon = j_get (e, "lon");
                   const char *alt = j_get (e, "alt");
-                  const char *hdop = j_get (e, "sats.hdop");
-                  const char *vdop = j_get (e, "sats.vdop");
-                  const char *pdop = j_get (e, "sats.pdop");
+                  const char *hdop = j_get (e, "hdop");
+                  const char *vdop = j_get (e, "vdop");
+                  const char *pdop = j_get (e, "pdop");
+                  int fix = atoi(j_get (e, "fix")?:"");
                   fprintf (o, "<trkpt lat=\"%s\" lon=\"%s\">", lat, lon);
                   if (alt)
                      fprintf (o, "<ele>%s</ele>", alt);
