@@ -100,7 +100,8 @@ dordp (j_t j, j_t B)
       return;
    double dsq = 0;
    j_t M = findmax (A, B, &dsq);
-   if(debug)warnx("%s-%s-%s %lf",j_get(A,"seq"),j_get(M,"seq"),j_get(B,"seq"),sqrt(dsq));
+   if (debug)
+      warnx ("%s-%s-%s %lf", j_get (A, "seq"), j_get (M, "seq"), j_get (B, "seq"), sqrt (dsq));
    if (dsq >= rdp * rdp)
    {
       dordp (A, M);
@@ -170,14 +171,24 @@ main (int argc, const char *argv[])
                   dordp (j_first (g), NULL);
                for (j_t e = j_first (g); e; e = j_next (e))
                {
-                  if (j_get (e, "delete"))continue;
+                  if (j_get (e, "delete"))
+                     continue;
                   const char *ts = j_get (e, "ts");
                   const char *lat = j_get (e, "lat");
                   const char *lon = j_get (e, "lon");
                   const char *alt = j_get (e, "alt");
+                  const char *pdop = j_get (e, "sats.pdop");
+                  const char *hdop = j_get (e, "sats.hdop");
+                  const char *vdop = j_get (e, "sats.vdop");
                   fprintf (o, "<trkpt lat=\"%s\" lon=\"%s\">", lat, lon);
                   if (alt)
                      fprintf (o, "<ele>%s</ele>", alt);
+                  if (pdop)
+                     fprintf (o, "<pdop>%s</pdop>", pdop);
+                  if (hdop)
+                     fprintf (o, "<hdop>%s</hdop>", hdop);
+                  if (vdop)
+                     fprintf (o, "<vdop>%s</vdop>", vdop);
                   fprintf (o, "<time>%s</time>", ts);
                   fprintf (o, "</trkpt>\n");
                }

@@ -75,6 +75,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
 	bl(logll,Y,		Log lat/lon)		\
+	bl(logdop,Y,		Lod dop)		\
 	bl(logodo,Y,		Log odometer)		\
 	bl(logseq,Y,		Log seq)		\
 	bl(logecef,Y,		Log ECEF data)		\
@@ -158,6 +159,9 @@ struct slow_s
    uint8_t fixmode;             // Fix mode
    float course;
    float speed;
+   float pdop;
+   float hdop;
+   float vdop;
 } status;
 
 typedef struct fix_s fix_t;
@@ -572,6 +576,11 @@ nmea_timeout (uint32_t up)
       gsadue = 0;
       status.fixmode = 0;
       memset (status.gsa, 0, sizeof (status.gsa));
+      status.course = NAN;
+      status.speed = NAN;
+      status.pdop = NAN;
+      status.hdop = NAN;
+      status.vdop = NAN;
    }
    if (gsvdue && gsvdue < up)
    {
@@ -720,8 +729,8 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "PMTK869") && n >= 4)
    {                            // Set EASY
-      if (atoi (f[1]) == 2 && atoi (f[2]) != easy)
-         gps_cmd ("$PMTK869,1,%d", easy ? 1 : 0);
+      if (atoi (f[1]) == 2 && atoi (f[2]) != gpseasy)
+         gps_cmd ("$PMTK869,1,%d", gpseasy ? 1 : 0);
       return;
    }
    if (!strcmp (f[0], "PMTK513") && n >= 2)
@@ -859,6 +868,12 @@ nmea (char *s)
                c++;
          status.gsa[s - 1] = c;
       }
+      if (*f[15])
+         status.pdop = strtof (f[15], NULL);
+      if (*f[16])
+         status.hdop = strtof (f[16], NULL);
+      if (*f[17])
+         status.vdop = strtof (f[17], NULL);
       return;
    }
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "GSV") && n >= 4)
@@ -993,9 +1008,18 @@ log_line (fix_t * f)
          if (f->vepe > 0 && f->slow.fixmode >= 3)
             jo_litf (j, "vepe", "%f", f->vepe);
       }
+      if (logdop)
+      {
+         if (!isnan (f->slow.pdop))
+            jo_litf (j, "pdop", "%.1f", f->slow.pdop);
+         if (!isnan (f->slow.hdop))
+            jo_litf (j, "hdop", "%.1f", f->slow.hdop);
+         if (!isnan (f->slow.vdop))
+            jo_litf (j, "vdop", "%.1f", f->slow.vdop);
+      }
       jo_close (j);
    }
-   if (loglll && f->setlla)
+   if (logll && f->setlla)
    {
       jo_litf (j, "lat", "%lf", f->lat);
       jo_litf (j, "lon", "%lf", f->lon);
@@ -1643,7 +1667,7 @@ app_main ()
    xSemaphoreGive (fix_mutex);
    vSemaphoreCreateBinary (ack_semaphore);
 #define str(x) #x
-   revk_register ("gps", 0, sizeof (gposuart), &gposuart, NULL, SETTING_SECRET);
+   revk_register ("gps", 0, sizeof (gpsuart), &gpsuart, NULL, SETTING_SECRET);
    revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
    revk_register ("log", 0, sizeof (logll), &logll, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
    revk_register ("pack", 0, sizeof (packdist), &packdist, "0", SETTING_SECRET | SETTING_LIVE);
