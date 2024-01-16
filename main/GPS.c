@@ -1243,13 +1243,13 @@ checkupload (void)
       delay = up + 60;
       return;
    }
-   if (b.waiting && revk_link_down ())
+   if (b.sdwaiting && revk_link_down ())
    {
       ESP_LOGI (TAG, "No upload as off line");
       delay = up + 5;
       return;
    }
-   if (b.waiting && !*url)
+   if (b.sdwaiting && !*url)
    {
       ESP_LOGI (TAG, "No upload as no URL");
       delay = up + 60;
