@@ -153,6 +153,7 @@ static struct
    uint8_t moving:1;            // We seem to be moving
    uint8_t connect:1;           // MQTT connect
    uint8_t sdwaiting:1;         // SD has data
+   uint8_t sdpresent:1;         // SD is present
    uint8_t sdempty:1;           // SD has no data
    uint8_t accok:1;             // ACC OK
    uint8_t sbas:1;              // Current fix is SBAS
@@ -1424,6 +1425,7 @@ sd_task (void *z)
          }
          if (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
          {
+            b.sdpresent = 0;
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Card not present");
             revk_error ("SD", &j);
@@ -1441,6 +1443,7 @@ sd_task (void *z)
          revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
+         b.sdpresent = 1;
       } else if (b.dodismount)
       {
          b.dodismount = 0;
@@ -1482,6 +1485,7 @@ sd_task (void *z)
          continue;
       }
       ESP_LOGI (TAG, "Filesystem mounted");
+      b.sdpresent = 1;          // we mounted, so must be
       rgbsd = 'Y';
       if (b.doformat && (ret = esp_vfs_fat_spiflash_format_rw_wl (sd_mount, "GPS")))
       {
