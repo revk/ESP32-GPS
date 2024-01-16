@@ -1232,19 +1232,21 @@ checkupload (void)
       revk_enable_wifi ();
    uint32_t up = uptime ();
    static uint32_t delay = 0;
+   if (delay > up)
+   {
+      ESP_LOGD (TAG, "No upload as waiting");
+      return;
+   }
    if (b.sdempty)
    {
       ESP_LOGI (TAG, "No upload as empty");
+      delay = up + 60;
       return;
    }
    if (revk_link_down ())
    {
       ESP_LOGI (TAG, "No upload as off line");
-      return;
-   }
-   if (delay > up)
-   {
-      ESP_LOGD (TAG, "No upload as waiting");
+      delay = up + 5;
       return;
    }
    if (!*url)
