@@ -1047,7 +1047,7 @@ log_line (fix_t * f)
          jo_litf (j, "hdop", "%.1f", f->hdop);
       if (!isnan (f->slow.pdop) && f->slow.pdop)
          jo_litf (j, "pdop", "%.1f", f->slow.pdop);
-      if (!isnan (f->slow.vdop) && f->slow.vdop)
+      if (!isnan (f->slow.vdop) && f->slow.vdop && f->slow.fixmode >= 3)
          jo_litf (j, "vdop", "%.1f", f->slow.vdop);
    }
    if (logcs && f->quality && !isnan (f->slow.speed) && f->slow.speed != 0)
