@@ -1608,7 +1608,7 @@ rgb_task (void *z)
       if (status.fixmode >= blink)
       {
          if (b.sbas)
-            revk_led (strip, l++, 255, 'M');    // SBAS
+            revk_led (strip, l++, 255, revk_rgb ('M')); // SBAS
          for (int s = 0; s < SYSTEMS; s++)
          {                      // Two active sats per LED
             for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
