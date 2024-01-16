@@ -1228,13 +1228,31 @@ pack_task (void *z)
 void
 checkupload (void)
 {
-   ESP_LOGD (TAG, "Check upload");
    if (b.home)
       revk_enable_wifi ();
    uint32_t up = uptime ();
    static uint32_t delay = 0;
-   if (b.sdempty || revk_link_down () || !*url || delay > up)
+   if (b.sdempty)
+   {
+      ESP_LOGI (TAG, "No upload as empty");
       return;
+   }
+   if (revk_link_down ())
+   {
+      ESP_LOGI (TAG, "No upload as off line");
+      return;
+   }
+   if (delay > up)
+   {
+      ESP_LOGD (TAG, "No upload as waiting");
+      return;
+   }
+   if (!*url)
+   {
+      ESP_LOGI (TAG, "No upload as no URL");
+      delay = up + 60;
+      return;
+   }
    if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
       return;
    DIR *dir = opendir (sd_mount);
@@ -1258,6 +1276,7 @@ checkupload (void)
       closedir (dir);
       if (filename)
       {
+         ESP_LOGI (TAG, "Waiting %s", filename);
          b.sdwaiting = 1;
          b.sdempty = 0;
       } else
@@ -1267,6 +1286,7 @@ checkupload (void)
       }
       if (b.sdempty || revk_link_down () || !*url)
       {                         // Don't send or nothing to send
+         ESP_LOGI (TAG, "Not sending now");
          free (filename);
          break;
       }
@@ -1288,14 +1308,15 @@ checkupload (void)
       if (filename && *filename && !stat (filename, &s))
       {                         // Send
          rgbsd = 'C';
-         ESP_LOGE (TAG, "Send %s", filename);
          if (!s.st_size)
          {
+            ESP_LOGI (TAG, "Empty file %s", filename);
             zap = 1;            // Empty
             jo_t j = makeerr ("Empty file");
             revk_error ("Upload", &j);
          } else
          {
+            ESP_LOGI (TAG, "Send %s", filename);
             FILE *i = fopen (filename, "r");
             if (i)
             {
@@ -1306,25 +1327,38 @@ checkupload (void)
                   .crt_bundle_attach = esp_crt_bundle_attach,
                   .method = HTTP_METHOD_POST,
                };
-               char *buf = mallocspi (1024);
+#define	BLOCK	1024
+               char *buf = mallocspi (BLOCK);
                int response = 0;
-               esp_http_client_handle_t client = esp_http_client_init (&config);
-               if (client)
+               if (buf)
                {
-                  esp_http_client_set_header (client, "Content-Type", "application/json");
-                  if (!esp_http_client_open (client, s.st_size))
-                  {             // Send
-                     int len = 0;
-                     while ((len = fread (buf, 1, 1024, i)) > 0)
-                        esp_http_client_write (client, buf, len);
-                     esp_http_client_fetch_headers (client);
-                     esp_http_client_flush_response (client, &len);
-                     response = esp_http_client_get_status_code (client);
-                     esp_http_client_close (client);
+                  esp_http_client_handle_t client = esp_http_client_init (&config);
+                  if (client)
+                  {
+                     esp_http_client_set_header (client, "Content-Type", "application/json");
+                     ESP_LOGI (TAG, "Sending %s %ld", filename, s.st_size);
+                     if (!esp_http_client_open (client, s.st_size))
+                     {          // Send
+                        int total = 0;
+                        int len = 0;
+                        while ((len = fread (buf, 1, BLOCK, i)) > 0)
+                        {
+                           total += len;
+                           ESP_LOGI (TAG, "%d bytes (%ld%%)", total, total * 100 / s.st_size);
+                           esp_http_client_write (client, buf, len);
+                        }
+                        esp_http_client_fetch_headers (client);
+                        esp_http_client_flush_response (client, &len);
+                        response = esp_http_client_get_status_code (client);
+                        esp_http_client_close (client);
+                     }
+                     esp_http_client_cleanup (client);
                   }
-                  esp_http_client_cleanup (client);
                }
                free (u);
+               free (buf);
+#undef	BLOCK
+               ESP_LOGI (TAG, "Sent, Response %d", response);
                if (response / 100 == 2)
                {
                   jo_t j = makeerr (NULL);
@@ -1346,6 +1380,7 @@ checkupload (void)
       }
       if (zap)
       {
+         ESP_LOGI (TAG, "Delete %s", filename);
          if (unlink (filename))
          {
             jo_t j = makeerr ("Failed to delete");
@@ -1356,6 +1391,7 @@ checkupload (void)
       if (!zap)
       {                         // Don't retry for a bit
          delay = up + 60;
+         ESP_LOGI (TAG, "No upload for 60 seconds");
          return;
       }
    }
@@ -1511,7 +1547,6 @@ sd_task (void *z)
       checkupload ();
       while (!b.doformat && !b.dodismount)
       {
-         ESP_LOGD (TAG, "SD main loop");
          FILE *o = NULL;
          int line = 0;
          char filename[100];
@@ -1554,7 +1589,7 @@ sd_task (void *z)
                } else
                {
                   revk_disable_wifi ();
-                  ESP_LOGD (TAG, "Open file %s", filename);
+                  ESP_LOGI (TAG, "Open file %s", filename);
                   jo_t j = jo_object_alloc ();
                   jo_string (j, "action", cardstatus = "Log file created");
                   jo_string (j, "filename", filename);
