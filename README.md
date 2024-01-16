@@ -105,5 +105,11 @@ Note that the odometer logic is internal to the L86, and may track distance trav
 
 Whilst location data (`lat`/`lon`/`alt`/`ecef`) is per fix, some data is slower, such as `course`, `speed`, `epe`, `vdop`/`pdop`, and active sats, and as such they do not change every fix.
 
+## WiFi
+
+WiFi is enabled when not moving. If a `home` location is set it is only enabled within 100m of home.
+
+Normally access point mode, and web based settings are disabled. These are enabled, along with WiFI, when the SD card is removed.
+
 --
 Copyright © 2019-24 Andrews & Arnold Ltd, Adrian Kennard. See LICENSE file (GPL).

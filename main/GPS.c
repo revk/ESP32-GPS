@@ -45,6 +45,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(charger,-33,		Charger status)	\
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,17,		RGB LEDs)	\
+	u32a(home,3,		Home location) \
 	bf(ledsd,1,		First RGB is for SD)	\
 	u8f(accaddress,0x19,	Accelerometer I2C ID)	\
      	io(accsda,13,		Accelerometer SDA) \
@@ -93,6 +94,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	u16(packtime,0,		Pack delta s)	\
 	s(url,,			URL to post data)	\
 
+#define u32a(n,a,t)	uint32_t n[a];
 #define u32(n,d,t)	uint32_t n;
 #define u16(n,d,t)	uint16_t n;
 #define s8(n,d,t)	int8_t n;
@@ -109,6 +111,7 @@ settings
 #undef io
 #undef u16
 #undef u32
+#undef u32a
 #undef s8
 #undef u8
 #undef u8f
@@ -153,6 +156,7 @@ static struct
    uint8_t sdempty:1;           // SD has no data
    uint8_t accok:1;             // ACC OK
    uint8_t sbas:1;              // Current fix is SBAS
+   uint8_t home:1;              // At home
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -724,6 +728,14 @@ nmea (char *s)
          fix->ecef.x = parse (f[2], 6);
          fix->ecef.y = parse (f[3], 6);
          fix->ecef.z = parse (f[4], 6);
+         if (home[0] && home[1] && home[2])
+         {
+            int64_t dx = fix->ecef.x / 1000000LL - home[0];
+            int64_t dy = fix->ecef.y / 1000000LL - home[1];
+            int64_t dz = fix->ecef.z / 1000000LL - home[2];
+            b.home = ((dx * dx + dy * dy + dz * dz > 100 * 100) ? 1 : 0);
+         } else
+            b.home = 1;         // Assume home if not set else b.home=1; // Assume home if not set
          fix->setecef = 1;
       }
       if (logodo)
@@ -1215,6 +1227,8 @@ pack_task (void *z)
 void
 checkupload (void)
 {
+   if (b.home)
+      revk_enable_wifi ();
    uint32_t up = uptime ();
    static uint32_t delay = 0;
    if (b.sdempty || revk_link_down () || !*url || delay > up)
@@ -1348,9 +1362,9 @@ checkupload (void)
 void
 sd_task (void *z)
 {
-	revk_disable_wifi();
-	revk_disable_ap();
-	revk_disable_settings();
+   revk_disable_wifi ();
+   revk_disable_ap ();
+   revk_disable_settings ();
    void wait (int s)
    {
       while (s--)
@@ -1414,18 +1428,19 @@ sd_task (void *z)
             jo_string (j, "error", cardstatus = "Card not present");
             revk_error ("SD", &j);
             rgbsd = 'M';
-	    revk_enable_wifi();
-	    revk_enable_ap();
-	    revk_enable_settings();
+            revk_enable_wifi ();
+            revk_enable_ap ();
+            revk_enable_settings ();
          }
          while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
          {
             wait (1);
-	    while(fixsd.count>1000)fixadd(&fixfree,fixget(&fixsd));// Too much data queued
+            while (fixsd.count > 1000)
+               fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
          }
-	revk_disable_wifi();
-	revk_disable_ap();
-	revk_disable_settings();
+         revk_disable_wifi ();
+         revk_disable_ap ();
+         revk_disable_settings ();
       } else if (b.dodismount)
       {
          b.dodismount = 0;
@@ -1530,6 +1545,7 @@ sd_task (void *z)
                   revk_error ("SD", &j);
                } else
                {
+                  revk_disable_wifi ();
                   ESP_LOGD (TAG, "Open file %s", filename);
                   jo_t j = jo_object_alloc ();
                   jo_string (j, "action", cardstatus = "Log file created");
@@ -1707,6 +1723,7 @@ app_main ()
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
 #define u32(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
+#define u32a(n,a,t) revk_register(#n,a,sizeof(n),&n,NULL,0);
 #define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
@@ -1718,6 +1735,7 @@ app_main ()
 #undef ui
 #undef u16
 #undef u32
+#undef u32a
 #undef s8
 #undef u8
 #undef u8f
