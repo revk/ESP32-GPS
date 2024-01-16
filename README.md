@@ -100,7 +100,7 @@ The log format is a simple JSON object.
 |`distance`|Distance covered by log file from odometer readings|
 |`gps`|Array of fix points|
 
-The fix point data is generally self explanatory. `speed` is metres/second. `odo` and `alt` are metres. ECEF is metres. `lat`/`lon`/`course` are degrees.
+The fix point data is generally self explanatory. `speed` is kph. `odo` and `alt` are metres. ECEF is metres. `lat`/`lon`/`course` are degrees.
 
 Note that the odometer logic is internal to the L86, and may track distance travelled if stationary without clear satellite coverage (such as indoors). As such it makes sense to use this for a definite journey if not kept in good view of sky, or off when not in use.
 

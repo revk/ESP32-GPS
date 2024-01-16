@@ -579,8 +579,6 @@ nmea_timeout (uint32_t up)
       gsadue = 0;
       status.fixmode = 0;
       memset (status.gsa, 0, sizeof (status.gsa));
-      status.course = NAN;
-      status.speed = NAN;
       status.pdop = NAN;
       status.vdop = NAN;
    }
@@ -845,7 +843,7 @@ nmea (char *s)
          if (vtgcount < 255)
             vtgcount++;
          if (b.vtglast && !b.moving && (vtgcount >= moven || (fix && status.speed > fix->hepe)))
-         {
+         { // speed (kp[h) compared to EPE is just a rough idea that we are moving faster than random
             b.moving = 1;
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
