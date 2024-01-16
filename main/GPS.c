@@ -74,7 +74,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	b(gpswalking,N,         GPS Walking mode)       \
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
-	bl(logll,Y,		Log lat/lon)		\
+	bl(loglla,Y,		Log lat/lon/alt)		\
 	bl(logund,Y,		Log undulation)		\
 	bl(logdop,Y,		Lod dop)		\
 	bl(logodo,Y,		Log odometer)		\
@@ -1008,7 +1008,7 @@ log_line (fix_t * f)
    }
    if (f->fixmode)
       jo_int (j, "fix", f->fixmode);
-   if (logll && f->setlla)
+   if (loglla && f->setlla)
    {
       jo_litf (j, "lat", "%.8lf", f->lat);
       jo_litf (j, "lon", "%.8lf", f->lon);
@@ -1035,15 +1035,12 @@ log_line (fix_t * f)
    }
    if (logcs && !isnan (f->slow.speed) && f->slow.speed != 0)
    {
-      if (!isnan (f->slow.speed))
-      {
-         jo_litf (j, "speed", "%.2f", f->slow.speed);
-         if (logmph)
-            jo_litf (j, "mph", "%.2f", f->slow.speed / 1.609344);
-      }
+      jo_litf (j, "speed", "%.2f", f->slow.speed);
       if (!isnan (f->slow.course))
          jo_litf (j, "course", "%.2f", f->slow.course);
    }
+   if (logmph && !isnan (f->slow.speed) && f->slow.speed != 0)
+      jo_litf (j, "mph", "%.2f", f->slow.speed / 1.609344);
    if (f->setecef && logecef)
    {
       void o (const char *t, int64_t v)
@@ -1681,7 +1678,7 @@ app_main ()
 #define str(x) #x
    revk_register ("gps", 0, sizeof (gpsuart), &gpsuart, NULL, SETTING_SECRET);
    revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
-   revk_register ("log", 0, sizeof (logll), &logll, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
+   revk_register ("log", 0, sizeof (loglla), &loglla, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
    revk_register ("pack", 0, sizeof (packdist), &packdist, "0", SETTING_SECRET | SETTING_LIVE);
    revk_register ("acc", 0, sizeof (accaddress), &accaddress, "0x19", SETTING_SECRET | SETTING_FIX);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);

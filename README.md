@@ -31,13 +31,17 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |Setting|Meaning|
 |-------|-------|
 |`url`|Upload URL|
+|`loglla`|Include `lat`, `lon`, and `alt`|
 |`logcs`|Include `course` and `speed`|
+|`logund`|Include undulation `und`|
+|`logmph`|Include `mph`|
 |`logacc`|Include accelerometer data|
 |`logsats`|Include number of active satellites and related data|
 |`logepe`|Include estimated position error|
 |`logodo`|Include periodic odometer value|
 |`logseq`|Include a sequence number|
 |`logecef`|Include ECEF data (Earth Centred Earth Fixed X/Y/Z/T values)|
+|`logacc`|Include accelerometer data|
 |`gpsballon`|Set *balloon* mode for high altitude|
 |`gpsflight`|Set *flight* mode for aviation logging|
 |`gpswalking`|Set *walking* mode for slow speed travel|
