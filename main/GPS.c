@@ -1727,7 +1727,7 @@ app_main ()
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
 #define u32(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define u32a(n,a,t) revk_register(#n,a,sizeof(n),&n,NULL,0);
+#define u32a(n,a,t) revk_register(#n,a,sizeof(*n),&n,NULL,0);
 #define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
