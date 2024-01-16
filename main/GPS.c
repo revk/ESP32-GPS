@@ -151,6 +151,7 @@ static struct
    uint8_t sdwaiting:1;         // SD has data
    uint8_t sdempty:1;           // SD has no data
    uint8_t accok:1;             // ACC OK
+   uint8_t sbas:1;              // Current fix is SBAS
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -784,13 +785,14 @@ nmea (char *s)
       if (fix)
       {
          fix->quality = atoi (f[6]);    // Fast fix mode
+         b.sbas = ((fix->quality == 2) ? 1 : 0);
          fix->sats = atoi (f[7]);
          if (*f[8])
             fix->hdop = strtof (f[8], NULL);
          if (*f[9])
             fix->alt = strtof (f[9], NULL);
-         if (*f[19])
-            fix->und = strtof (f[19], NULL);
+         if (*f[11])
+            fix->und = strtof (f[11], NULL);
          if (strlen (f[2]) >= 9 && strlen (f[4]) >= 10)
          {
             fix->lat = ((f[2][0] - '0') * 10 + f[2][1] - '0' + strtod (f[2] + 2, NULL) / 60) * (f[3][0] == 'N' ? 1 : -1);
@@ -1006,7 +1008,8 @@ log_line (fix_t * f)
          jo_int (j, "used", f->sats);
       jo_close (j);
    }
-   if(f->slow.fixmode)jo_int(j,"fixmode",f->slow.fixmode);
+   if (f->slow.fixmode)
+      jo_int (j, "fixmode", f->slow.fixmode);
    if (loglla && f->setlla && f->quality)
    {
       jo_litf (j, "lat", "%.8lf", f->lat);
@@ -1604,6 +1607,8 @@ rgb_task (void *z)
          revk_led (strip, l++, 255, revk_rgb (b.sdwaiting && blink > 1 ? tolower (rgbsd) : rgbsd));     // SD status (blink if data waiting)
       if (status.fixmode >= blink)
       {
+         if (b.sbas)
+            revk_led (strip, l++, 255, 'M');    // SBAS
          for (int s = 0; s < SYSTEMS; s++)
          {                      // Two active sats per LED
             for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
