@@ -1619,9 +1619,11 @@ rgb_task (void *z)
       }
       if (l <= ledsd)
       {                         // No sats
-         const char pattern[] = "KKKRYGCBM",
-            *p = pattern;
-         while (*p && l < leds)
+         while (l < leds / 2 - 3)
+            revk_led (strip, l++, 255, revk_rgb ('K'));
+         const char pattern[] = "RYGCBMRYGCBM",
+            *p = pattern + (uptime () % 6);
+         while (*p && l < leds && l < leds / 2 + 3)
             revk_led (strip, l++, 255, revk_rgb (*p++));
       }
       while (l < leds)
