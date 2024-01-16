@@ -1348,6 +1348,9 @@ checkupload (void)
 void
 sd_task (void *z)
 {
+	revk_disable_wifi();
+	revk_disable_ap();
+	revk_disable_settings();
    void wait (int s)
    {
       while (s--)
@@ -1411,12 +1414,18 @@ sd_task (void *z)
             jo_string (j, "error", cardstatus = "Card not present");
             revk_error ("SD", &j);
             rgbsd = 'M';
+	    revk_enable_wifi();
+	    revk_enable_ap();
+	    revk_enable_settings();
          }
          while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
          {
             wait (1);
-            // TODO flushing if too much logged
+	    while(fixsd.count>1000)fixadd(&fixfree,fixget(&fixsd));// Too much data queued
          }
+	revk_disable_wifi();
+	revk_disable_ap();
+	revk_disable_settings();
       } else if (b.dodismount)
       {
          b.dodismount = 0;
@@ -1668,8 +1677,6 @@ web_head (httpd_req_t * req, const char *title)
 static esp_err_t
 web_root (httpd_req_t * req)
 {
-   if (revk_link_down ())
-      return revk_web_settings (req);   // Direct to web set up
    web_head (req, *hostname ? hostname : appname);
    return revk_web_foot (req, 0, 1, NULL);
 }
