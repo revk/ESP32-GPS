@@ -1228,6 +1228,7 @@ pack_task (void *z)
 void
 checkupload (void)
 {
+   ESP_LOGD (TAG, "Check upload");
    if (b.home)
       revk_enable_wifi ();
    uint32_t up = uptime ();
@@ -1363,7 +1364,8 @@ checkupload (void)
 void
 sd_task (void *z)
 {
-   revk_disable_wifi ();
+   if (!home[0] || !home[1] || !home[2])
+      b.home = 1;
    revk_disable_ap ();
    revk_disable_settings ();
    void wait (int s)
@@ -1440,7 +1442,8 @@ sd_task (void *z)
             while (fixsd.count > 1000)
                fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
          }
-         revk_disable_wifi ();
+         if (!b.home)
+            revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
          b.sdpresent = 1;
@@ -1508,6 +1511,7 @@ sd_task (void *z)
       checkupload ();
       while (!b.doformat && !b.dodismount)
       {
+         ESP_LOGD (TAG, "SD main loop");
          FILE *o = NULL;
          int line = 0;
          char filename[100];
