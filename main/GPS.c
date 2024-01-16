@@ -1605,17 +1605,14 @@ rgb_task (void *z)
       int l = 0;
       if (ledsd)
          revk_led (strip, l++, 255, revk_rgb (b.sdwaiting && blink > 1 ? tolower (rgbsd) : rgbsd));     // SD status (blink if data waiting)
-      if (status.fixmode >= blink)
-      {
-         if (b.sbas)
-            revk_led (strip, l++, 255, revk_rgb ('M')); // SBAS
-         for (int s = 0; s < SYSTEMS; s++)
-         {                      // Two active sats per LED
-            for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
-               revk_led (strip, l++, 255, revk_rgb (system_colour[s]));
-            if ((status.gsa[s] & 1) && l < leds)
-               revk_led (strip, l++, 127, revk_rgb (system_colour[s]));
-         }
+      if (b.sbas)
+         revk_led (strip, l++, 255, revk_rgb ('M'));    // SBAS
+      for (int s = 0; s < SYSTEMS; s++)
+      {                         // Two active sats per LED
+         for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
+            revk_led (strip, l++, 255, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+         if ((status.gsa[s] & 1) && l < leds)
+            revk_led (strip, l++, 127, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
       }
       if (l <= ledsd)
       {                         // No sats
