@@ -60,7 +60,7 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 There are a string of LEDs to show status and how many active satellites are in use.
 
 Main LED strip consists of a number of green, yellow, and cyan LEDs for active NAVSTAR, GLONASS, and GALILEO satellites. These are two satellites per LED with the last in each colour dimmed if it is 1 satellite (i.e. odd number).
-If there are no active satellites, then the first satellite LED shows red. If there is not a full 3D fix, the satellite LEDs blink.
+If there are no active satellites, then the first satellite LED shows red. If there is not a full 3D fix, the satellite LEDs blink. If SBAS is in use, a first satellite LED is added showing magenta.
 
 The LED by the SD card (or first LED in the strip if no SD card LED) shows SD card status. If there is data waiting to upload, this blinks.
 
@@ -73,15 +73,7 @@ The LED by the SD card (or first LED in the strip if no SD card LED) shows SD ca
 |Blue|Card unmounted, safe to remove|
 |Cyan|Data being uploaded from card|
 
-In addition, the last LED in the strip may be overridden in some cases.
-
-|Colour|Meaning|
-|------|-------|
-|Red|No GPS connected|
-|Blue|Not moving, but we have a fix|
-|Magenta|Not moving, and no fix, e.g. indoors|
-
-If not one of these cases the active satellites show using this LED if there are enough.
+In addition, the last LED in the strip may be overridden in some cases, red for no GPS, and magenta for not moving.
 
 ## Point reduction
 

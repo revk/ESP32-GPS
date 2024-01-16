@@ -193,7 +193,7 @@ struct fix_s
         y,
         z;
    } acc;
-   uint8_t fixmode;             // Fix mode from, fast update
+   uint8_t quality;             // Fix quality (0=none, 1=GPS, 2=SBAS)
    uint8_t sats;                // Sats used for fix
    uint8_t corner:1;            // Corner point for packing
    uint8_t deleted:1;           // Deleted by packing
@@ -783,7 +783,7 @@ nmea (char *s)
       startfix (f[1]);
       if (fix)
       {
-         fix->fixmode = atoi (f[6]);    // Fast fix mode
+         fix->quality = atoi (f[6]);    // Fast fix mode
          fix->sats = atoi (f[7]);
          if (*f[8])
             fix->hdop = strtof (f[8], NULL);
@@ -996,7 +996,7 @@ log_line (fix_t * f)
    }
    if (logseq)
       jo_int (j, "seq", f->seq);
-   if (logsats)
+   if (logsats && f->sats + f->slow.gsa[0] + f->slow.gsa[1] + f->slow.gsa[2])
    {
       jo_object (j, "sats");
       for (int s = 0; s < SYSTEMS; s++)
@@ -1006,16 +1006,16 @@ log_line (fix_t * f)
          jo_int (j, "used", f->sats);
       jo_close (j);
    }
-   if (f->fixmode)
-      jo_int (j, "fix", f->fixmode);
-   if (loglla && f->setlla)
+   if(f->slow.fixmode)jo_int(j,"fixmode",f->slow.fixmode);
+   if (loglla && f->setlla && f->quality)
    {
       jo_litf (j, "lat", "%.8lf", f->lat);
       jo_litf (j, "lon", "%.8lf", f->lon);
-      if (f->fixmode >= 3 && !isnan (f->alt))
+      if (f->slow.fixmode >= 3 && !isnan (f->alt))
          jo_litf (j, "alt", "%.2f", f->alt);
+      jo_int (j, "quality", f->quality);
    }
-   if (logund && f->fixmode >= 3 && !isnan (f->und))
+   if (logund && f->slow.fixmode >= 3 && !isnan (f->und))
       jo_litf (j, "und", "%.2f", f->und);
    if (logepe && f->setepe && f->slow.fixmode >= 1)
    {
@@ -1026,20 +1026,20 @@ log_line (fix_t * f)
    }
    if (logdop)
    {
-      if (!isnan (f->hdop))
+      if (!isnan (f->hdop) && f->hdop)
          jo_litf (j, "hdop", "%.1f", f->hdop);
-      if (!isnan (f->slow.pdop))
+      if (!isnan (f->slow.pdop) && f->slow.pdop)
          jo_litf (j, "pdop", "%.1f", f->slow.pdop);
-      if (!isnan (f->slow.vdop))
+      if (!isnan (f->slow.vdop) && f->slow.vdop)
          jo_litf (j, "vdop", "%.1f", f->slow.vdop);
    }
-   if (logcs && !isnan (f->slow.speed) && f->slow.speed != 0)
+   if (logcs && f->quality && !isnan (f->slow.speed) && f->slow.speed != 0)
    {
       jo_litf (j, "speed", "%.2f", f->slow.speed);
       if (!isnan (f->slow.course))
          jo_litf (j, "course", "%.2f", f->slow.course);
    }
-   if (logmph && !isnan (f->slow.speed) && f->slow.speed != 0)
+   if (logmph && f->quality && !isnan (f->slow.speed) && f->slow.speed != 0)
       jo_litf (j, "mph", "%.2f", f->slow.speed / 1.609344);
    if (f->setecef && logecef)
    {
@@ -1090,7 +1090,7 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->fixmode > 1 && fixlog.count < VTGRATE * (moven + 1)))
+      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->quality && fixlog.count < VTGRATE * (moven + 1)))
       {                         // Waiting - holds pre-moving data
          usleep (100000);
          continue;
@@ -1219,7 +1219,11 @@ checkupload (void)
       return;
    DIR *dir = opendir (sd_mount);
    if (!dir)
-   {
+   {                            // Error
+      delay = up + 60;          // Don't try for a bit
+      jo_t j = jo_object_alloc ();
+      jo_stringf (j, "error", "Cannot open %s", sd_mount);
+      revk_error ("SD", &j);
       ESP_LOGE (TAG, "Cannot open dir");
       return;
    }
@@ -1242,7 +1246,7 @@ checkupload (void)
          b.sdempty = 1;
       }
       if (b.sdempty || revk_link_down () || !*url)
-      {                         // Don't send
+      {                         // Don't send or nothing to send
          free (filename);
          break;
       }
@@ -1330,7 +1334,7 @@ checkupload (void)
       }
       free (filename);
       if (!zap)
-      {
+      {                         // Don't retry for a bit
          delay = up + 60;
          return;
       }
@@ -1496,7 +1500,7 @@ sd_task (void *z)
                usleep (100000);
                continue;
             }
-            if (!o && f->sett && f->fixmode > 1 && b.moving)
+            if (!o && f->sett && f->quality && b.moving)
             {                   // Open file
                struct tm t;
                time_t now = f->ecef.t / 1000000LL;
@@ -1616,7 +1620,7 @@ rgb_task (void *z)
       if (!zdadue)
          revk_led (strip, leds - 1, 255, revk_rgb ('R'));       // No GPS clock
       else if (!b.moving)
-         revk_led (strip, leds - 1, 255, revk_rgb (status.fixmode > 1 ? 'B' : 'M'));    // Not moving
+         revk_led (strip, leds - 1, 255, revk_rgb ('M'));       // Not moving
       led_strip_refresh (strip);
    }
 }

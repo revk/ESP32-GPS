@@ -182,7 +182,7 @@ main (int argc, const char *argv[])
                   const char *vdop = j_get (e, "vdop");
                   const char *pdop = j_get (e, "pdop");
                   int sats = atoi (j_get (e, "sats.used") ? : "");
-                  int fix = atoi (j_get (e, "fix") ? : "");
+                  int fix = atoi (j_get (e, "fixmode") ? : "");
                   fprintf (o, "<trkpt lat=\"%s\" lon=\"%s\">", lat, lon);
                   if (alt)
                      fprintf (o, "<ele>%s</ele>", alt);
