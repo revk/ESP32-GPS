@@ -83,6 +83,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(logepe,Y,		Log EPE data)		\
 	bl(logsats,Y,		Log Sats data)		\
 	bl(logcs,Y,		Log Course/speed)		\
+	bl(logmph,Y,		Log mph)		\
 	bl(logacc,Y,		Log Accelerometer)		\
 	bl(logdsq,N,		Log pack deviation)	\
 	u16(packmin,60,		Min samples for pack)	\
@@ -843,7 +844,7 @@ nmea (char *s)
          if (vtgcount < 255)
             vtgcount++;
          if (b.vtglast && !b.moving && (vtgcount >= moven || (fix && status.speed > fix->hepe)))
-         { // speed (kp[h) compared to EPE is just a rough idea that we are moving faster than random
+         {                      // speed (kp[h) compared to EPE is just a rough idea that we are moving faster than random
             b.moving = 1;
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
@@ -1034,7 +1035,12 @@ log_line (fix_t * f)
    }
    if (logcs && !isnan (f->slow.speed) && f->slow.speed != 0)
    {
-      jo_litf (j, "speed", "%.2f", f->slow.speed);
+      if (!isnan (f->slow.speed))
+      {
+         jo_litf (j, "speed", "%.2f", f->slow.speed);
+         if (logmph)
+            jo_litf (j, "mph", "%.2f", f->slow.speed / 1.609344);
+      }
       if (!isnan (f->slow.course))
          jo_litf (j, "course", "%.2f", f->slow.course);
    }
