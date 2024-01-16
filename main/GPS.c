@@ -1616,13 +1616,13 @@ rgb_task (void *z)
             if ((status.gsa[s] & 1) && l < leds)
                revk_led (strip, l++, 127, revk_rgb (system_colour[s]));
          }
-         if (l <= ledsd)
-         {                      // No sats
-            const char pattern[] = "R RYGCBM",
-               *p = pattern;
-            while (*p && l < leds)
-               revk_led (strip, l++, 255, revk_rgb (*p));
-         }
+      }
+      if (l <= ledsd)
+      {                         // No sats
+         const char pattern[] = "KKKRYGCBM",
+            *p = pattern;
+         while (*p && l < leds)
+            revk_led (strip, l++, 255, revk_rgb (*p++));
       }
       while (l < leds)
          revk_led (strip, l++, 255, revk_rgb ('K'));

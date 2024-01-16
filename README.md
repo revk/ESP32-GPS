@@ -70,12 +70,12 @@ There is one LED by the SD card that shows the status of the SD card (on older b
 
 There is a string of LEDs to show satellite status.
 
-- If no active satellites this shows a RED led, and then a pattern of colours.
 - If SBAS then a magenta LED shows
 - Green LEDs show for NAVSTAR GPS, 2 sats per LED, last is dim if odd number
 - Yellow LEDs show for GLONASS GPS, 2 sats per LED, last is dim if odd number
 - Cyan LEDs show for GALILEO GPS, 2 sats per LED, last is dim if odd number
 - If there is less than a 3D fix the satellite LEDs blink
+- If no active satellites this shows a static pattern of all colours to look pretty
 - The last LED is over written with RED if no GPS receiver, and MAGENTA if stationary
 
 ## Point reduction
