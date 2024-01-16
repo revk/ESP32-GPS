@@ -4,6 +4,7 @@
 // TODO
 // ACC ADC for battery
 // POWER/BATTERY - sleeping on SDCD and CHARGER
+// "Home" lat/lon setting for WiFi enable/disable
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
