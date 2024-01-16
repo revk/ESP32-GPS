@@ -844,7 +844,7 @@ nmea (char *s)
          if (vtgcount < 255)
             vtgcount++;
          if (b.vtglast && !b.moving && (vtgcount >= moven || (fix && status.speed > fix->hepe)))
-         {                      // speed (kp[h) compared to EPE is just a rough idea that we are moving faster than random
+         {                      // speed (kp/h) compared to EPE is just a rough idea that we are moving faster than random
             b.moving = 1;
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
