@@ -1783,7 +1783,7 @@ revk_web_extra (httpd_req_t * req)
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
    revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
    revk_web_send (req, "<tr><td colspan=4>");
-   if (home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
+   if (!pos[0] || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
    {
       if (!isnan (status.hdop) && status.hdop != 0 && status.hdop <= 1 && pos[0])
          revk_web_send (req,
