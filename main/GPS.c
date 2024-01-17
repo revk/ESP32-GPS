@@ -127,7 +127,7 @@ settings
 #define	ZDARATE	10
 #define	GSARATE	10
 #define	GSVRATE	10
-#define VTGRATE 10
+#define VTGRATE 5
 static uint32_t zdadue = 0;
 static uint32_t gsadue = 0;
 static uint32_t gsvdue = 0;
