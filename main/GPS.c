@@ -1113,6 +1113,8 @@ log_line (fix_t * f)
       jo_int (j, "errors", gpserrors);
       gpserrors = 0;
    }
+   if (home[0] && b.home)
+      jo_bool (j, "home", 1);
    return j;
 }
 
