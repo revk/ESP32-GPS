@@ -142,6 +142,7 @@ static uint8_t gpserrors = 0;   // last count
 static uint8_t vtgcount = 0;    // Count of stopped/moving
 static char rgbsd = 'K';
 static const char *cardstatus = NULL;
+static uint32_t pos[3]={0};	// last x/y/z
 
 static struct
 {
@@ -168,9 +169,10 @@ struct slow_s
    uint8_t fixmode;             // Fix mode from slow update
    float course;
    float speed;
+   float hdop;			// Slow hepe
    float pdop;
    float vdop;
-} status;
+} status={0};
 
 typedef struct fix_s fix_t;
 struct fix_s
@@ -587,6 +589,7 @@ nmea_timeout (uint32_t up)
       gsadue = 0;
       status.fixmode = 0;
       memset (status.gsa, 0, sizeof (status.gsa));
+      status.hdop = NAN;
       status.pdop = NAN;
       status.vdop = NAN;
    }
@@ -726,18 +729,17 @@ nmea (char *s)
       startfix (f[1]);
       if (fix && strlen (f[2]) > 6 && strlen (f[3]) > 6 && strlen (f[4]) > 6)
       {
-         fix->ecef.x = parse (f[2], 6);
-         fix->ecef.y = parse (f[3], 6);
-         fix->ecef.z = parse (f[4], 6);
+         pos[0]=(fix->ecef.x = parse (f[2], 6))/1000000LL;
+         pos[1]=(fix->ecef.y = parse (f[3], 6))/1000000LL;
+         pos[2]=(fix->ecef.z = parse (f[4], 6))/1000000LL;
+         fix->setecef = 1;
          if (home[0] && home[1] && home[2])
          {
-            int64_t dx = fix->ecef.x / 1000000LL - home[0];
-            int64_t dy = fix->ecef.y / 1000000LL - home[1];
-            int64_t dz = fix->ecef.z / 1000000LL - home[2];
+            int64_t dx =pos[0] - home[0];
+            int64_t dy =pos[1]-home[1];
+            int64_t dz =pos[2]-home[2];
             b.home = ((dx * dx + dy * dy + dz * dz > 100 * 100) ? 1 : 0);
-         } else
-            b.home = 1;         // Assume home if not set else b.home=1; // Assume home if not set
-         fix->setecef = 1;
+         }
       }
       if (logodo)
          gps_cmd ("$PQODO,Q");  // Read ODO every sample
@@ -852,11 +854,11 @@ nmea (char *s)
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "VTG") && n >= 10)
    {
       vtgdue = up + VTGRATE + 2;
-      status.course = strtof (f[1], NULL);
-      status.speed = strtof (f[7], NULL);
+      status.course = (*f[1]?strtof (f[1], NULL):NAN);
+      status.speed = (*f[7]?strtof (f[7], NULL):NAN);
       // Start/stop
       if (b.vtglast == (status.fixmode <= 1 || status.speed == 0 ? 0 : 1))
-      {
+      { // No change
          if (vtgcount < 255)
             vtgcount++;
          if (b.vtglast && !b.moving && (vtgcount >= moven || (fix && status.speed > fix->hepe)))
@@ -865,7 +867,7 @@ nmea (char *s)
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
             revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && (vtgcount >= stopn || !revk_link_down ()))
+         } else if (!b.vtglast && b.moving && (vtgcount >= stopn || b.home))
          {
             b.moving = 0;
             jo_t j = jo_object_alloc ();
@@ -874,6 +876,7 @@ nmea (char *s)
          }
       } else
       {
+	       // Changed
          b.vtglast ^= 1;
          vtgcount = 1;
       }
@@ -894,6 +897,8 @@ nmea (char *s)
       }
       if (*f[15])
          status.pdop = strtof (f[15], NULL);
+      if (*f[16])
+         status.pdop = strtof (f[16], NULL);
       if (*f[17])
          status.vdop = strtof (f[17], NULL);
       return;
@@ -1228,7 +1233,7 @@ pack_task (void *z)
 void
 checkupload (void)
 {
-   if (b.home)
+   if (!home[0]||b.home)
       revk_enable_wifi ();
    uint32_t up = uptime ();
    static uint32_t delay = 0;
@@ -1402,8 +1407,6 @@ checkupload (void)
 void
 sd_task (void *z)
 {
-   if (!home[0] || !home[1] || !home[2])
-      b.home = 1;
    revk_disable_ap ();
    revk_disable_settings ();
    void wait (int s)
@@ -1480,7 +1483,7 @@ sd_task (void *z)
             while (fixsd.count > 1000)
                fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
          }
-         if (!b.home)
+         if (home[0]&&!b.home)
             revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
