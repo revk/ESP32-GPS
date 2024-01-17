@@ -1109,7 +1109,7 @@ log_line (fix_t * f)
    }
    if (logdsq && !isnan (f->dsq))
       jo_litf (j, "dsq", "%f", f->dsq);
-   if (logodo && f->setodo)
+   if (logodo && f->setodo && f->odo)
       jo_litf (j, "odo", "%lld.%02lld", f->odo / 100, f->odo % 100);
    if (gpserrors)
    {
