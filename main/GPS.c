@@ -44,7 +44,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(pwr,-15,		System PWR)	\
      	io(charger,-33,		Charger status)	\
 	bl(powerman,N,		Power management)	\
-     	io(rgb,34,		RGB LED Strip)	\
+     	io(rgb,2,		RGB LED Strip)	\
      	u8f(leds,17,		RGB LEDs)	\
 	s32al(home,3,		Home location) \
 	bf(ledsd,1,		First RGB is for SD)	\
@@ -1272,7 +1272,11 @@ checkupload (void)
       return;
    }
    if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+   {
+      ESP_LOGI (TAG, "No upload as no ard");
+      delay = up + 10;
       return;
+   }
    DIR *dir = opendir (sd_mount);
    if (!dir)
    {                            // Error
