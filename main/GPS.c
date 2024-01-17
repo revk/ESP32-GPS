@@ -46,7 +46,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	bl(powerman,N,		Power management)	\
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,17,		RGB LEDs)	\
-	u32al(home,3,		Home location) \
+	s32al(home,3,		Home location) \
 	bf(ledsd,1,		First RGB is for SD)	\
 	u8f(accaddress,0x19,	Accelerometer I2C ID)	\
      	io(accsda,13,		Accelerometer SDA) \
@@ -95,7 +95,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	u16(packtime,0,		Pack delta s)	\
 	s(url,,			URL to post data)	\
 
-#define u32al(n,a,t)	uint32_t n[a];
+#define s32al(n,a,t)	int32_t n[a];
 #define u32(n,d,t)	uint32_t n;
 #define u16(n,d,t)	uint16_t n;
 #define s8(n,d,t)	int8_t n;
@@ -112,7 +112,7 @@ settings
 #undef io
 #undef u16
 #undef u32
-#undef u32al
+#undef s32al
 #undef s8
 #undef u8
 #undef u8f
@@ -143,7 +143,7 @@ static uint8_t gpserrors = 0;   // last count
 static uint8_t vtgcount = 0;    // Count of stopped/moving
 static char rgbsd = 'K';
 static const char *cardstatus = NULL;
-static uint32_t pos[3] = { 0 }; // last x/y/z
+static int32_t pos[3] = { 0 };  // last x/y/z
 
 static uint64_t sdsize = 0,     // SD card data
    sdfree = 0;
@@ -1777,20 +1777,22 @@ revk_web_extra (httpd_req_t * req)
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
    revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
    revk_web_send (req, "<tr><td colspan=4>");
-   if (!isnan (status.hdop) && status.hdop != 0 && status.hdop <= 1 && b.sbas && pos[0])
-      revk_web_send (req,
-                     "<button onclick='var f=document.settings;f.home1.value=%ld;f.home2.value=%ld;f.home3.value=%ld;'>Set home location here</button>",
-                     pos[0], pos[1], pos[2]);
-   else
+   if (home[0] && (home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2]))
    {
-      revk_web_send (req, "Go outside and get a clean fix to set home location.");
+      if (!isnan (status.hdop) && status.hdop != 0 && status.hdop <= 1 && pos[0])
+         revk_web_send (req,
+                        "<button onclick='var f=document.settings;f.home1.value=%ld;f.home2.value=%ld;f.home3.value=%ld;'>Set here as home</button>",
+                        pos[0], pos[1], pos[2]);
+      else
+         revk_web_send (req, "Go outside and get a clean fix to set home location.");
       if (!isnan (status.hdop) && status.hdop != 0)
-      {
-         revk_web_send (req, "<br>HDOP=%.1f%s.", status.hdop, status.hdop <= 1 ? " (good)" : "");
-         if (!b.sbas)
-            revk_web_send (req, " No SBAS yet, this can take several minutes.");
-      }
-   }
+         revk_web_send (req, " HDOP=%.1f", status.hdop);
+      if (home[0] && pos[0])
+         revk_web_send (req, " Move %.0fm",
+                        sqrt ((home[0] - pos[0]) * (home[0] - pos[0]) + (home[1] - pos[1]) * (home[1] - pos[1]) +
+                              (home[2] - pos[2]) * (home[2] - pos[2])));
+   } else
+      revk_web_send (req, "At home");
    revk_web_send (req, "</td></tr>");
    revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X");
    revk_web_setting_i (req, "Home Y", "home2", home[1], "ECEF Y");
@@ -1801,7 +1803,7 @@ void
 revk_state_extra (jo_t j)
 {
    if (cardstatus)
-   jo_string (j, "SD", cardstatus);
+      jo_string (j, "SD", cardstatus);
    if (b.sdpresent && sdsize)
       jo_int (j, "Size", sdsize);
 }
@@ -1826,7 +1828,7 @@ app_main ()
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
 #define u32(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define u32al(n,a,t) revk_register(#n,a,sizeof(*n),&n,NULL,SETTING_LIVE);
+#define s32al(n,a,t) revk_register(#n,a,sizeof(*n),&n,NULL,SETTING_LIVE|SETTING_SIGNED);
 #define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
@@ -1838,7 +1840,7 @@ app_main ()
 #undef ui
 #undef u16
 #undef u32
-#undef u32al
+#undef s32al
 #undef s8
 #undef u8
 #undef u8f
