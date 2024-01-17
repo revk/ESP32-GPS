@@ -1794,7 +1794,8 @@ web_root (httpd_req_t * req)
                      (sdsize + 500000000LL) / 1000000000LL, b.sdwaiting ? " (data waiting to upload)" : " (empty)");
    else
       revk_web_send (req, "<p>SD card not present</p>");
-
+   if (b.home)
+      revk_web_send (req, "<p>At home</p>");
    return revk_web_foot (req, 0, 1, NULL);
 }
 
