@@ -47,6 +47,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(rgb,2,		RGB LED Strip)	\
      	u8f(leds,17,		RGB LEDs)	\
 	s32al(home,3,		Home location) \
+	u8(homem,50,		Home proximity)	\
 	bf(ledsd,1,		First RGB is for SD)	\
 	u8f(accaddress,0x19,	Accelerometer I2C ID)	\
      	io(accsda,13,		Accelerometer SDA) \
@@ -747,7 +748,7 @@ nmea (char *s)
             int64_t dx = pos[0] - home[0];
             int64_t dy = pos[1] - home[1];
             int64_t dz = pos[2] - home[2];
-            b.home = ((dx * dx + dy * dy + dz * dz < 100 * 100) ? 1 : 0);
+            b.home = ((dx * dx + dy * dy + dz * dz < (int64_t) homem * (int64_t) homem) ? 1 : 0);
          }
       }
       if (logodo)
@@ -1679,15 +1680,6 @@ sd_task (void *z)
 }
 
 void
-power_shutdown (void)
-{
-   if (powerman)
-   {                            // Consider deep sleep
-      // TODO
-   }
-}
-
-void
 rgb_task (void *z)
 {
    if (!leds || !strip)
@@ -1781,7 +1773,7 @@ void
 revk_web_extra (httpd_req_t * req)
 {
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
-   revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
+   //revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
    revk_web_send (req, "<tr><td colspan=4>");
    if (!pos[0] || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
    {
@@ -1917,5 +1909,14 @@ app_main ()
          vTaskDelete (NULL);
          return;
       }
+   }
+}
+
+void
+power_shutdown (void)
+{
+   if (powerman)
+   {                            // Consider deep sleep
+      // TODO
    }
 }
