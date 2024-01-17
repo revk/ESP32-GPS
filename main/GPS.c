@@ -747,7 +747,7 @@ nmea (char *s)
             int64_t dx = pos[0] - home[0];
             int64_t dy = pos[1] - home[1];
             int64_t dz = pos[2] - home[2];
-            b.home = ((dx * dx + dy * dy + dz * dz > 100 * 100) ? 1 : 0);
+            b.home = ((dx * dx + dy * dy + dz * dz < 100 * 100) ? 1 : 0);
          }
       }
       if (logodo)
