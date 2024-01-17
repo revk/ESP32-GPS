@@ -70,7 +70,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
         b(gpsglonass,Y,            GPS track GLONASS GPS)  \
         b(gpsgalileo,Y,            GPS track GALILEO GPS)  \
         b(gpswaas,Y,               GPS enable WAAS)        \
-        b(pssbas,Y,               GPS enable SBAS)        \
+        b(gpssbas,Y,               GPS enable SBAS)        \
         b(gpsqzss,N,               GPS enable QZSS)        \
         b(gpsaic,Y,                GPS enable AIC) \
         b(gpseasy,Y,               GPS enable Easy)        \
