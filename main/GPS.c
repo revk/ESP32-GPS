@@ -1473,7 +1473,7 @@ sd_task (void *z)
       if (sdcd)
       {
          if (b.dodismount)
-         {
+         { // Waiting card removed
             rgbsd = 'B';
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Remove card");
@@ -1484,7 +1484,7 @@ sd_task (void *z)
             continue;
          }
          if (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-         {
+         { // No card
             b.sdpresent = 0;
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Card not present");
@@ -1495,7 +1495,7 @@ sd_task (void *z)
             revk_enable_settings ();
          }
          while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-         {
+         { // Waiting card inserted
             wait (1);
             while (fixsd.count > 1000)
                fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
