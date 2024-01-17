@@ -1801,14 +1801,15 @@ revk_web_extra (httpd_req_t * req)
 {
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
    revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
-   revk_web_send(req,"<tr><td colspan=2>");
-   if(slow.hepe<5&&pos[0])
-	   revk_web_send(req,"<button onclick=''>Set home location</button>");
-   else revk_web_send(req,"Go outside and get a clean fix to set home location, may take a few minutes.");
-   revk_web_send(req,"</td></tr>");
-   revk_web_setting_i(req,"Home X","home1",home[0],"ECEF X",NULL,0);
-   revk_web_setting_i(req,"Home Y","home2",home[1],"ECEF Y",NULL,0);
-   revk_web_setting_i(req,"Home Z","home3",home[2],"ECEF Z",NULL,0);
+   revk_web_send (req, "<tr><td colspan=2>");
+   if (!isnan (status.hdop) && status.hdop != 0 && status.hdop < 1 && pos[0])
+      revk_web_send (req, "<button onclick=''>Set home location</button>");
+   else
+      revk_web_send (req, "Go outside and get a clean fix to set home location, may take a few minutes.");
+   revk_web_send (req, "</td></tr>");
+   revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X" );
+   revk_web_setting_i (req, "Home Y", "home2", home[1], "ECEF Y" );
+   revk_web_setting_i (req, "Home Z", "home3", home[2], "ECEF Z" );
 }
 
 void
