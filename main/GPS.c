@@ -43,9 +43,10 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 #define settings	\
      	io(pwr,-15,		System PWR)	\
      	io(charger,-33,		Charger status)	\
+	bl(powerman,N,		Power management)	\
      	io(rgb,34,		RGB LED Strip)	\
      	u8f(leds,17,		RGB LEDs)	\
-	u32a(home,3,		Home location) \
+	u32al(home,3,		Home location) \
 	bf(ledsd,1,		First RGB is for SD)	\
 	u8f(accaddress,0x19,	Accelerometer I2C ID)	\
      	io(accsda,13,		Accelerometer SDA) \
@@ -94,7 +95,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	u16(packtime,0,		Pack delta s)	\
 	s(url,,			URL to post data)	\
 
-#define u32a(n,a,t)	uint32_t n[a];
+#define u32al(n,a,t)	uint32_t n[a];
 #define u32(n,d,t)	uint32_t n;
 #define u16(n,d,t)	uint16_t n;
 #define s8(n,d,t)	int8_t n;
@@ -111,7 +112,7 @@ settings
 #undef io
 #undef u16
 #undef u32
-#undef u32a
+#undef u32al
 #undef s8
 #undef u8
 #undef u8f
@@ -143,6 +144,8 @@ static uint8_t vtgcount = 0;    // Count of stopped/moving
 static char rgbsd = 'K';
 static const char *cardstatus = NULL;
 static uint32_t pos[3]={0};	// last x/y/z
+         static uint64_t sdsize = 0, // SD card data
+            sdfree = 0;
 
 static struct
 {
@@ -1539,12 +1542,10 @@ sd_task (void *z)
          revk_error ("SD", &j);
       }
       {
-         uint64_t sdout = 0,
-            sdfree = 0;
-         esp_vfs_fat_info (sd_mount, &sdout, &sdfree);
+         esp_vfs_fat_info (sd_mount, &sdsize, &sdfree);
          jo_t j = jo_object_alloc ();
          jo_string (j, "action", cardstatus = (b.doformat ? "Formatted" : "Mounted"));
-         jo_int (j, "size", sdout);
+         jo_int (j, "size", sdsize);
          jo_int (j, "free", sdfree);
          revk_info ("SD", &j);
       }
@@ -1742,6 +1743,10 @@ static esp_err_t
 web_root (httpd_req_t * req)
 {
    web_head (req, *hostname ? hostname : appname);
+   if(b.sdpresent)
+	   revk_web_send(req,"<p>%dGB SD card inserted%s</p><p><i>Remove SD card to access settings</i></p>",(sdsize+500000000LL)/1000000000LL, b.sdwaiting?" (data waiting to upload)":" (empty)");
+   else revk_web_send(req,"<p>SD card not present</p>");
+
    return revk_web_foot (req, 0, 1, NULL);
 }
 
@@ -1776,7 +1781,7 @@ app_main ()
 #define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
 #define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
 #define u32(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define u32a(n,a,t) revk_register(#n,a,sizeof(*n),&n,NULL,0);
+#define u32al(n,a,t) revk_register(#n,a,sizeof(*n),&n,NULL,SETTING_LIVE);
 #define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
@@ -1788,7 +1793,7 @@ app_main ()
 #undef ui
 #undef u16
 #undef u32
-#undef u32a
+#undef u32al
 #undef s8
 #undef u8
 #undef u8f
