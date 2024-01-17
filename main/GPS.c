@@ -1706,13 +1706,13 @@ rgb_task (void *z)
          int n = 255 * p * (leds - ledsd) / 100;
          int q = n / 255;
          n &= 255;
-         l = leds - 1;
+         l = leds;
          while (q-- && l > ledsd)
-            revk_led (strip, l--, 255, revk_rgb (c));
+            revk_led (strip, --l, 255, revk_rgb (c));
          if (n && l > ledsd)
-            revk_led (strip, l--, n, revk_rgb (c));
+            revk_led (strip, --l, n, revk_rgb (c));
          while (l > ledsd)
-            revk_led (strip, l--, 255, revk_rgb ('K'));
+            revk_led (strip, --l, 255, revk_rgb ('K'));
          return p;
       }
       if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
