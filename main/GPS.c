@@ -1858,6 +1858,17 @@ app_main ()
 #undef s
 #undef str
    revk_start ();
+   if (charger)
+   {
+      gpio_reset_pin (charger & IO_MASK);
+      gpio_set_direction (charger & IO_MASK, GPIO_MODE_INPUT);
+   }
+   if (pwr)
+   {                            // System power
+      gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
+      gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
+      sleep(1); // Power on
+   }
    if (leds && rgb)
    {
       led_strip_config_t strip_config = {
@@ -1895,16 +1906,6 @@ app_main ()
    {
       register_get_uri ("/", web_root);
       revk_web_settings_add (webserver);
-   }
-   if (charger)
-   {
-      gpio_reset_pin (charger & IO_MASK);
-      gpio_set_direction (charger & IO_MASK, GPIO_MODE_INPUT);
-   }
-   if (pwr)
-   {                            // System power
-      gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
-      gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
    }
    while (1)
    {
