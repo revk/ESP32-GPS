@@ -156,7 +156,6 @@ static struct
    uint8_t dodismount:1;        // Stop SD until card removed
    uint8_t vtglast:1;           // Was last VTG moving
    uint8_t moving:1;            // We seem to be moving
-   uint8_t connect:1;           // MQTT connect
    uint8_t sdwaiting:1;         // SD has data
    uint8_t sdpresent:1;         // SD is present
    uint8_t sdempty:1;           // SD has no data
@@ -173,7 +172,7 @@ struct slow_s
    uint8_t fixmode;             // Fix mode from slow update
    float course;
    float speed;
-   float hdop;                  // Slow hepe
+   float hdop;                  // Slow hdop
    float pdop;
    float vdop;
 } status = { 0 };
@@ -408,7 +407,6 @@ app_callback (int client, const char *prefix, const char *target, const char *su
    }
    if (!strcmp (suffix, "connect"))
    {
-      b.connect = 1;
       return "";
    }
    if (!strcmp (suffix, "gpstx") && len)
@@ -907,7 +905,7 @@ nmea (char *s)
          status.gsa[s - 1] = c;
       }
       if (*f[15])
-         status.pdop = strtof (f[15], NULL);
+         status.hdop = strtof (f[15], NULL);
       if (*f[16])
          status.pdop = strtof (f[16], NULL);
       if (*f[17])
@@ -1484,7 +1482,7 @@ sd_task (void *z)
             b.sdpresent = 0;
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Card not present");
-            revk_error ("SD", &j);
+            revk_info ("SD", &j);
             rgbsd = 'M';
             revk_enable_wifi ();
             revk_enable_ap ();
@@ -1684,32 +1682,6 @@ power_shutdown (void)
 }
 
 void
-power_task (void *z)
-{
-   if (charger)
-   {
-      gpio_reset_pin (charger & IO_MASK);
-      gpio_set_direction (charger & IO_MASK, GPIO_MODE_INPUT);
-   }
-   if (pwr)
-   {                            // System power
-      gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
-      gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
-   }
-   if (!powerman || !charger || !pwr)
-   {
-      vTaskDelete (NULL);
-      return;
-   }
-   // TODO locking power?
-   while (1)
-   {
-      sleep (1);
-      // TODO
-   }
-}
-
-void
 rgb_task (void *z)
 {
    if (!leds || !strip)
@@ -1805,10 +1777,20 @@ revk_web_extra (httpd_req_t * req)
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
    revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
    revk_web_send (req, "<tr><td colspan=2>");
-   if (!isnan (status.hdop) && status.hdop != 0 && status.hdop < 1 && pos[0])
-      revk_web_send (req, "<button onclick='var f=document.settings;f.home1.value=%ld;f.home2.value=%ld;f.home3.value=%ld;'>Set home location</button>",pos[0],pos[1],pos[2]);
+   if (!isnan (status.hdop) && status.hdop != 0 && status.hdop <= 1 && b.sbas && pos[0])
+      revk_web_send (req,
+                     "<button onclick='var f=document.settings;f.home1.value=%ld;f.home2.value=%ld;f.home3.value=%ld;'>Set home location here</button>",
+                     pos[0], pos[1], pos[2]);
    else
-      revk_web_send (req, "Go outside and get a clean fix to set home location, may take a few minutes.");
+   {
+      revk_web_send (req, "Go outside and get a clean fix to set home location.");
+      if (!isnan (status.hdop) && status.hdop != 0)
+      {
+         revk_web_send (req, "<br>HDOP=%.1f%s.", status.hdop, status.hdop <= 1 ? " (good)" : "");
+         if (!b.sbas)
+            revk_web_send (req, " No SBAS yet, this can take several minutes.");
+      }
+   }
    revk_web_send (req, "</td></tr>");
    revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X");
    revk_web_setting_i (req, "Home Y", "home2", home[1], "ECEF Y");
@@ -1818,7 +1800,10 @@ revk_web_extra (httpd_req_t * req)
 void
 revk_state_extra (jo_t j)
 {
-   // TODO
+   if (cardstatus)
+   jo_string (j, "SD", cardstatus);
+   if (b.sdpresent && sdsize)
+      jo_int (j, "Size", sdsize);
 }
 
 void
@@ -1895,7 +1880,6 @@ app_main ()
    revk_task ("Log", log_task, NULL, 5);
    revk_task ("Pack", pack_task, NULL, 5);
    revk_task ("SD", sd_task, NULL, 5);
-   revk_task ("Power", power_task, NULL, 5);
    // Web interface
    httpd_config_t config = HTTPD_DEFAULT_CONFIG ();
    config.max_uri_handlers = 5 + revk_num_web_handlers ();
@@ -1904,25 +1888,25 @@ app_main ()
       register_get_uri ("/", web_root);
       revk_web_settings_add (webserver);
    }
+   if (charger)
+   {
+      gpio_reset_pin (charger & IO_MASK);
+      gpio_set_direction (charger & IO_MASK, GPIO_MODE_INPUT);
+   }
+   if (pwr)
+   {                            // System power
+      gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
+      gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
+   }
    while (1)
    {
       sleep (1);
       if (b.gpsinit)
          gps_init ();
-      if (b.connect)
+      if (!powerman || !charger || !pwr)
       {
-         b.connect = 0;
-         if (cardstatus)
-         {
-            jo_t j = jo_object_alloc ();
-            jo_string (j, "status", cardstatus);
-            if (sdsize)
-               jo_int (j, "size", sdsize);
-            if (sdfree)
-               jo_int (j, "free", sdfree);
-            revk_info ("SD", &j);
-         }
+         vTaskDelete (NULL);
+         return;
       }
-
    }
 }
