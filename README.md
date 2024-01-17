@@ -18,6 +18,8 @@ An SD card is needed (up to 16GB) for logs to be stored until uploaded. Do not d
 
 The s/w uses the [RevK library](https://github.com/revk/ESP32-RevK) which provides a format for commands and settings over MQTT. It means it will provide a WiFi AP to allow initial config (if not automatically shown, access the *router* IP via web page once connected). This allows WiFi, MQTT, and the URL for log uploads.
 
+Note: Remove SD card to enable WiFi, WiFi AP mode, and settings. While SD is inserted WiFi AP and settings are disabled, and WiFi only when stationary (and at home if `home` set).
+
 ## Log upload
 
 When back on WiFi, and not moving, all log files on the SD card are uploaded as a POST to specified URL (which can be https if using known certificates, including Let's Encrypt). Once uploaded it is deleted from the SD card. If no URL is set, the file stays on the SD card and can be accesses using a card reader as needed.
@@ -54,6 +56,8 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`packmax`|Max samples to be packed, normally `600` which means if travelling straight you get a sample at least this often|
 |`packdist`|If non zero this enables point reduction *packing*, with this being the allowed deviation (in metres)|
 |`packtime`|If *packing* and this is non zero then time is also a factor, with this being the allowed deviation in seconds|
+|`home`|An array of ECEF whole metres for home location (use web interface settings to set this from GPS). If set WiFi only comes on at home|
+|`homem`|Proximity to `home` for home working|
 
 ## LEDs
 
