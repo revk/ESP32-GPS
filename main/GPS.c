@@ -1764,7 +1764,7 @@ web_root (httpd_req_t * req)
       if (sdsize)
          revk_web_send (req, "<p>%.1fGB SD card inserted%s</p>", (float) sdsize / 1000000000LL,
                         b.sdwaiting ? " (data waiting to upload)" : " (empty)");
-      revk_web_send ("<p><i>Remove SD card to access settings</i>%s</p>", *url ? "" : " <b>Upload URL not set</b>");
+      revk_web_send (req, "<p><i>Remove SD card to access settings</i>%s</p>", *url ? "" : " <b>Upload URL not set</b>");
    } else
       revk_web_send (req, "<p>SD card not present</p>");
    if (b.home)
