@@ -3,8 +3,7 @@
 
 // TODO
 // ACC ADC for battery
-// POWER/BATTERY - sleeping on SDCD and CHARGER
-// "Home" lat/lon setting for WiFi enable/disable
+// POWER/BATTERY - sleeping on SDCD and CHARGER, or at least dropping to low power modes
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -1269,30 +1268,24 @@ checkupload (void)
       delay = up + 5;
       return;
    }
-   if (b.sdwaiting && !*url)
-   {
-      ESP_LOGI (TAG, "No upload as no URL");
-      delay = up + 60;
-      return;
-   }
    if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
    {
-      ESP_LOGI (TAG, "No upload as no ard");
+      ESP_LOGI (TAG, "No upload as no card");
       delay = up + 10;
-      return;
-   }
-   DIR *dir = opendir (sd_mount);
-   if (!dir)
-   {                            // Error
-      delay = up + 60;          // Don't try for a bit
-      jo_t j = jo_object_alloc ();
-      jo_stringf (j, "error", "Cannot open %s", sd_mount);
-      revk_error ("SD", &j);
-      ESP_LOGE (TAG, "Cannot open dir");
       return;
    }
    while (1)
    {
+      DIR *dir = opendir (sd_mount);
+      if (!dir)
+      {                         // Error
+         delay = up + 60;       // Don't try for a bit
+         jo_t j = jo_object_alloc ();
+         jo_stringf (j, "error", "Cannot open %s", sd_mount);
+         revk_error ("SD", &j);
+         ESP_LOGE (TAG, "Cannot open dir");
+         return;
+      }
       char zap = 0;
       char *filename = NULL;
       struct dirent *entry;
@@ -1309,10 +1302,20 @@ checkupload (void)
       {
          b.sdwaiting = 0;
          b.sdempty = 1;
+         ESP_LOGI (TAG, "No upload as empty");
+         delay = up + 60;
+         return;
       }
-      if (b.sdempty || revk_link_down () || !*url)
+      if (revk_link_down ())
       {                         // Don't send or nothing to send
-         ESP_LOGI (TAG, "Not sending now");
+         ESP_LOGI (TAG, "Not sending as off line (%s)", filename);
+         free (filename);
+         break;
+      }
+      if (revk_link_down () || !*url)
+      {                         // Don't send or nothing to send
+         ESP_LOGI (TAG, "Not sending as no URL (%s)", filename);
+         delay = up + 3600;
          free (filename);
          break;
       }
@@ -1355,7 +1358,7 @@ checkupload (void)
                   .crt_bundle_attach = esp_crt_bundle_attach,
                   .method = HTTP_METHOD_POST,
                };
-#define	BLOCK	1024
+#define	BLOCK	2048
                char *buf = mallocspi (BLOCK);
                int response = 0;
                if (buf)
@@ -1474,6 +1477,16 @@ sd_task (void *z)
       vTaskDelete (NULL);
       return;
    }
+   esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+      .format_if_mount_failed = 1,
+      .max_files = 1,
+      .allocation_unit_size = 16 * 1024,
+      .disk_status_check_enable = 1,
+   };
+   sdmmc_card_t *card = NULL;
+   sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
+   slot_config.gpio_cs = sdss & IO_MASK;
+   slot_config.host_id = host.slot;
    while (1)
    {
       if (sdcd)
@@ -1519,17 +1532,6 @@ sd_task (void *z)
       }
 
       wait (1);
-      esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-         .format_if_mount_failed = 1,
-         .max_files = 1,
-         .allocation_unit_size = 16 * 1024,
-         .disk_status_check_enable = 1,
-      };
-      sdmmc_card_t *card;
-      ESP_LOGI (TAG, "Initializing SD card");
-      sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
-      slot_config.gpio_cs = sdss & IO_MASK;
-      slot_config.host_id = host.slot;
       ESP_LOGI (TAG, "Mounting filesystem");
       ret = esp_vfs_fat_sdspi_mount (sd_mount, &host, &slot_config, &mount_config, &card);
       if (ret != ESP_OK)
