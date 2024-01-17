@@ -1806,7 +1806,7 @@ revk_web_extra (httpd_req_t * req)
    revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
    revk_web_send (req, "<tr><td colspan=2>");
    if (!isnan (status.hdop) && status.hdop != 0 && status.hdop < 1 && pos[0])
-      revk_web_send (req, "<button onclick=''>Set home location</button>");
+      revk_web_send (req, "<button onclick='var f=document.settings;f.home1.value=%ld;f.home2.value=%ld;f.home3.value=%ld;'>Set home location</button>",pos[0],pos[1],pos[2]);
    else
       revk_web_send (req, "Go outside and get a clean fix to set home location, may take a few minutes.");
    revk_web_send (req, "</td></tr>");
