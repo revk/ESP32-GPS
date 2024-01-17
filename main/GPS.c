@@ -1751,6 +1751,11 @@ revk_web_extra (httpd_req_t * req)
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
 }
 
+void revk_state_extra(jo_t j)
+{
+	// TODO
+}
+
 void
 app_main ()
 {
