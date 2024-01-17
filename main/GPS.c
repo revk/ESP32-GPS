@@ -1315,9 +1315,11 @@ checkupload (void)
          if (e)
          {
             jo_string (j, "error", e);
-            ESP_LOGE (TAG, "%s: %s", e, filename);
+            if (filename)
+               ESP_LOGE (TAG, "%s: %s", e, filename);
          }
-         jo_string (j, "filename", filename);
+         if (filename)
+            jo_string (j, "filename", filename);
          jo_string (j, "url", url);
          if (s.st_size)
             jo_int (j, "size", s.st_size);
@@ -1748,7 +1750,7 @@ rgb_task (void *z)
       if (!zdadue)
          revk_led (strip, leds - 1, 255, revk_rgb ('R'));       // No GPS clock
       else if (!b.moving)
-         revk_led (strip, leds - 1, 255, revk_rgb ('M'));       // Not moving
+         revk_led (strip, leds - 1, 255, revk_rgb (b.home ? 'W' : 'M'));        // Not moving
       led_strip_refresh (strip);
    }
 }
@@ -1788,7 +1790,7 @@ web_root (httpd_req_t * req)
 {
    web_head (req, *hostname ? hostname : appname);
    if (b.sdpresent)
-      revk_web_send (req, "<p>%dGB SD card inserted%s</p><p><i>Remove SD card to access settings</i></p>",
+      revk_web_send (req, "<p>%lldGB SD card inserted%s</p><p><i>Remove SD card to access settings</i></p>",
                      (sdsize + 500000000LL) / 1000000000LL, b.sdwaiting ? " (data waiting to upload)" : " (empty)");
    else
       revk_web_send (req, "<p>SD card not present</p>");
@@ -1807,9 +1809,9 @@ revk_web_extra (httpd_req_t * req)
    else
       revk_web_send (req, "Go outside and get a clean fix to set home location, may take a few minutes.");
    revk_web_send (req, "</td></tr>");
-   revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X" );
-   revk_web_setting_i (req, "Home Y", "home2", home[1], "ECEF Y" );
-   revk_web_setting_i (req, "Home Z", "home3", home[2], "ECEF Z" );
+   revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X");
+   revk_web_setting_i (req, "Home Y", "home2", home[1], "ECEF Y");
+   revk_web_setting_i (req, "Home Z", "home3", home[2], "ECEF Z");
 }
 
 void
@@ -1913,6 +1915,10 @@ app_main ()
          {
             jo_t j = jo_object_alloc ();
             jo_string (j, "status", cardstatus);
+            if (sdsize)
+               jo_int (j, "size", sdsize);
+            if (sdfree)
+               jo_int (j, "free", sdfree);
             revk_info ("SD", &j);
          }
       }

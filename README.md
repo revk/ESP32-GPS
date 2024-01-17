@@ -76,7 +76,7 @@ There is a string of LEDs to show satellite status.
 - Cyan LEDs show for GALILEO GPS, 2 sats per LED, last is dim if odd number
 - If there is less than a 3D fix the satellite LEDs blink
 - If no active satellites this shows a static pattern of all colours to look pretty
-- The last LED is over written with RED if no GPS receiver, and MAGENTA if stationary
+- The last LED is over written with RED if no GPS receiver, or WHITE if stationary at home, or  MAGENTA if stationary not at home (or home not set)
 
 ## Point reduction
 
