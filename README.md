@@ -50,8 +50,8 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`navstar`|Use NAVSTAR|
 |`glonass`|Use GLONASS|
 |`galileo`|Use GALILEO|
-|`moven`|How many VTG samples (10 second) have to have a non zero speed to start moving, or move if higher than `hepe`|
-|`stopn`|How many VTG samples (10 second) have to be zero to be stopped, or zero speed when back on WiFi and logs flushed|
+|`minmove`|Seconds moving before we start, if slow|
+|`minstop`|Seconds not moving before we stop, if not home, to allow for traffic lights, etc|
 |`packmin`|Min samples to be packed, normally `60`, set this to zero to disable packing|
 |`packmax`|Max samples to be packed, normally `600` which means if travelling straight you get a sample at least this often|
 |`packdist`|If non zero this enables point reduction *packing*, with this being the allowed deviation (in metres)|

@@ -58,8 +58,8 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	io(gpstx,7,		GPS Tx - Rx yo GPS GPIO)	\
 	io(gpstick,3,		GPS Tick GPIO)	\
         u32(gpsbaud,115200,	GPS Baud)	\
-	u8l(moven,3,		How many VTG before moving if slow) \
-	u8l(stopn,10,		How many VTG before stopped if not home) \
+	u16l(minmove,30,	Seconds moving to start if slow) \
+	u16l(minstop,120,	Seconds not moving to stop if not home) \
 	bf(sdled,N,		First LED is SD)	\
 	io(sdss,8,		MicroSD SS)    \
         io(sdmosi,9,		MicroSD MOSI)     \
@@ -67,14 +67,14 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
         io(sdcd,-11,		MicroSD CD)      \
         io(sdmiso,12,		MicroSD MISO)     \
 	u16(fixms,1000,		Fix rate)	\
-        b(gpsnavstar,Y,            GPS track NAVSTAR GPS)  \
-        b(gpsglonass,Y,            GPS track GLONASS GPS)  \
-        b(gpsgalileo,Y,            GPS track GALILEO GPS)  \
-        b(gpswaas,Y,               GPS enable WAAS)        \
-        b(gpssbas,Y,               GPS enable SBAS)        \
-        b(gpsqzss,N,               GPS enable QZSS)        \
-        b(gpsaic,Y,                GPS enable AIC) \
-        b(gpseasy,Y,               GPS enable Easy)        \
+        b(gpsnavstar,Y,         GPS track NAVSTAR GPS)  \
+        b(gpsglonass,Y,         GPS track GLONASS GPS)  \
+        b(gpsgalileo,Y,         GPS track GALILEO GPS)  \
+        b(gpswaas,Y,            GPS enable WAAS)        \
+        b(gpssbas,Y,            GPS enable SBAS)        \
+        b(gpsqzss,N,            GPS enable QZSS)        \
+        b(gpsaic,Y,             GPS enable AIC) \
+        b(gpseasy,Y,            GPS enable Easy)        \
 	b(gpswalking,N,         GPS Walking mode)       \
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
@@ -103,6 +103,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 #define u8(n,d,t)	uint8_t n;
 #define u8f(n,d,t)	uint8_t n;
 #define u8l(n,d,t)	uint8_t n;
+#define u16l(n,d,t)	uint16_t n;
 #define b(n,d,t) uint8_t n;
 #define bl(n,d,t) uint8_t n;
 #define bf(n,d,t) uint8_t n;
@@ -118,6 +119,7 @@ settings
 #undef u8
 #undef u8f
 #undef u8l
+#undef u16l
 #undef bl
 #undef bf
 #undef b
@@ -872,13 +874,13 @@ nmea (char *s)
       {                         // No change
          if (vtgcount < 255)
             vtgcount++;
-         if (b.vtglast && !b.moving && (vtgcount >= moven || (fix && status.speed > fix->hepe)))
+         if (b.vtglast && !b.moving && (vtgcount * VTGRATE >= minmove || (fix && status.speed > fix->hepe)))
          {                      // speed (kp/h) compared to EPE is just a rough idea that we are moving faster than random
             b.moving = 1;
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
             revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && (vtgcount >= stopn || b.home))
+         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= minstop || b.home))
          {
             b.moving = 0;
             jo_t j = jo_object_alloc ();
@@ -1125,7 +1127,7 @@ log_task (void *z)
 {                               // Log via MQTT
    while (1)
    {
-      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->quality && fixlog.count < VTGRATE * (moven + 1)))
+      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->quality && fixlog.count < minmove))
       {                         // Waiting - holds pre-moving data
          usleep (100000);
          continue;
@@ -1850,6 +1852,7 @@ app_main ()
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define u8f(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_FIX);
 #define u8l(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_LIVE);
+#define u16l(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_LIVE);
 #define s(n,d,t) revk_register(#n,0,0,&n,str(d),0);
 #define io(n,d,t)         revk_register(#n,0,sizeof(n),&n,"- "str(d),SETTING_SET|SETTING_BITFIELD|SETTING_FIX);
    settings;
@@ -1861,6 +1864,7 @@ app_main ()
 #undef u8
 #undef u8f
 #undef u8l
+#undef u16l
 #undef bl
 #undef bf
 #undef b
