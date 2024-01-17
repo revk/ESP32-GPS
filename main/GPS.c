@@ -1473,7 +1473,7 @@ sd_task (void *z)
       if (sdcd)
       {
          if (b.dodismount)
-         { // Waiting card removed
+         {                      // Waiting card removed
             rgbsd = 'B';
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Remove card");
@@ -1484,7 +1484,7 @@ sd_task (void *z)
             continue;
          }
          if (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-         { // No card
+         {                      // No card
             b.sdpresent = 0;
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Card not present");
@@ -1495,12 +1495,12 @@ sd_task (void *z)
             revk_enable_settings ();
          }
          while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-         { // Waiting card inserted
+         {                      // Waiting card inserted
             wait (1);
             while (fixsd.count > 1000)
                fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
          }
-         if (home[0] && !b.home)
+         if (pos[0] && home[0] && !b.home)
             revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
@@ -1797,7 +1797,7 @@ revk_web_extra (httpd_req_t * req)
          revk_web_send (req, " Move %.0fm",
                         sqrt ((home[0] - pos[0]) * (home[0] - pos[0]) + (home[1] - pos[1]) * (home[1] - pos[1]) +
                               (home[2] - pos[2]) * (home[2] - pos[2])));
-   } else if(b.home)
+   } else if (b.home)
       revk_web_send (req, "At home");
    revk_web_send (req, "</td></tr>");
    revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X");
@@ -1867,7 +1867,7 @@ app_main ()
    {                            // System power
       gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
       gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
-      sleep(1); // Power on
+      sleep (1);                // Power on
    }
    if (leds && rgb)
    {
