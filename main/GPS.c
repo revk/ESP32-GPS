@@ -143,9 +143,10 @@ static uint8_t gpserrors = 0;   // last count
 static uint8_t vtgcount = 0;    // Count of stopped/moving
 static char rgbsd = 'K';
 static const char *cardstatus = NULL;
-static uint32_t pos[3]={0};	// last x/y/z
-         static uint64_t sdsize = 0, // SD card data
-            sdfree = 0;
+static uint32_t pos[3] = { 0 }; // last x/y/z
+
+static uint64_t sdsize = 0,     // SD card data
+   sdfree = 0;
 
 static struct
 {
@@ -172,10 +173,10 @@ struct slow_s
    uint8_t fixmode;             // Fix mode from slow update
    float course;
    float speed;
-   float hdop;			// Slow hepe
+   float hdop;                  // Slow hepe
    float pdop;
    float vdop;
-} status={0};
+} status = { 0 };
 
 typedef struct fix_s fix_t;
 struct fix_s
@@ -230,6 +231,8 @@ fixq_t fixlog = { 0 };          // Queue to log
 fixq_t fixpack = { 0 };         // Queue to pack
 fixq_t fixsd = { 0 };           // Queue to record to SD
 fixq_t fixfree = { 0 };         // Queue of free
+
+void power_shutdown (void);
 
 fix_t *
 fixadd (fixq_t * q, fix_t * f)
@@ -377,6 +380,11 @@ app_callback (int client, const char *prefix, const char *target, const char *su
          return "Expecting JSON string";
       if (len > sizeof (value))
          return "Too long";
+   }
+   if (!strcmp (suffix, "shutdown"))
+   {
+      power_shutdown ();
+      return "";
    }
    if (!strcmp (suffix, "format"))
    {
@@ -732,15 +740,15 @@ nmea (char *s)
       startfix (f[1]);
       if (fix && strlen (f[2]) > 6 && strlen (f[3]) > 6 && strlen (f[4]) > 6)
       {
-         pos[0]=(fix->ecef.x = parse (f[2], 6))/1000000LL;
-         pos[1]=(fix->ecef.y = parse (f[3], 6))/1000000LL;
-         pos[2]=(fix->ecef.z = parse (f[4], 6))/1000000LL;
+         pos[0] = (fix->ecef.x = parse (f[2], 6)) / 1000000LL;
+         pos[1] = (fix->ecef.y = parse (f[3], 6)) / 1000000LL;
+         pos[2] = (fix->ecef.z = parse (f[4], 6)) / 1000000LL;
          fix->setecef = 1;
          if (home[0] && home[1] && home[2])
          {
-            int64_t dx =pos[0] - home[0];
-            int64_t dy =pos[1]-home[1];
-            int64_t dz =pos[2]-home[2];
+            int64_t dx = pos[0] - home[0];
+            int64_t dy = pos[1] - home[1];
+            int64_t dz = pos[2] - home[2];
             b.home = ((dx * dx + dy * dy + dz * dz > 100 * 100) ? 1 : 0);
          }
       }
@@ -857,11 +865,11 @@ nmea (char *s)
    if (*f[0] == 'G' && !strcmp (f[0] + 2, "VTG") && n >= 10)
    {
       vtgdue = up + VTGRATE + 2;
-      status.course = (*f[1]?strtof (f[1], NULL):NAN);
-      status.speed = (*f[7]?strtof (f[7], NULL):NAN);
+      status.course = (*f[1] ? strtof (f[1], NULL) : NAN);
+      status.speed = (*f[7] ? strtof (f[7], NULL) : NAN);
       // Start/stop
       if (b.vtglast == (status.fixmode <= 1 || status.speed == 0 ? 0 : 1))
-      { // No change
+      {                         // No change
          if (vtgcount < 255)
             vtgcount++;
          if (b.vtglast && !b.moving && (vtgcount >= moven || (fix && status.speed > fix->hepe)))
@@ -879,7 +887,7 @@ nmea (char *s)
          }
       } else
       {
-	       // Changed
+         // Changed
          b.vtglast ^= 1;
          vtgcount = 1;
       }
@@ -1236,7 +1244,7 @@ pack_task (void *z)
 void
 checkupload (void)
 {
-   if (!home[0]||b.home)
+   if (!home[0] || b.home)
       revk_enable_wifi ();
    uint32_t up = uptime ();
    static uint32_t delay = 0;
@@ -1486,7 +1494,7 @@ sd_task (void *z)
             while (fixsd.count > 1000)
                fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
          }
-         if (home[0]&&!b.home)
+         if (home[0] && !b.home)
             revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
@@ -1586,14 +1594,16 @@ sd_task (void *z)
                         sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
                o = fopen (filename, "w");
                if (!o)
-               {
+               {                // Open failed
                   ESP_LOGE (TAG, "Failed open file %s", filename);
                   jo_t j = jo_object_alloc ();
                   jo_string (j, "error", cardstatus = "Failed to create file");
                   jo_string (j, "filename", filename);
                   revk_error ("SD", &j);
                } else
-               {
+               {                // Open worked
+                  b.sdempty = 0;
+                  b.sdwaiting = 1;
                   revk_disable_wifi ();
                   ESP_LOGI (TAG, "Open file %s", filename);
                   jo_t j = jo_object_alloc ();
@@ -1647,7 +1657,6 @@ sd_task (void *z)
             jo_string (j, "action", cardstatus = "Log file closed");
             jo_string (j, "filename", filename);
             revk_info ("SD", &j);
-            b.sdempty = 0;
          }
          checkupload ();
       }
@@ -1660,6 +1669,41 @@ sd_task (void *z)
          jo_string (j, "action", cardstatus = "Dismounted");
          revk_info ("SD", &j);
       }
+   }
+}
+
+void
+power_shutdown (void)
+{
+   if (powerman)
+   {                            // Consider deep sleep
+      // TODO
+   }
+}
+
+void
+power_task (void *z)
+{
+   if (charger)
+   {
+      gpio_reset_pin (charger & IO_MASK);
+      gpio_set_direction (charger & IO_MASK, GPIO_MODE_INPUT);
+   }
+   if (pwr)
+   {                            // System power
+      gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
+      gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
+   }
+   if (!powerman || !charger || !pwr)
+   {
+      vTaskDelete (NULL);
+      return;
+   }
+   // TODO locking power?
+   while (1)
+   {
+      sleep (1);
+      // TODO
    }
 }
 
@@ -1743,9 +1787,11 @@ static esp_err_t
 web_root (httpd_req_t * req)
 {
    web_head (req, *hostname ? hostname : appname);
-   if(b.sdpresent)
-	   revk_web_send(req,"<p>%dGB SD card inserted%s</p><p><i>Remove SD card to access settings</i></p>",(sdsize+500000000LL)/1000000000LL, b.sdwaiting?" (data waiting to upload)":" (empty)");
-   else revk_web_send(req,"<p>SD card not present</p>");
+   if (b.sdpresent)
+      revk_web_send (req, "<p>%dGB SD card inserted%s</p><p><i>Remove SD card to access settings</i></p>",
+                     (sdsize + 500000000LL) / 1000000000LL, b.sdwaiting ? " (data waiting to upload)" : " (empty)");
+   else
+      revk_web_send (req, "<p>SD card not present</p>");
 
    return revk_web_foot (req, 0, 1, NULL);
 }
@@ -1754,11 +1800,13 @@ void
 revk_web_extra (httpd_req_t * req)
 {
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
+   revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
 }
 
-void revk_state_extra(jo_t j)
+void
+revk_state_extra (jo_t j)
 {
-	// TODO
+   // TODO
 }
 
 void
@@ -1823,16 +1871,6 @@ app_main ()
       if (strip)
          revk_task ("RGB", rgb_task, NULL, 4);
    }
-   if (charger)
-   {
-      gpio_reset_pin (charger & IO_MASK);
-      gpio_set_direction (charger & IO_MASK, GPIO_MODE_INPUT);
-   }
-   if (pwr)
-   {                            // System power
-      gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
-      gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
-   }
    // Main task...
    if (gpstick)
    {
@@ -1841,10 +1879,11 @@ app_main ()
    }
    gps_connect (gpsbaud);
    acc_init ();
-   revk_task ("NMEA", nmea_task, NULL, 10);
-   revk_task ("Log", log_task, NULL, 10);
-   revk_task ("Pack", pack_task, NULL, 10);
-   revk_task ("SD", sd_task, NULL, 10);
+   revk_task ("NMEA", nmea_task, NULL, 5);
+   revk_task ("Log", log_task, NULL, 5);
+   revk_task ("Pack", pack_task, NULL, 5);
+   revk_task ("SD", sd_task, NULL, 5);
+   revk_task ("Power", power_task, NULL, 5);
    // Web interface
    httpd_config_t config = HTTPD_DEFAULT_CONFIG ();
    config.max_uri_handlers = 5 + revk_num_web_handlers ();
