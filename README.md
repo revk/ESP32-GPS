@@ -72,15 +72,22 @@ There is one LED by the SD card that shows the status of the SD card (on older b
 |Blue|Card unmounted, safe to remove|
 |Cyan|Data being uploaded from card|
 
-There is a string of LEDs to show satellite status.
+There is a string of LEDs to show satellite status, in order...
 
 - If SBAS then a magenta LED shows
 - Green LEDs show for NAVSTAR GPS, 2 sats per LED, last is dim if odd number
 - Yellow LEDs show for GLONASS GPS, 2 sats per LED, last is dim if odd number
 - Cyan LEDs show for GALILEO GPS, 2 sats per LED, last is dim if odd number
+- If no active satellites and no SBAS a single red LED shows
 - If there is less than a 3D fix the satellite LEDs blink
-- If no active satellites this shows a static pattern of all colours to look pretty
-- The last LED is over written with RED if no GPS receiver, or ORANGE if stationary at home, or  MAGENTA if stationary not at home (or home not set)
+
+Also, the last LED is over written with RED if no GPS receiver, or ORANGE if stationary at home, or MAGENTA if stationary not at home (or home not set).
+
+There are also special situations where the LEDs show a bar graph, this starts at the other end to avoid confusion with satellite status.
+
+- Yellow for progress of software upgrade.
+- Cyan for progress of log upload (per file).
+
 
 ## Point reduction
 

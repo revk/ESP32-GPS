@@ -142,6 +142,7 @@ static SemaphoreHandle_t fix_mutex = NULL;
 static uint8_t gpserrorcount = 0;       // running count
 static uint8_t gpserrors = 0;   // last count
 static uint8_t vtgcount = 0;    // Count of stopped/moving
+static uint8_t upload = 0;      // File upload progress
 static char rgbsd = 'K';
 static const char *cardstatus = NULL;
 static int32_t pos[3] = { 0 };  // last x/y/z
@@ -1369,7 +1370,8 @@ checkupload (void)
                         while ((len = fread (buf, 1, BLOCK, i)) > 0)
                         {
                            total += len;
-                           ESP_LOGI (TAG, "%d bytes (%ld%%)", total, total * 100 / s.st_size);
+                           upload = total * 100 / s.st_size;
+                           ESP_LOGI (TAG, "%d bytes (%d%%)", total, upload);
                            esp_http_client_write (client, buf, len);
                         }
                         esp_http_client_fetch_headers (client);
@@ -1380,6 +1382,7 @@ checkupload (void)
                      esp_http_client_cleanup (client);
                   }
                }
+               upload = 0;
                free (u);
                free (buf);
 #undef	BLOCK
@@ -1696,31 +1699,43 @@ rgb_task (void *z)
       int l = 0;
       if (ledsd)
          revk_led (strip, l++, 255, revk_rgb (b.sdwaiting && blink > 1 ? tolower (rgbsd) : rgbsd));     // SD status (blink if data waiting)
-      if (b.sbas)
-         revk_led (strip, l++, 255, revk_rgb ('M'));    // SBAS
-      for (int s = 0; s < SYSTEMS; s++)
-      {                         // Two active sats per LED
-         for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
-            revk_led (strip, l++, 255, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
-         if ((status.gsa[s] & 1) && l < leds)
-            revk_led (strip, l++, 127, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+      int bargraph (char c, int p)
+      {
+         if (p <= 0 || leds <= ledsd)
+            return 0;
+         int n = 255 * p * (leds - ledsd) / 100;
+         int q = n / 255;
+         n &= 255;
+         l = leds - 1;
+         while (q-- && l > ledsd)
+            revk_led (strip, l--, 255, revk_rgb (c));
+         if (n && l > ledsd)
+            revk_led (strip, l--, n, revk_rgb (c));
+         while (l > ledsd)
+            revk_led (strip, l--, 255, revk_rgb ('K'));
+         return p;
       }
-      if (l <= ledsd)
-      {                         // No sats
-         while (l < leds / 2 - 3)
+      if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
+      {
+         if (b.sbas)
+            revk_led (strip, l++, 255, revk_rgb ('M')); // SBAS
+         for (int s = 0; s < SYSTEMS; s++)
+         {                      // Two active sats per LED
+            for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
+               revk_led (strip, l++, 255, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+            if ((status.gsa[s] & 1) && l < leds)
+               revk_led (strip, l++, 127, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+         }
+         if (l <= ledsd)
+            revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
+         while (l < leds)
             revk_led (strip, l++, 255, revk_rgb ('K'));
-         const char pattern[] = "RYGCBMRYGCBM",
-            *p = pattern + (uptime () % 6);
-         while (*p && l < leds && l < leds / 2 + 3)
-            revk_led (strip, l++, 255, revk_rgb (*p++));
+         // Flag issues in last LED
+         if (!zdadue)
+            revk_led (strip, leds - 1, 255, revk_rgb ('R'));    // No GPS clock
+         else if (!b.moving)
+            revk_led (strip, leds - 1, 255, revk_rgb (b.home ? 'O' : 'M'));     // Not moving
       }
-      while (l < leds)
-         revk_led (strip, l++, 255, revk_rgb ('K'));
-      // Flag isues in last LED
-      if (!zdadue)
-         revk_led (strip, leds - 1, 255, revk_rgb ('R'));       // No GPS clock
-      else if (!b.moving)
-         revk_led (strip, leds - 1, 255, revk_rgb (b.home ? 'O' : 'M'));        // Not moving
       led_strip_refresh (strip);
    }
 }
