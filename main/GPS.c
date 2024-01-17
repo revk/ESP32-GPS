@@ -1797,7 +1797,7 @@ revk_web_extra (httpd_req_t * req)
          revk_web_send (req, " Move %.0fm",
                         sqrt ((home[0] - pos[0]) * (home[0] - pos[0]) + (home[1] - pos[1]) * (home[1] - pos[1]) +
                               (home[2] - pos[2]) * (home[2] - pos[2])));
-   } else
+   } else if(b.home)
       revk_web_send (req, "At home");
    revk_web_send (req, "</td></tr>");
    revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X");
