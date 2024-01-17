@@ -1113,7 +1113,7 @@ log_line (fix_t * f)
       jo_int (j, "errors", gpserrors);
       gpserrors = 0;
    }
-   if (home[0] && b.home)
+   if (b.home)
       jo_bool (j, "home", 1);
    return j;
 }
@@ -1724,7 +1724,7 @@ rgb_task (void *z)
       if (!zdadue)
          revk_led (strip, leds - 1, 255, revk_rgb ('R'));       // No GPS clock
       else if (!b.moving)
-         revk_led (strip, leds - 1, 255, revk_rgb (b.home ? 'W' : 'M'));        // Not moving
+         revk_led (strip, leds - 1, 255, revk_rgb (b.home ? 'O' : 'M'));        // Not moving
       led_strip_refresh (strip);
    }
 }
