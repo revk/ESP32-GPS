@@ -373,7 +373,7 @@ const char *
 app_callback (int client, const char *prefix, const char *target, const char *suffix, jo_t j)
 {
    if (client || !prefix || target || strcmp (prefix, prefixcommand) || !suffix)
-      return NULL;              //Not for us or not a command from main MQTT
+      return NULL;              // Not for us or not a command from main MQTT
    char value[1000];
    int len = 0;
    if (j)
@@ -1757,7 +1757,7 @@ rgb_task (void *z)
       led_strip_refresh (strip);
    }
    for (int i = 0; i < leds; i++)
-      revk_led (strip, leds - 1, 255, revk_rgb ('K'));
+      revk_led (strip, i, 255, revk_rgb ('K'));
    led_strip_refresh (strip);
    vTaskDelete (NULL);
 }
@@ -1959,7 +1959,7 @@ app_main ()
 void
 power_shutdown (void)
 {
-	ESP_LOGE(TAG,"Good night");
+   ESP_LOGE (TAG, "Good night");
    b.die = 1;
    sleep (2);
    if (powerman && charger && pwr)
