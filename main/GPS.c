@@ -31,6 +31,7 @@ const char system_colour[SYSTEMS] = { 'G', 'Y', 'C' };
 const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 
 #define	I2CPORT	0
+#define	BATSCALE	3       // Pot divide on battery voltage (ADC1)
 
 #define IO_MASK         0x3F
 #define IO_INV          0x40
@@ -142,6 +143,8 @@ uint8_t upload = 0;             // File upload progress
 char rgbsd = 'K';
 const char *cardstatus = NULL;
 int32_t pos[3] = { 0 };         // last x/y/z
+
+float adc[3];                   // ADCs
 
 uint64_t sdsize = 0,            // SD card data
    sdfree = 0;
@@ -538,6 +541,7 @@ acc_init (void)
       vTaskDelete (NULL);
       return;
    }
+   acc_write (0x1F, 0xC0);      // Temp and ADC
    acc_write (0x20, 0x17);      // 1Hz high resolution
    acc_write (0x23, 0xB8);      // High resolution ±16g
    acc_write (0x2E, 0x00);      // Bypass
@@ -565,6 +569,10 @@ acc_get (fix_t * f)
       f->acc.z = ((float) ((int16_t) (data[5] + (data[6] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       f->setacc = 1;
    }
+   acc_read (0x80 + 0x08, 6, data);
+   adc[0] = (1.2 + 0.4 * (float) ((int16_t) (data[0] + (data[1] << 8)) >> 6) / 1024) * BATSCALE;
+   adc[1] = (1.2 + 0.4 * (float) ((int16_t) (data[2] + (data[3] << 8)) >> 6) / 1024);   // Spare
+   adc[2] = (1.2 + 0.4 * (float) ((int16_t) (data[4] + (data[5] << 8)) >> 6) / 1024);   // Temp
 }
 
 void
@@ -578,7 +586,7 @@ gps_init (void)
       sleep (1);
       gps_connect (gpsbaud);
    }
-   gps_cmd ("$PM<TK101");       // Hot start
+   gps_cmd ("$PMTK101");        // Hot start
    gps_cmd ("$PMTK286,%d", gpsaic ? 1 : 0);     // AIC
    gps_cmd ("$PMTK353,%d,%d,%d,0,0", gpsnavstar, gpsglonass, gpsgalileo);
    gps_cmd ("$PMTK352,%d", gpsqzss ? 0 : 1);    // QZSS (yes, 1 is disable)
@@ -1825,6 +1833,8 @@ revk_web_extra (httpd_req_t * req)
 {
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
    revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
+   revk_web_setting_i (req, "Move time", "move", move, "Seconds moving to start journey (quicker if moving fast)");
+   revk_web_setting_i (req, "Stop time", "stop", stop, "Seconds stopped to end journey (quicker if at home)");
    revk_web_send (req, "<tr><td colspan=4>");
    if (!pos[0] || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
    {
@@ -1857,6 +1867,9 @@ revk_state_extra (jo_t j)
       jo_int (j, "sdsize", sdsize);
    if (b.charging)
       jo_bool (j, "charging", 1);
+   jo_litf (j, "bat", "%.3f", adc[0]);
+   jo_litf (j, "temp", "%.3f", adc[2]);
+   jo_close (j);
 }
 
 void
@@ -1967,7 +1980,11 @@ app_main ()
          b.charging = gpio_get_level (charger & IO_MASK) == ((charger & IO_INV) ? 0 : 1);
       if (b.charging)
          busy = up;
-      if (powerman && charger && pwr && !b.charging && busy + (b.sdpresent ? 60 : 600) < up)
+      if (powerman && charger && pwr
+#ifdef  CONFIG_IDF_TARGET_ESP32S3
+          && (charger & IO_MASK) <= 21
+#endif
+          && !b.charging && busy + (b.sdpresent ? 60 : 600) < up)
          revk_restart ("Power down", 1);
    }
 }
@@ -1978,14 +1995,15 @@ power_shutdown (void)
    ESP_LOGE (TAG, "Good night");
    b.die = 1;
    sleep (2);
-   if (powerman && charger && pwr)
+   if (powerman && charger && pwr
+#ifdef  CONFIG_IDF_TARGET_ESP32S3
+       && (charger & IO_MASK) <= 21
+#endif
+      )
    {                            // Consider deep sleep
       uint64_t mask = 1LL << (charger & IO_MASK);
       esp_sleep_enable_ext1_wakeup (mask, (charger & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
       esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
-   } else
-   {
-      if (pwr)
-         gpio_hold_en (pwr & IO_MASK);
-   }
+   } else if (pwr)
+      gpio_hold_en (pwr & IO_MASK);
 }
