@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-03 14:44:34
+// Generated 2024-01-18 16:26:16
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -31,70 +31,78 @@ pcbwidth=43.000000;
 pcblength=26.000000;
 // Parts to go on PCB (top)
 module parts_top(part=false,hole=false,block=false){
-translate([17.600000,19.300000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([16.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([12.100000,7.125000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([3.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([17.700000,18.900000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([22.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([28.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([19.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([17.600000,23.400000,0.800000])rotate([0,0,90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
-// Missing model C2.1 CP_EIA-7343-31_Kemet-D
-translate([7.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([1.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([20.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([38.000000,10.200000,0.800000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([14.100000,7.200000,0.800000])rotate([0,0,90.000000])m3(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
-translate([27.000000,6.200000,0.800000])rotate([0,0,90.000000])m4(part,hole,block,casetop); // U3 (back)
-translate([12.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([27.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([5.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([41.700000,9.400000,0.800000])rotate([0,0,90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
-translate([32.000000,1.600000,0.800000])rotate([0,0,180.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
-translate([25.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([21.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([30.800000,8.800000,0.800000])m5(part,hole,block,casetop); // D2 (back)
 translate([4.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([9.800000,7.575000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([9.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([28.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([17.100000,25.100000,0.800000])rotate([0,0,90.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([25.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([17.700000,22.400000,0.800000])rotate([0,0,90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
+translate([6.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+// Missing model C2.1 CP_EIA-7343-31_Kemet-D
+translate([13.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([7.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([26.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([38.000000,10.200000,0.800000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+// Missing model R10.1 R_1218_3246Metric
+translate([34.750000,10.000000,0.800000])rotate([0,0,-90.000000])m3(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
+translate([8.400000,7.600000,0.800000])rotate([0,0,-90.000000])m3(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
+translate([27.000000,6.200000,0.800000])rotate([0,0,90.000000])m4(part,hole,block,casetop); // U3 (back)
+translate([18.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([32.200000,3.500000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([11.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([41.700000,9.400000,0.800000])rotate([0,0,90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
+translate([0.700000,7.100000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
+translate([31.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([27.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([30.800000,8.800000,0.800000])m5(part,hole,block,casetop); // D2 (back)
+translate([10.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([23.000000,6.000000,0.800000])rotate([0,0,180.000000])m4(part,hole,block,casetop); // U3 (back)
 translate([38.300000,16.035000,0.800000])rotate([0,0,90.000000])translate([0.000000,-1.050000,0.000000])rotate([90.000000,-0.000000,-0.000000])m6(part,hole,block,casetop); // RevK:USB-C-Socket-H CSP-USC16-TR (back)
+translate([5.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([26.000000,18.000000,0.800000])m7(part,hole,block,casetop); // U1 (back)
-translate([10.300000,7.150000,0.800000])rotate([0,0,-90.000000])m8(part,hole,block,casetop); // Q2 (back)
-translate([17.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([12.050000,6.937500,0.800000])rotate([0,0,90.000000])m8(part,hole,block,casetop); // Q2 (back)
+translate([23.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([25.600000,8.800000,0.800000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
-translate([10.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([16.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 // Missing model J6.1 TF_PUSH
 // Missing model J6.2 MicroSD
-translate([16.100000,7.250000,0.800000])rotate([0,0,90.000000])m3(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
+translate([20.000000,5.750000,0.800000])rotate([0,0,-90.000000])m3(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
+translate([1.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([27.500000,8.800000,0.800000])rotate([0,0,180.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
-translate([23.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([29.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([2.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([21.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([12.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([17.700000,15.700000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([0.700000,9.000000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([15.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([6.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([17.600000,15.900000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([32.000000,2.500000,0.800000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
-translate([9.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([17.000000,25.000000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([19.525000,5.000000,0.800000])rotate([0,0,180.000000])m9(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
-translate([14.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([30.937500,6.000000,0.800000])m10(part,hole,block,casetop); // Q1 (back)
-translate([26.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([16.600000,23.450000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([20.800000,8.200000,0.800000])m9(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
+translate([20.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([30.937500,6.000000,0.800000])m8(part,hole,block,casetop); // Q2 (back)
+translate([32.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([3.600000,10.000000,0.800000])rotate([0,0,180.000000])m9(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
-translate([18.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([24.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([3.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([30.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([6.900000,4.800000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([8.500000,7.150000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
+translate([12.000000,4.600000,0.800000])rotate([0,0,180.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([40.700000,9.400000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
-translate([13.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([19.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 // Missing model J1.1 S2B-PH-SM4-TB
 // Missing model U2.1 LGA-16_3x3mm_P0.5mm_LayoutBorder3x5y
-translate([17.700000,21.600000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([2.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([32.000000,0.700000,0.800000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
-translate([11.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([17.700000,20.600000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([8.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([17.600000,17.600000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([0.700000,5.300000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
+translate([17.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
+translate([14.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
+translate([17.700000,17.300000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 }
 
-parts_top=20;
+parts_top=23;
 // Parts to go on PCB (bottom)
 module parts_bottom(part=false,hole=false,block=false){
 // Missing model J3.1 1815154 (back)
@@ -239,11 +247,13 @@ translate([-15.4/2,-15.45/2,0])
 
 module m8(part=false,hole=false,block=false,height)
 { // Q2
-// SOT-323_SC-70
+// SOT-23
 if(part)
 {
-	b(0,0,0,1.26,2.2,1.2);
-	b(0,0,0,2.2,2.2,0.6);
+	b(0,0,0,1.4,3.0,1.1); // Body
+	b(-0.9375,-0.95,0,1.475,0.6,0.5); // Pad
+	b(-0.9375,0.95,0,1.475,0.6,0.5); // Pad
+	b(0.9375,0,0,1.475,0.6,0.5); // Pad
 }
 }
 
@@ -254,18 +264,6 @@ if(part)
 {
 	b(0,0,0,1.6,0.8,1); // Chip
 	b(0,0,0,1.6,0.95,0.2); // Pad size
-}
-}
-
-module m10(part=false,hole=false,block=false,height)
-{ // Q1
-// SOT-23
-if(part)
-{
-	b(0,0,0,1.4,3.0,1.1); // Body
-	b(-0.9375,-0.95,0,1.475,0.6,0.5); // Pad
-	b(-0.9375,0.95,0,1.475,0.6,0.5); // Pad
-	b(0.9375,0,0,1.475,0.6,0.5); // Pad
 }
 }
 
