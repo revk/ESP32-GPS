@@ -3,8 +3,7 @@
 
 // TODO
 // ACC ADC for battery
-// POWER/BATTERY - sleeping on SDCD and CHARGER
-// "Home" lat/lon setting for WiFi enable/disable
+// POWER/BATTERY - sleeping on SDCD and CHARGER, or at least dropping to low power modes
 
 static __attribute__((unused))
      const char TAG[] = "GPS";
@@ -47,6 +46,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
      	io(rgb,2,		RGB LED Strip)	\
      	u8f(leds,17,		RGB LEDs)	\
 	s32al(home,3,		Home location) \
+	u8(homem,50,		Home proximity)	\
 	bf(ledsd,1,		First RGB is for SD)	\
 	u8f(accaddress,0x19,	Accelerometer I2C ID)	\
      	io(accsda,13,		Accelerometer SDA) \
@@ -57,8 +57,8 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	io(gpstx,7,		GPS Tx - Rx yo GPS GPIO)	\
 	io(gpstick,3,		GPS Tick GPIO)	\
         u32(gpsbaud,115200,	GPS Baud)	\
-	u8l(moven,3,		How many VTG before moving if slow) \
-	u8l(stopn,10,		How many VTG before stopped if not home) \
+	u16l(move,30,		Seconds moving to start if slow) \
+	u16l(stop,120,		Seconds not moving to stop if not home) \
 	bf(sdled,N,		First LED is SD)	\
 	io(sdss,8,		MicroSD SS)    \
         io(sdmosi,9,		MicroSD MOSI)     \
@@ -66,14 +66,14 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
         io(sdcd,-11,		MicroSD CD)      \
         io(sdmiso,12,		MicroSD MISO)     \
 	u16(fixms,1000,		Fix rate)	\
-        b(gpsnavstar,Y,            GPS track NAVSTAR GPS)  \
-        b(gpsglonass,Y,            GPS track GLONASS GPS)  \
-        b(gpsgalileo,Y,            GPS track GALILEO GPS)  \
-        b(gpswaas,Y,               GPS enable WAAS)        \
-        b(gpssbas,Y,               GPS enable SBAS)        \
-        b(gpsqzss,N,               GPS enable QZSS)        \
-        b(gpsaic,Y,                GPS enable AIC) \
-        b(gpseasy,Y,               GPS enable Easy)        \
+        b(gpsnavstar,Y,         GPS track NAVSTAR GPS)  \
+        b(gpsglonass,Y,         GPS track GLONASS GPS)  \
+        b(gpsgalileo,Y,         GPS track GALILEO GPS)  \
+        b(gpswaas,Y,            GPS enable WAAS)        \
+        b(gpssbas,Y,            GPS enable SBAS)        \
+        b(gpsqzss,N,            GPS enable QZSS)        \
+        b(gpsaic,Y,             GPS enable AIC) \
+        b(gpseasy,Y,            GPS enable Easy)        \
 	b(gpswalking,N,         GPS Walking mode)       \
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
@@ -102,6 +102,7 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 #define u8(n,d,t)	uint8_t n;
 #define u8f(n,d,t)	uint8_t n;
 #define u8l(n,d,t)	uint8_t n;
+#define u16l(n,d,t)	uint16_t n;
 #define b(n,d,t) uint8_t n;
 #define bl(n,d,t) uint8_t n;
 #define bf(n,d,t) uint8_t n;
@@ -117,6 +118,7 @@ settings
 #undef u8
 #undef u8f
 #undef u8l
+#undef u16l
 #undef bl
 #undef bf
 #undef b
@@ -125,12 +127,12 @@ settings
 #define	ZDARATE	10
 #define	GSARATE	10
 #define	GSVRATE	10
-#define VTGRATE 10
-static uint32_t zdadue = 0;
+#define VTGRATE 5
+static uint32_t zdadue = 0;     // Uptime when due
 static uint32_t gsadue = 0;
 static uint32_t gsvdue = 0;
 static uint32_t vtgdue = 0;
-
+static uint32_t busy = 0;       // Uptime last busy
 static httpd_handle_t webserver = NULL;
 static const char sd_mount[] = "/sd";
 static led_strip_handle_t strip = NULL;
@@ -141,6 +143,7 @@ static SemaphoreHandle_t fix_mutex = NULL;
 static uint8_t gpserrorcount = 0;       // running count
 static uint8_t gpserrors = 0;   // last count
 static uint8_t vtgcount = 0;    // Count of stopped/moving
+static uint8_t upload = 0;      // File upload progress
 static char rgbsd = 'K';
 static const char *cardstatus = NULL;
 static int32_t pos[3] = { 0 };  // last x/y/z
@@ -150,6 +153,7 @@ static uint64_t sdsize = 0,     // SD card data
 
 static struct
 {
+   uint8_t die:1;               // End tasks
    uint8_t gpsstarted:1;        // GPS started
    uint8_t gpsinit:1;           // Init GPS
    uint8_t doformat:1;          // Format SD
@@ -369,7 +373,7 @@ const char *
 app_callback (int client, const char *prefix, const char *target, const char *suffix, jo_t j)
 {
    if (client || !prefix || target || strcmp (prefix, prefixcommand) || !suffix)
-      return NULL;              //Not for us or not a command from main MQTT
+      return NULL;              // Not for us or not a command from main MQTT
    char value[1000];
    int len = 0;
    if (j)
@@ -379,6 +383,11 @@ app_callback (int client, const char *prefix, const char *target, const char *su
          return "Expecting JSON string";
       if (len > sizeof (value))
          return "Too long";
+   }
+   if (!strcmp (suffix, "upgrade"))
+   {
+      busy = uptime ();
+      return "";
    }
    if (!strcmp (suffix, "shutdown"))
    {
@@ -747,7 +756,7 @@ nmea (char *s)
             int64_t dx = pos[0] - home[0];
             int64_t dy = pos[1] - home[1];
             int64_t dz = pos[2] - home[2];
-            b.home = ((dx * dx + dy * dy + dz * dz < 100 * 100) ? 1 : 0);
+            b.home = ((dx * dx + dy * dy + dz * dz < (int64_t) homem * (int64_t) homem) ? 1 : 0);
          }
       }
       if (logodo)
@@ -870,13 +879,13 @@ nmea (char *s)
       {                         // No change
          if (vtgcount < 255)
             vtgcount++;
-         if (b.vtglast && !b.moving && (vtgcount >= moven || (fix && status.speed > fix->hepe)))
+         if (b.vtglast && !b.moving && (vtgcount * VTGRATE >= move || (fix && status.speed > fix->hepe)))
          {                      // speed (kp/h) compared to EPE is just a rough idea that we are moving faster than random
             b.moving = 1;
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
             revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && (vtgcount >= stopn || b.home))
+         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= stop || b.home))
          {
             b.moving = 0;
             jo_t j = jo_object_alloc ();
@@ -940,7 +949,7 @@ nmea_task (void *z)
    uint8_t buf[1000],
     *p = buf;
    uint64_t timeout = esp_timer_get_time () + 10000000;
-   while (1)
+   while (!b.die)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes (gpsuart, p, buf + sizeof (buf) - p, 10 / portTICK_PERIOD_MS);
@@ -1002,6 +1011,9 @@ nmea_task (void *z)
       }
       p = buf;                  // Start from scratch
    }
+   // TODO GPS low power
+   // TODO ACC low power
+   vTaskDelete (NULL);
 }
 
 jo_t
@@ -1106,7 +1118,7 @@ log_line (fix_t * f)
    }
    if (logdsq && !isnan (f->dsq))
       jo_litf (j, "dsq", "%f", f->dsq);
-   if (logodo && f->setodo)
+   if (logodo && f->setodo && f->odo)
       jo_litf (j, "odo", "%lld.%02lld", f->odo / 100, f->odo % 100);
    if (gpserrors)
    {
@@ -1121,9 +1133,9 @@ log_line (fix_t * f)
 void
 log_task (void *z)
 {                               // Log via MQTT
-   while (1)
+   while (!b.die)
    {
-      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->quality && fixlog.count < VTGRATE * (moven + 1)))
+      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->quality && fixlog.count < move))
       {                         // Waiting - holds pre-moving data
          usleep (100000);
          continue;
@@ -1136,6 +1148,7 @@ log_task (void *z)
       // Pass on - if packing, and TS and ECEF, to packing, else if packing and no TS or ECEF then drop as packing does not do those. Else direct to SD
       fixadd (packdist && packmin ? !f->sett || !f->setecef ? &fixfree : &fixpack : &fixsd, f);
    }
+   vTaskDelete (NULL);
 }
 
 float
@@ -1192,7 +1205,7 @@ void
 pack_task (void *z)
 {                               // Packing - only gets data with ECEF and time set
    uint32_t packtry = packmin;
-   while (1)
+   while (!b.die)
    {
       if (fixpack.count < 2 || (b.moving && fixpack.count < packtry))
       {                         // Wait
@@ -1239,6 +1252,7 @@ pack_task (void *z)
          fixadd (X->deleted ? &fixfree : &fixsd, X);
       }
    }
+   vTaskDelete (NULL);
 }
 
 void
@@ -1265,30 +1279,24 @@ checkupload (void)
       delay = up + 5;
       return;
    }
-   if (b.sdwaiting && !*url)
-   {
-      ESP_LOGI (TAG, "No upload as no URL");
-      delay = up + 60;
-      return;
-   }
    if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
    {
-      ESP_LOGI (TAG, "No upload as no ard");
+      ESP_LOGI (TAG, "No upload as no card");
       delay = up + 10;
-      return;
-   }
-   DIR *dir = opendir (sd_mount);
-   if (!dir)
-   {                            // Error
-      delay = up + 60;          // Don't try for a bit
-      jo_t j = jo_object_alloc ();
-      jo_stringf (j, "error", "Cannot open %s", sd_mount);
-      revk_error ("SD", &j);
-      ESP_LOGE (TAG, "Cannot open dir");
       return;
    }
    while (1)
    {
+      DIR *dir = opendir (sd_mount);
+      if (!dir)
+      {                         // Error
+         delay = up + 60;       // Don't try for a bit
+         jo_t j = jo_object_alloc ();
+         jo_stringf (j, "error", "Cannot open %s", sd_mount);
+         revk_error ("SD", &j);
+         ESP_LOGE (TAG, "Cannot open dir");
+         return;
+      }
       char zap = 0;
       char *filename = NULL;
       struct dirent *entry;
@@ -1305,13 +1313,24 @@ checkupload (void)
       {
          b.sdwaiting = 0;
          b.sdempty = 1;
+         ESP_LOGI (TAG, "No upload as empty");
+         delay = up + 60;
+         return;
       }
-      if (b.sdempty || revk_link_down () || !*url)
+      if (revk_link_down ())
       {                         // Don't send or nothing to send
-         ESP_LOGI (TAG, "Not sending now");
+         ESP_LOGI (TAG, "Not sending as off line (%s)", filename);
          free (filename);
          break;
       }
+      if (revk_link_down () || !*url)
+      {                         // Don't send or nothing to send
+         ESP_LOGI (TAG, "Not sending as no URL (%s)", filename);
+         delay = up + 3600;
+         free (filename);
+         break;
+      }
+      busy = up;
       struct stat s = { 0 };
       jo_t makeerr (const char *e)
       {
@@ -1351,7 +1370,7 @@ checkupload (void)
                   .crt_bundle_attach = esp_crt_bundle_attach,
                   .method = HTTP_METHOD_POST,
                };
-#define	BLOCK	1024
+#define	BLOCK	2048
                char *buf = mallocspi (BLOCK);
                int response = 0;
                if (buf)
@@ -1368,8 +1387,10 @@ checkupload (void)
                         while ((len = fread (buf, 1, BLOCK, i)) > 0)
                         {
                            total += len;
-                           ESP_LOGI (TAG, "%d bytes (%ld%%)", total, total * 100 / s.st_size);
+                           upload = total * 100 / s.st_size;
+                           ESP_LOGI (TAG, "%d bytes (%d%%)", total, upload);
                            esp_http_client_write (client, buf, len);
+                           busy = uptime ();
                         }
                         esp_http_client_fetch_headers (client);
                         esp_http_client_flush_response (client, &len);
@@ -1379,6 +1400,7 @@ checkupload (void)
                      esp_http_client_cleanup (client);
                   }
                }
+               upload = 0;
                free (u);
                free (buf);
 #undef	BLOCK
@@ -1468,12 +1490,22 @@ sd_task (void *z)
       vTaskDelete (NULL);
       return;
    }
-   while (1)
+   esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+      .format_if_mount_failed = 1,
+      .max_files = 1,
+      .allocation_unit_size = 16 * 1024,
+      .disk_status_check_enable = 1,
+   };
+   sdmmc_card_t *card = NULL;
+   sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
+   slot_config.gpio_cs = sdss & IO_MASK;
+   slot_config.host_id = host.slot;
+   while (!b.die)
    {
       if (sdcd)
       {
          if (b.dodismount)
-         {
+         {                      // Waiting card removed
             rgbsd = 'B';
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Remove card");
@@ -1484,7 +1516,7 @@ sd_task (void *z)
             continue;
          }
          if (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-         {
+         {                      // No card
             b.sdpresent = 0;
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Card not present");
@@ -1495,12 +1527,12 @@ sd_task (void *z)
             revk_enable_settings ();
          }
          while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-         {
+         {                      // Waiting card inserted
             wait (1);
             while (fixsd.count > 1000)
                fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
          }
-         if (home[0] && !b.home)
+         if (pos[0] && home[0] && !b.home)
             revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
@@ -1513,17 +1545,6 @@ sd_task (void *z)
       }
 
       wait (1);
-      esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-         .format_if_mount_failed = 1,
-         .max_files = 1,
-         .allocation_unit_size = 16 * 1024,
-         .disk_status_check_enable = 1,
-      };
-      sdmmc_card_t *card;
-      ESP_LOGI (TAG, "Initializing SD card");
-      sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
-      slot_config.gpio_cs = sdss & IO_MASK;
-      slot_config.host_id = host.slot;
       ESP_LOGI (TAG, "Mounting filesystem");
       ret = esp_vfs_fat_sdspi_mount (sd_mount, &host, &slot_config, &mount_config, &card);
       if (ret != ESP_OK)
@@ -1565,7 +1586,7 @@ sd_task (void *z)
       }
       b.doformat = 0;
       checkupload ();
-      while (!b.doformat && !b.dodismount)
+      while (!b.doformat && !b.dodismount && !b.die)
       {
          FILE *o = NULL;
          int line = 0;
@@ -1676,15 +1697,7 @@ sd_task (void *z)
          revk_info ("SD", &j);
       }
    }
-}
-
-void
-power_shutdown (void)
-{
-   if (powerman)
-   {                            // Consider deep sleep
-      // TODO
-   }
+   vTaskDelete (NULL);
 }
 
 void
@@ -1696,41 +1709,57 @@ rgb_task (void *z)
       return;
    }
    uint8_t blink = 0;
-   while (1)
+   while (!b.die)
    {
       if (++blink > 3)
          blink = 0;
       usleep (200000);
       int l = 0;
       if (ledsd)
-         revk_led (strip, l++, 255, revk_rgb (b.sdwaiting && blink > 1 ? tolower (rgbsd) : rgbsd));     // SD status (blink if data waiting)
-      if (b.sbas)
-         revk_led (strip, l++, 255, revk_rgb ('M'));    // SBAS
-      for (int s = 0; s < SYSTEMS; s++)
-      {                         // Two active sats per LED
-         for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
-            revk_led (strip, l++, 255, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
-         if ((status.gsa[s] & 1) && l < leds)
-            revk_led (strip, l++, 127, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+         revk_led (strip, l++, b.sdwaiting && blink > 1 ? 127 : 255, revk_rgb (rgbsd)); // SD status (blink if data waiting)
+      int bargraph (char c, int p)
+      {
+         if (p <= 0 || leds <= ledsd)
+            return 0;
+         int n = 255 * p * (leds - ledsd) / 100;
+         int q = n / 255;
+         n &= 255;
+         l = leds;
+         while (q-- && l > ledsd)
+            revk_led (strip, --l, 255, revk_rgb (c));
+         if (n && l > ledsd)
+            revk_led (strip, --l, n, revk_rgb (c));
+         while (l > ledsd)
+            revk_led (strip, --l, 255, revk_rgb ('K'));
+         return p;
       }
-      if (l <= ledsd)
-      {                         // No sats
-         while (l < leds / 2 - 3)
+      if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
+      {
+         if (b.sbas)
+            revk_led (strip, l++, 255, revk_rgb ('M')); // SBAS
+         for (int s = 0; s < SYSTEMS; s++)
+         {                      // Two active sats per LED
+            for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
+               revk_led (strip, l++, 255, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+            if ((status.gsa[s] & 1) && l < leds)
+               revk_led (strip, l++, 127, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+         }
+         if (l <= ledsd)
+            revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
+         while (l < leds)
             revk_led (strip, l++, 255, revk_rgb ('K'));
-         const char pattern[] = "RYGCBMRYGCBM",
-            *p = pattern + (uptime () % 6);
-         while (*p && l < leds && l < leds / 2 + 3)
-            revk_led (strip, l++, 255, revk_rgb (*p++));
+         // Flag issues in last LED
+         if (!zdadue)
+            revk_led (strip, leds - 1, 255, revk_rgb ('R'));    // No GPS clock
+         else if (!b.moving)
+            revk_led (strip, leds - 1, 255, revk_rgb (b.home ? 'O' : 'M'));     // Not moving
       }
-      while (l < leds)
-         revk_led (strip, l++, 255, revk_rgb ('K'));
-      // Flag isues in last LED
-      if (!zdadue)
-         revk_led (strip, leds - 1, 255, revk_rgb ('R'));       // No GPS clock
-      else if (!b.moving)
-         revk_led (strip, leds - 1, 255, revk_rgb (b.home ? 'O' : 'M'));        // Not moving
       led_strip_refresh (strip);
    }
+   for (int i = 0; i < leds; i++)
+      revk_led (strip, i, 255, revk_rgb ('K'));
+   led_strip_refresh (strip);
+   vTaskDelete (NULL);
 }
 
 static void
@@ -1768,9 +1797,12 @@ web_root (httpd_req_t * req)
 {
    web_head (req, *hostname ? hostname : appname);
    if (b.sdpresent)
-      revk_web_send (req, "<p>%lldGB SD card inserted%s</p><p><i>Remove SD card to access settings</i></p>",
-                     (sdsize + 500000000LL) / 1000000000LL, b.sdwaiting ? " (data waiting to upload)" : " (empty)");
-   else
+   {
+      if (sdsize)
+         revk_web_send (req, "<p>%.1fGB SD card inserted%s</p>", (float) sdsize / 1000000000LL,
+                        b.sdwaiting ? " (data waiting to upload)" : " (empty)");
+      revk_web_send (req, "<p><i>Remove SD card to access settings</i>%s</p>", *url ? "" : " <b>Upload URL not set</b>");
+   } else
       revk_web_send (req, "<p>SD card not present</p>");
    if (b.home)
       revk_web_send (req, "<p>At home</p>");
@@ -1781,9 +1813,9 @@ void
 revk_web_extra (httpd_req_t * req)
 {
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
-   revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
+   //revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
    revk_web_send (req, "<tr><td colspan=4>");
-   if (home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
+   if (!pos[0] || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
    {
       if (!isnan (status.hdop) && status.hdop != 0 && status.hdop <= 1 && pos[0])
          revk_web_send (req,
@@ -1797,7 +1829,7 @@ revk_web_extra (httpd_req_t * req)
          revk_web_send (req, " Move %.0fm",
                         sqrt ((home[0] - pos[0]) * (home[0] - pos[0]) + (home[1] - pos[1]) * (home[1] - pos[1]) +
                               (home[2] - pos[2]) * (home[2] - pos[2])));
-   } else if(b.home)
+   } else if (b.home)
       revk_web_send (req, "At home");
    revk_web_send (req, "</td></tr>");
    revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X");
@@ -1840,6 +1872,7 @@ app_main ()
 #define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
 #define u8f(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_FIX);
 #define u8l(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_LIVE);
+#define u16l(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_LIVE);
 #define s(n,d,t) revk_register(#n,0,0,&n,str(d),0);
 #define io(n,d,t)         revk_register(#n,0,sizeof(n),&n,"- "str(d),SETTING_SET|SETTING_BITFIELD|SETTING_FIX);
    settings;
@@ -1851,6 +1884,7 @@ app_main ()
 #undef u8
 #undef u8f
 #undef u8l
+#undef u16l
 #undef bl
 #undef bf
 #undef b
@@ -1867,7 +1901,7 @@ app_main ()
    {                            // System power
       gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
       gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
-      sleep(1); // Power on
+      sleep (1);                // Power on
    }
    if (leds && rgb)
    {
@@ -1910,12 +1944,26 @@ app_main ()
    while (1)
    {
       sleep (1);
+      uint32_t up = uptime ();
       if (b.gpsinit)
          gps_init ();
-      if (!powerman || !charger || !pwr)
+      if (b.moving)
+         busy = up;
+      if (powerman && charger && pwr)
       {
-         vTaskDelete (NULL);
-         return;
+         // TODO
       }
+   }
+}
+
+void
+power_shutdown (void)
+{
+   ESP_LOGE (TAG, "Good night");
+   b.die = 1;
+   sleep (2);
+   if (powerman && charger && pwr)
+   {                            // Consider deep sleep
+      // TODO
    }
 }

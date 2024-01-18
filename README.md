@@ -18,6 +18,8 @@ An SD card is needed (up to 16GB) for logs to be stored until uploaded. Do not d
 
 The s/w uses the [RevK library](https://github.com/revk/ESP32-RevK) which provides a format for commands and settings over MQTT. It means it will provide a WiFi AP to allow initial config (if not automatically shown, access the *router* IP via web page once connected). This allows WiFi, MQTT, and the URL for log uploads.
 
+Note: Remove SD card to enable WiFi, WiFi AP mode, and settings. While SD is inserted WiFi AP and settings are disabled, and WiFi only when stationary (and at home if `home` set).
+
 ## Log upload
 
 When back on WiFi, and not moving, all log files on the SD card are uploaded as a POST to specified URL (which can be https if using known certificates, including Let's Encrypt). Once uploaded it is deleted from the SD card. If no URL is set, the file stays on the SD card and can be accesses using a card reader as needed.
@@ -48,12 +50,14 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`navstar`|Use NAVSTAR|
 |`glonass`|Use GLONASS|
 |`galileo`|Use GALILEO|
-|`moven`|How many VTG samples (10 second) have to have a non zero speed to start moving, or move if higher than `hepe`|
-|`stopn`|How many VTG samples (10 second) have to be zero to be stopped, or zero speed when back on WiFi and logs flushed|
+|`minmove`|Seconds moving before we start, if slow|
+|`minstop`|Seconds not moving before we stop, if not home, to allow for traffic lights, etc|
 |`packmin`|Min samples to be packed, normally `60`, set this to zero to disable packing|
 |`packmax`|Max samples to be packed, normally `600` which means if travelling straight you get a sample at least this often|
 |`packdist`|If non zero this enables point reduction *packing*, with this being the allowed deviation (in metres)|
 |`packtime`|If *packing* and this is non zero then time is also a factor, with this being the allowed deviation in seconds|
+|`home`|An array of ECEF whole metres for home location (use web interface settings to set this from GPS). If set WiFi only comes on at home|
+|`homem`|Proximity to `home` for home working|
 
 ## LEDs
 
@@ -68,15 +72,22 @@ There is one LED by the SD card that shows the status of the SD card (on older b
 |Blue|Card unmounted, safe to remove|
 |Cyan|Data being uploaded from card|
 
-There is a string of LEDs to show satellite status.
+There is a string of LEDs to show satellite status, in order...
 
 - If SBAS then a magenta LED shows
 - Green LEDs show for NAVSTAR GPS, 2 sats per LED, last is dim if odd number
 - Yellow LEDs show for GLONASS GPS, 2 sats per LED, last is dim if odd number
 - Cyan LEDs show for GALILEO GPS, 2 sats per LED, last is dim if odd number
+- If no active satellites and no SBAS a single red LED shows
 - If there is less than a 3D fix the satellite LEDs blink
-- If no active satellites this shows a static pattern of all colours to look pretty
-- The last LED is over written with RED if no GPS receiver, or ORANGE if stationary at home, or  MAGENTA if stationary not at home (or home not set)
+
+Also, the last LED is over written with RED if no GPS receiver, or ORANGE if stationary at home, or MAGENTA if stationary not at home (or home not set).
+
+There are also special situations where the LEDs show a bar graph, this starts at the other end to avoid confusion with satellite status.
+
+- Yellow for progress of software upgrade.
+- Cyan for progress of log upload (per file).
+
 
 ## Point reduction
 
