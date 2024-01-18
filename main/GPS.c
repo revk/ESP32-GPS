@@ -1834,7 +1834,12 @@ void
 revk_web_extra (httpd_req_t * req)
 {
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
-   revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
+   if (pwr && charger
+#ifdef  CONFIG_IDF_TARGET_ESP32S3
+       && (charger & IO_MASK) <= 21
+#endif
+      )
+      revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
    revk_web_setting_i (req, "Move time", "move", move, "Seconds moving to start journey (quicker if moving fast)");
    revk_web_setting_i (req, "Stop time", "stop", stop, "Seconds stopped to end journey (quicker if at home)");
    revk_web_send (req, "<tr><td colspan=4>");
