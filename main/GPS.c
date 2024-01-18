@@ -1700,6 +1700,24 @@ sd_task (void *z)
    vTaskDelete (NULL);
 }
 
+static int
+bargraph (char c, int p)
+{
+   if (p <= 0 || leds <= ledsd)
+      return 0;
+   int n = 255 * p * (leds - ledsd) / 100;
+   int q = n / 255;
+   n &= 255;
+   int l = leds;
+   while (q-- && l > ledsd)
+      revk_led (strip, --l, 255, revk_rgb (c));
+   if (n && l > ledsd)
+      revk_led (strip, --l, n, revk_rgb (c));
+   while (l > ledsd)
+      revk_led (strip, --l, 255, revk_rgb ('K'));
+   return p;
+}
+
 void
 rgb_task (void *z)
 {
@@ -1717,22 +1735,6 @@ rgb_task (void *z)
       int l = 0;
       if (ledsd)
          revk_led (strip, l++, b.sdwaiting && blink > 1 ? 127 : 255, revk_rgb (rgbsd)); // SD status (blink if data waiting)
-      int bargraph (char c, int p)
-      {
-         if (p <= 0 || leds <= ledsd)
-            return 0;
-         int n = 255 * p * (leds - ledsd) / 100;
-         int q = n / 255;
-         n &= 255;
-         l = leds;
-         while (q-- && l > ledsd)
-            revk_led (strip, --l, 255, revk_rgb (c));
-         if (n && l > ledsd)
-            revk_led (strip, --l, n, revk_rgb (c));
-         while (l > ledsd)
-            revk_led (strip, --l, 255, revk_rgb ('K'));
-         return p;
-      }
       if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
       {
          if (b.sbas)
