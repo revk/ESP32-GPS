@@ -1746,12 +1746,14 @@ rgb_task (void *z)
    uint8_t blink = 0;
    while (!b.die)
    {
-      if (++blink > 3)
+      usleep (100000);
+      if (++blink >= 10)
          blink = 0;
-      usleep (200000);
+      const uint8_t fades[] = { 128, 153, 178, 203, 228, 255, 228, 203, 178, 153 };
+      uint8_t fade = fades[blink];
       int l = 0;
       if (ledsd)
-         revk_led (strip, l++, b.sdwaiting && blink > 1 ? 127 : 255, revk_rgb (rgbsd)); // SD status (blink if data waiting)
+         revk_led (strip, l++, b.sdwaiting ? fade : 255, revk_rgb (rgbsd));     // SD status (blink if data waiting)
       if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
       {
          if (b.sbas)
@@ -1759,19 +1761,19 @@ rgb_task (void *z)
          for (int s = 0; s < SYSTEMS; s++)
          {                      // Two active sats per LED
             for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
-               revk_led (strip, l++, 255, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+               revk_led (strip, l++, status.fixmode < 3 ? fade : 255, revk_rgb (system_colour[s]));
             if ((status.gsa[s] & 1) && l < leds)
-               revk_led (strip, l++, 127, revk_rgb (status.fixmode >= blink ? system_colour[s] : 'K'));
+               revk_led (strip, l++, (status.fixmode < 3 ? fade : 255) / 2, revk_rgb (system_colour[s]));
          }
          if (l <= ledsd)
-            revk_led (strip, l++, 255, revk_rgb ('R')); // No sats
+            revk_led (strip, l++, (status.fixmode < 3 ? fade : 255), revk_rgb ('R'));   // No sats
          while (l < leds)
             revk_led (strip, l++, 255, revk_rgb ('K'));
          // Flag issues in last LED
          if (!zdadue)
             revk_led (strip, leds - 1, 255, revk_rgb ('R'));    // No GPS clock
          else if (!b.moving)
-            revk_led (strip, leds - 1, 255, revk_rgb (b.home ? 'O' : 'M'));     // Not moving
+            revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb (b.home ? 'O' : 'M')); // Not moving
       }
       led_strip_refresh (strip);
    }
@@ -1867,8 +1869,13 @@ revk_state_extra (jo_t j)
       jo_int (j, "sdsize", sdsize);
    if (b.charging)
       jo_bool (j, "charging", 1);
-   jo_litf (j, "bat", "%.3f", adc[0]);
-   jo_litf (j, "temp", "%.3f", adc[2]);
+   int bat = 100 * (adc[0] - 3.3);
+   if (bat < 0)
+      bat = 0;
+   if (bat > 100)
+      bat = 100;
+   jo_int (j, "bat", bat);
+   // TODO adc[2] relates to temp, but not clear of mapping
    jo_close (j);
 }
 
