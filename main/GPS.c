@@ -1763,15 +1763,15 @@ rgb_task (void *z)
             for (int n = 0; n < status.gsa[s] / 2 && l < leds; n++)
                revk_led (strip, l++, status.fixmode < 3 ? fade : 255, revk_rgb (system_colour[s]));
             if ((status.gsa[s] & 1) && l < leds)
-               revk_led (strip, l++, (status.fixmode < 3 ? fade : 255) / 2, revk_rgb (system_colour[s]));
+               revk_led (strip, l++, 127, revk_rgb (system_colour[s])); // dim as 1 LED (no need to blink really)
          }
          if (l <= ledsd)
-            revk_led (strip, l++, (status.fixmode < 3 ? fade : 255), revk_rgb ('R'));   // No sats
+            revk_led (strip, l++, (status.fixmode < 3 ? fade : 255), revk_rgb ('R'));   // No sats (likely always blinking)
          while (l < leds)
             revk_led (strip, l++, 255, revk_rgb ('K'));
          // Flag issues in last LED
          if (!zdadue)
-            revk_led (strip, leds - 1, 255, revk_rgb ('R'));    // No GPS clock
+            revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb ('R'));        // No GPS clock
          else if (!b.moving)
             revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb (b.home ? 'O' : 'M')); // Not moving
       }
