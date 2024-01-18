@@ -57,8 +57,8 @@ static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO
 	io(gpstx,7,		GPS Tx - Rx yo GPS GPIO)	\
 	io(gpstick,3,		GPS Tick GPIO)	\
         u32(gpsbaud,115200,	GPS Baud)	\
-	u16l(minmove,30,	Seconds moving to start if slow) \
-	u16l(minstop,120,	Seconds not moving to stop if not home) \
+	u16l(move,30,		Seconds moving to start if slow) \
+	u16l(stop,120,		Seconds not moving to stop if not home) \
 	bf(sdled,N,		First LED is SD)	\
 	io(sdss,8,		MicroSD SS)    \
         io(sdmosi,9,		MicroSD MOSI)     \
@@ -128,11 +128,11 @@ settings
 #define	GSARATE	10
 #define	GSVRATE	10
 #define VTGRATE 5
-static uint32_t zdadue = 0;
+static uint32_t zdadue = 0;     // Uptime when due
 static uint32_t gsadue = 0;
 static uint32_t gsvdue = 0;
 static uint32_t vtgdue = 0;
-
+static uint32_t busy = 0;       // Uptime last busy
 static httpd_handle_t webserver = NULL;
 static const char sd_mount[] = "/sd";
 static led_strip_handle_t strip = NULL;
@@ -153,6 +153,7 @@ static uint64_t sdsize = 0,     // SD card data
 
 static struct
 {
+   uint8_t die:1;               // End tasks
    uint8_t gpsstarted:1;        // GPS started
    uint8_t gpsinit:1;           // Init GPS
    uint8_t doformat:1;          // Format SD
@@ -382,6 +383,11 @@ app_callback (int client, const char *prefix, const char *target, const char *su
          return "Expecting JSON string";
       if (len > sizeof (value))
          return "Too long";
+   }
+   if (!strcmp (suffix, "upgrade"))
+   {
+      busy = uptime ();
+      return "";
    }
    if (!strcmp (suffix, "shutdown"))
    {
@@ -873,13 +879,13 @@ nmea (char *s)
       {                         // No change
          if (vtgcount < 255)
             vtgcount++;
-         if (b.vtglast && !b.moving && (vtgcount * VTGRATE >= minmove || (fix && status.speed > fix->hepe)))
+         if (b.vtglast && !b.moving && (vtgcount * VTGRATE >= move || (fix && status.speed > fix->hepe)))
          {                      // speed (kp/h) compared to EPE is just a rough idea that we are moving faster than random
             b.moving = 1;
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
             revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= minstop || b.home))
+         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= stop || b.home))
          {
             b.moving = 0;
             jo_t j = jo_object_alloc ();
@@ -943,7 +949,7 @@ nmea_task (void *z)
    uint8_t buf[1000],
     *p = buf;
    uint64_t timeout = esp_timer_get_time () + 10000000;
-   while (1)
+   while (!b.die)
    {
       // Get line(s), the timeout should mean we see one or more whole lines typically
       int l = uart_read_bytes (gpsuart, p, buf + sizeof (buf) - p, 10 / portTICK_PERIOD_MS);
@@ -1005,6 +1011,9 @@ nmea_task (void *z)
       }
       p = buf;                  // Start from scratch
    }
+   // TODO GPS low power
+   // TODO ACC low power
+   vTaskDelete (NULL);
 }
 
 jo_t
@@ -1124,9 +1133,9 @@ log_line (fix_t * f)
 void
 log_task (void *z)
 {                               // Log via MQTT
-   while (1)
+   while (!b.die)
    {
-      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->quality && fixlog.count < minmove))
+      if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->quality && fixlog.count < move))
       {                         // Waiting - holds pre-moving data
          usleep (100000);
          continue;
@@ -1139,6 +1148,7 @@ log_task (void *z)
       // Pass on - if packing, and TS and ECEF, to packing, else if packing and no TS or ECEF then drop as packing does not do those. Else direct to SD
       fixadd (packdist && packmin ? !f->sett || !f->setecef ? &fixfree : &fixpack : &fixsd, f);
    }
+   vTaskDelete (NULL);
 }
 
 float
@@ -1195,7 +1205,7 @@ void
 pack_task (void *z)
 {                               // Packing - only gets data with ECEF and time set
    uint32_t packtry = packmin;
-   while (1)
+   while (!b.die)
    {
       if (fixpack.count < 2 || (b.moving && fixpack.count < packtry))
       {                         // Wait
@@ -1242,6 +1252,7 @@ pack_task (void *z)
          fixadd (X->deleted ? &fixfree : &fixsd, X);
       }
    }
+   vTaskDelete (NULL);
 }
 
 void
@@ -1319,6 +1330,7 @@ checkupload (void)
          free (filename);
          break;
       }
+      busy = up;
       struct stat s = { 0 };
       jo_t makeerr (const char *e)
       {
@@ -1378,6 +1390,7 @@ checkupload (void)
                            upload = total * 100 / s.st_size;
                            ESP_LOGI (TAG, "%d bytes (%d%%)", total, upload);
                            esp_http_client_write (client, buf, len);
+                           busy = uptime ();
                         }
                         esp_http_client_fetch_headers (client);
                         esp_http_client_flush_response (client, &len);
@@ -1487,7 +1500,7 @@ sd_task (void *z)
    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
    slot_config.gpio_cs = sdss & IO_MASK;
    slot_config.host_id = host.slot;
-   while (1)
+   while (!b.die)
    {
       if (sdcd)
       {
@@ -1573,7 +1586,7 @@ sd_task (void *z)
       }
       b.doformat = 0;
       checkupload ();
-      while (!b.doformat && !b.dodismount)
+      while (!b.doformat && !b.dodismount && !b.die)
       {
          FILE *o = NULL;
          int line = 0;
@@ -1684,6 +1697,7 @@ sd_task (void *z)
          revk_info ("SD", &j);
       }
    }
+   vTaskDelete (NULL);
 }
 
 void
@@ -1695,14 +1709,14 @@ rgb_task (void *z)
       return;
    }
    uint8_t blink = 0;
-   while (1)
+   while (!b.die)
    {
       if (++blink > 3)
          blink = 0;
       usleep (200000);
       int l = 0;
       if (ledsd)
-         revk_led (strip, l++, 255, revk_rgb (b.sdwaiting && blink > 1 ? tolower (rgbsd) : rgbsd));     // SD status (blink if data waiting)
+         revk_led (strip, l++, b.sdwaiting && blink > 1 ? 127 : 255, revk_rgb (rgbsd)); // SD status (blink if data waiting)
       int bargraph (char c, int p)
       {
          if (p <= 0 || leds <= ledsd)
@@ -1742,6 +1756,10 @@ rgb_task (void *z)
       }
       led_strip_refresh (strip);
    }
+   for (int i = 0; i < leds; i++)
+      revk_led (strip, leds - 1, 255, revk_rgb ('K'));
+   led_strip_refresh (strip);
+   vTaskDelete (NULL);
 }
 
 static void
@@ -1926,12 +1944,14 @@ app_main ()
    while (1)
    {
       sleep (1);
+      uint32_t up = uptime ();
       if (b.gpsinit)
          gps_init ();
-      if (!powerman || !charger || !pwr)
+      if (b.moving)
+         busy = up;
+      if (powerman && charger && pwr)
       {
-         vTaskDelete (NULL);
-         return;
+         // TODO
       }
    }
 }
@@ -1939,7 +1959,10 @@ app_main ()
 void
 power_shutdown (void)
 {
-   if (powerman)
+	ESP_LOGE(TAG,"Good night");
+   b.die = 1;
+   sleep (2);
+   if (powerman && charger && pwr)
    {                            // Consider deep sleep
       // TODO
    }
