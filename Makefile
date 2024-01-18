@@ -58,23 +58,3 @@ AJL/ajl.o:
 
 json2gpx: json2gpx.c AJL/ajl.o
 	cc -O -o $@ $< -IAJL ${OPTS} -lpopt AJL/ajl.o
-
-PCBCase/case: PCBCase/case.c
-	make -C PCBCase
-
-scad:	$(patsubst %,KiCad/%.scad,$(MODELS))
-stl:	$(patsubst %,KiCad/%.stl,$(MODELS))
-
-%.stl: %.scad
-	echo "Making $@"
-	/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD $< -o $@
-	echo "Made $@"
-
-KiCad/L86.scad: KiCad/L86.kicad_pcb PCBCase/case Makefile
-	PCBCase/case -o $@ $< --edge=2 --top=8 --base=2
-
-KiCad/Display.scad: KiCad/Display.kicad_pcb PCBCase/case Makefile
-	PCBCase/case -o $@ $< --edge=2 --top=10.4 --base=2.6
-
-KiCad/Glider.scad: KiCad/Glider.kicad_pcb PCBCase/case Makefile
-	PCBCase/case -o $@ $< --edge=2 --top=5 --base=2
