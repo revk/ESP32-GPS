@@ -1,4 +1,4 @@
-22538115848765404
+22541534610138832
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -84691,7 +84691,7 @@ PTSM-HH-2-RA-SMD
 
 0
 4
-2
+4
 RevK
 PTSM-HH-2-RA-W
 
@@ -84747,7 +84747,7 @@ PTSM-HH-5-RA-P-SMD
 
 0
 7
-5
+7
 RevK
 PTSM-HH-5-RA-SMD
 
@@ -85140,6 +85140,20 @@ R_1206_
 0
 0
 0
+RevK
+R_1218
+Resistor SMD 1218 (3246 Metric), square (rectangular) end terminal, IPC_7351 nominal, (Body size source: https://www.vishay.com/docs/20035/dcrcwe3.pdf), generated with kicad-footprint-generator
+resistor
+0
+2
+2
+RevK
+R_2512
+Capacitor SMD 0603 (1608 Metric), square (rectangular) end terminal, IPC_7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator
+capacitor
+0
+2
+2
 RevK
 Round
 Through hole angled pin header, 1x01, 2.54mm pitch, 6mm pin length, single row
