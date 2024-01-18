@@ -1,14 +1,13 @@
 // GPS logger
 // Copyright (c) 2019-2024 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
-// TODO
-// ACC ADC for battery
-// POWER/BATTERY - sleeping on SDCD and CHARGER, or at least dropping to low power modes
+// TODO ACC ADC for battery
 
-static __attribute__((unused))
+__attribute__((unused))
      const char TAG[] = "GPS";
 
 #include "revk.h"
+#include "esp_sleep.h"
 #include <aes/esp_aes.h>
 #include <driver/i2c.h>
 #include <driver/uart.h>
@@ -25,15 +24,11 @@ static __attribute__((unused))
 #error Need long file names
 #endif
 
-//#if   FF_FS_EXFAT == 0
-//#error Need EXFAT (ffconf.h)
-//#endif
-
 #define	SYSTEMS	3
 
-     static const char system_code[SYSTEMS] = { 'P', 'L', 'A' };
-static const char system_colour[SYSTEMS] = { 'G', 'Y', 'C' };
-static const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
+     const char system_code[SYSTEMS] = { 'P', 'L', 'A' };
+const char system_colour[SYSTEMS] = { 'G', 'Y', 'C' };
+const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 
 #define	I2CPORT	0
 
@@ -128,30 +123,30 @@ settings
 #define	GSARATE	10
 #define	GSVRATE	10
 #define VTGRATE 5
-static uint32_t zdadue = 0;     // Uptime when due
-static uint32_t gsadue = 0;
-static uint32_t gsvdue = 0;
-static uint32_t vtgdue = 0;
-static uint32_t busy = 0;       // Uptime last busy
-static httpd_handle_t webserver = NULL;
-static const char sd_mount[] = "/sd";
-static led_strip_handle_t strip = NULL;
-static SemaphoreHandle_t cmd_mutex = NULL;
-static SemaphoreHandle_t ack_semaphore = NULL;
-static uint16_t pmtk = 0;       // Waiting ack
-static SemaphoreHandle_t fix_mutex = NULL;
-static uint8_t gpserrorcount = 0;       // running count
-static uint8_t gpserrors = 0;   // last count
-static uint8_t vtgcount = 0;    // Count of stopped/moving
-static uint8_t upload = 0;      // File upload progress
-static char rgbsd = 'K';
-static const char *cardstatus = NULL;
-static int32_t pos[3] = { 0 };  // last x/y/z
+   uint32_t zdadue = 0;         // Uptime when due
+uint32_t gsadue = 0;
+uint32_t gsvdue = 0;
+uint32_t vtgdue = 0;
+uint32_t busy = 0;              // Uptime last busy
+httpd_handle_t webserver = NULL;
+const char sd_mount[] = "/sd";
+led_strip_handle_t strip = NULL;
+SemaphoreHandle_t cmd_mutex = NULL;
+SemaphoreHandle_t ack_semaphore = NULL;
+uint16_t pmtk = 0;              // Waiting ack
+SemaphoreHandle_t fix_mutex = NULL;
+uint8_t gpserrorcount = 0;      // running count
+uint8_t gpserrors = 0;          // last count
+uint8_t vtgcount = 0;           // Count of stopped/moving
+uint8_t upload = 0;             // File upload progress
+char rgbsd = 'K';
+const char *cardstatus = NULL;
+int32_t pos[3] = { 0 };         // last x/y/z
 
-static uint64_t sdsize = 0,     // SD card data
+uint64_t sdsize = 0,            // SD card data
    sdfree = 0;
 
-static struct
+struct
 {
    uint8_t die:1;               // End tasks
    uint8_t gpsstarted:1;        // GPS started
@@ -166,6 +161,7 @@ static struct
    uint8_t accok:1;             // ACC OK
    uint8_t sbas:1;              // Current fix is SBAS
    uint8_t home:1;              // At home
+   uint8_t charging:1;          // Charger
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -308,7 +304,7 @@ timegm (struct tm *tm)
    return (t < 0 ? (time_t) - 1 : t);
 }
 
-static uint32_t gpsbaudnow = 0;
+uint32_t gpsbaudnow = 0;
 void
 gps_connect (unsigned int baud)
 {                               // GPS connection
@@ -550,6 +546,12 @@ acc_init (void)
 }
 
 void
+acc_stop (void)
+{
+   acc_write (0x20, 0x00);      // Power-down mode
+}
+
+void
 acc_get (fix_t * f)
 {                               // Get acc data for a fix
    if (!f || !b.accok)
@@ -565,7 +567,7 @@ acc_get (fix_t * f)
    }
 }
 
-static void
+void
 gps_init (void)
 {                               // Set up GPS
    b.gpsinit = 0;
@@ -576,6 +578,7 @@ gps_init (void)
       sleep (1);
       gps_connect (gpsbaud);
    }
+   gps_cmd ("$PM<TK101");       // Hot start
    gps_cmd ("$PMTK286,%d", gpsaic ? 1 : 0);     // AIC
    gps_cmd ("$PMTK353,%d,%d,%d,0,0", gpsnavstar, gpsglonass, gpsgalileo);
    gps_cmd ("$PMTK352,%d", gpsqzss ? 0 : 1);    // QZSS (yes, 1 is disable)
@@ -594,7 +597,13 @@ gps_init (void)
    b.gpsstarted = 1;
 }
 
-static void
+void
+gps_stop (void)
+{
+   gps_cmd ("$PMTK161,0");      // Standby
+}
+
+void
 nmea_timeout (uint32_t up)
 {
    if (zdadue && zdadue < up)
@@ -624,7 +633,7 @@ nmea_timeout (uint32_t up)
    }
 }
 
-static void
+void
 nmea (char *s)
 {
    if (gpsdebug)
@@ -1011,8 +1020,8 @@ nmea_task (void *z)
       }
       p = buf;                  // Start from scratch
    }
-   // TODO GPS low power
-   // TODO ACC low power
+   gps_stop ();
+   acc_stop ();
    vTaskDelete (NULL);
 }
 
@@ -1700,6 +1709,24 @@ sd_task (void *z)
    vTaskDelete (NULL);
 }
 
+int
+bargraph (char c, int p)
+{
+   if (p <= 0 || leds <= ledsd)
+      return 0;
+   int n = 255 * p * (leds - ledsd) / 100;
+   int q = n / 255;
+   n &= 255;
+   int l = leds;
+   while (q-- && l > ledsd)
+      revk_led (strip, --l, 255, revk_rgb (c));
+   if (n && l > ledsd)
+      revk_led (strip, --l, n, revk_rgb (c));
+   while (l > ledsd)
+      revk_led (strip, --l, 255, revk_rgb ('K'));
+   return p;
+}
+
 void
 rgb_task (void *z)
 {
@@ -1717,22 +1744,6 @@ rgb_task (void *z)
       int l = 0;
       if (ledsd)
          revk_led (strip, l++, b.sdwaiting && blink > 1 ? 127 : 255, revk_rgb (rgbsd)); // SD status (blink if data waiting)
-      int bargraph (char c, int p)
-      {
-         if (p <= 0 || leds <= ledsd)
-            return 0;
-         int n = 255 * p * (leds - ledsd) / 100;
-         int q = n / 255;
-         n &= 255;
-         l = leds;
-         while (q-- && l > ledsd)
-            revk_led (strip, --l, 255, revk_rgb (c));
-         if (n && l > ledsd)
-            revk_led (strip, --l, n, revk_rgb (c));
-         while (l > ledsd)
-            revk_led (strip, --l, 255, revk_rgb ('K'));
-         return p;
-      }
       if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
       {
          if (b.sbas)
@@ -1762,7 +1773,7 @@ rgb_task (void *z)
    vTaskDelete (NULL);
 }
 
-static void
+void
 register_uri (const httpd_uri_t * uri_struct)
 {
    esp_err_t res = httpd_register_uri_handler (webserver, uri_struct);
@@ -1772,7 +1783,7 @@ register_uri (const httpd_uri_t * uri_struct)
    }
 }
 
-static void
+void
 register_get_uri (const char *uri, esp_err_t (*handler) (httpd_req_t * r))
 {
    httpd_uri_t uri_struct = {
@@ -1783,7 +1794,7 @@ register_get_uri (const char *uri, esp_err_t (*handler) (httpd_req_t * r))
    register_uri (&uri_struct);
 }
 
-static void
+void
 web_head (httpd_req_t * req, const char *title)
 {
    revk_web_head (req, title);
@@ -1792,7 +1803,7 @@ web_head (httpd_req_t * req, const char *title)
                   "</style><body><h1>%s</h1>", title ? : "");
 }
 
-static esp_err_t
+esp_err_t
 web_root (httpd_req_t * req)
 {
    web_head (req, *hostname ? hostname : appname);
@@ -1813,7 +1824,7 @@ void
 revk_web_extra (httpd_req_t * req)
 {
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
-   //revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
+   revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
    revk_web_send (req, "<tr><td colspan=4>");
    if (!pos[0] || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
    {
@@ -1843,7 +1854,9 @@ revk_state_extra (jo_t j)
    if (cardstatus)
       jo_string (j, "SD", cardstatus);
    if (b.sdpresent && sdsize)
-      jo_int (j, "Size", sdsize);
+      jo_int (j, "sdsize", sdsize);
+   if (b.charging)
+      jo_bool (j, "charging", 1);
 }
 
 void
@@ -1901,6 +1914,7 @@ app_main ()
    {                            // System power
       gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
       gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
+      gpio_hold_dis (pwr & IO_MASK);
       sleep (1);                // Power on
    }
    if (leds && rgb)
@@ -1949,10 +1963,12 @@ app_main ()
          gps_init ();
       if (b.moving)
          busy = up;
-      if (powerman && charger && pwr)
-      {
-         // TODO
-      }
+      if (charger)
+         b.charging = gpio_get_level (charger & IO_MASK) == ((charger & IO_INV) ? 0 : 1);
+      if (b.charging)
+         busy = up;
+      if (powerman && charger && pwr && !b.charging && busy + (b.sdpresent ? 60 : 600) < up)
+         revk_restart ("Power down", 1);
    }
 }
 
@@ -1964,6 +1980,12 @@ power_shutdown (void)
    sleep (2);
    if (powerman && charger && pwr)
    {                            // Consider deep sleep
-      // TODO
+      uint64_t mask = 1LL << (charger & IO_MASK);
+      esp_sleep_enable_ext1_wakeup (mask, (charger & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
+      esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
+   } else
+   {
+      if (pwr)
+         gpio_hold_en (pwr & IO_MASK);
    }
 }
