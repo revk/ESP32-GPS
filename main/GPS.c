@@ -1528,13 +1528,12 @@ sd_task (void *z)
             jo_string (j, "action", cardstatus = "Remove card");
             revk_info ("SD", &j);
             b.dodismount = 0;
-            while (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))
+            while ((b.sdpresent = (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))))
                wait (1);
             continue;
          }
-         if (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+         if (!(b.sdpresent = (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))))
          {                      // No card
-            b.sdpresent = 0;
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Card not present");
             revk_info ("SD", &j);
@@ -1542,12 +1541,12 @@ sd_task (void *z)
             revk_enable_wifi ();
             revk_enable_ap ();
             revk_enable_settings ();
-         }
-         while (gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
-         {                      // Waiting card inserted
-            wait (1);
-            while (fixsd.count > 1000)
-               fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
+            while (!(b.sdpresent = (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))))
+            {                   // Waiting card inserted
+               wait (1);
+               while (fixsd.count > 1000)
+                  fixadd (&fixfree, fixget (&fixsd));   // Too much data queued
+            }
          }
          if ((pos[0] || pos[1] || pos[2]) && (home[0] || home[1] || home[2]) && !b.home)
             revk_disable_wifi ();
@@ -1560,7 +1559,6 @@ sd_task (void *z)
          wait (60);
          continue;
       }
-
       wait (1);
       ESP_LOGI (TAG, "Mounting filesystem");
       ret = esp_vfs_fat_sdspi_mount (sd_mount, &host, &slot_config, &mount_config, &card);
@@ -1574,13 +1572,7 @@ sd_task (void *z)
          jo_int (j, "code", ret);
          revk_error ("SD", &j);
          rgbsd = 'R';
-         if (sdcd)
-         {
-            int try = 60;
-            while (try-- && gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))
-               wait (1);
-         } else
-            wait (60);
+         sleep (1);
          continue;
       }
       ESP_LOGI (TAG, "Filesystem mounted");
