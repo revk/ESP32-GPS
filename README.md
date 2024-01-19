@@ -4,6 +4,12 @@ The software/hardware system provides a non cloud based GPS logger application, 
 
 Main application is installed in vehicles, such as company car, etc, for automatic logging of all journeys without any manual intervention.
 
+## Buy
+
+Available now on [A&A web site](https://www.aa.net.uk/etc/circuit-boards/gps/)
+
+Also, the PCBs are included here - if making your own, remove trademark logos.
+
 ## Logger board
 
 This code is designed to work on the GPS Logger board (see PCB directory). The logger board connects to a GPS module which is based on the [Quectel L86](https://www.quectel.com/wp-content/uploads/pdfupload/Quectel_L86_GNSS_Specification_V1.3.pdf) GNSS, which is a powerful GPS module that can track NAVSTAR (US GPS), GLONASS (Russian GPS), and Galileo (EU GPS) Satellites.
