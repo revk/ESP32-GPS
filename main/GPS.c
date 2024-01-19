@@ -768,7 +768,7 @@ nmea (char *s)
          pos[1] = (fix->ecef.y = parse (f[3], 6)) / 1000000LL;
          pos[2] = (fix->ecef.z = parse (f[4], 6)) / 1000000LL;
          fix->setecef = 1;
-         if (home[0] && home[1] && home[2])
+         if (home[0] || home[1] || home[2])
          {
             int64_t dx = pos[0] - home[0];
             int64_t dy = pos[1] - home[1];
@@ -1275,7 +1275,7 @@ pack_task (void *z)
 void
 checkupload (void)
 {
-   if (!home[0] || b.home)
+   if ((!home[0] && !home[1] && !home[2]) || b.home)
       revk_enable_wifi ();
    uint32_t up = uptime ();
    static uint32_t delay = 0;
@@ -1549,7 +1549,7 @@ sd_task (void *z)
             while (fixsd.count > 1000)
                fixadd (&fixfree, fixget (&fixsd));      // Too much data queued
          }
-         if (pos[0] && home[0] && !b.home)
+         if ((pos[0] || pos[1] || pos[2]) && (home[0] || home[1] || home[2]) && !b.home)
             revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
@@ -1843,7 +1843,7 @@ revk_web_extra (httpd_req_t * req)
    revk_web_setting_i (req, "Move time", "move", move, "Seconds moving to start journey (quicker if moving fast)");
    revk_web_setting_i (req, "Stop time", "stop", stop, "Seconds stopped to end journey (quicker if at home)");
    revk_web_send (req, "<tr><td colspan=4>");
-   if (!pos[0] || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
+   if ((!pos[0] && !pos[1] && !pos[2]) || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
    {
       if (!isnan (status.hdop) && status.hdop != 0 && status.hdop <= 1 && pos[0])
          revk_web_send (req,
@@ -1853,7 +1853,7 @@ revk_web_extra (httpd_req_t * req)
          revk_web_send (req, "Go outside and get a clean fix to set home location.");
       if (!isnan (status.hdop) && status.hdop != 0)
          revk_web_send (req, " HDOP=%.1f", status.hdop);
-      if (home[0] && pos[0])
+      if ((home[0] || home[1] || home[2]) && (pos[0] || pos[1] || pos[2]))
          revk_web_send (req, " Move %.0fm",
                         sqrt ((home[0] - pos[0]) * (home[0] - pos[0]) + (home[1] - pos[1]) * (home[1] - pos[1]) +
                               (home[2] - pos[2]) * (home[2] - pos[2])));
