@@ -236,6 +236,14 @@ fixq_t fixfree = { 0 };         // Queue of free
 
 void power_shutdown (void);
 
+uint8_t
+io (uint8_t gpio)
+{                               // Get GPIO
+   if (gpio && gpio_get_level (gpio & IO_MASK) != ((gpio & IO_INV) ? 0 : 1))
+      return 1;
+   return 0;
+}
+
 fix_t *
 fixadd (fixq_t * q, fix_t * f)
 {
@@ -1296,7 +1304,7 @@ checkupload (void)
       delay = up + 5;
       return;
    }
-   if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+   if ((b.sdpresent = io (sdcd)))
    {
       ESP_LOGI (TAG, "No upload as no card");
       delay = up + 10;
@@ -1528,11 +1536,11 @@ sd_task (void *z)
             jo_string (j, "action", cardstatus = "Remove card");
             revk_info ("SD", &j);
             b.dodismount = 0;
-            while ((b.sdpresent = (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))))
+            while ((b.sdpresent = io (sdcd)))
                wait (1);
             continue;
          }
-         if (!(b.sdpresent = (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))))
+         if (!(b.sdpresent = io (sdcd)))
          {                      // No card
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Card not present");
@@ -1541,12 +1549,8 @@ sd_task (void *z)
             revk_enable_wifi ();
             revk_enable_ap ();
             revk_enable_settings ();
-            while (!(b.sdpresent = (gpio_get_level (sdcd & IO_MASK) == ((sdcd & IO_INV) ? 0 : 1))))
-            {                   // Waiting card inserted
-               wait (1);
-               while (fixsd.count > 1000)
-                  fixadd (&fixfree, fixget (&fixsd));   // Too much data queued
-            }
+            while (!(b.sdpresent = io (sdcd)))
+               wait (1);        // Waiting for card inserted
          }
          if ((pos[0] || pos[1] || pos[2]) && (home[0] || home[1] || home[2]) && !b.home)
             revk_disable_wifi ();
@@ -1606,7 +1610,7 @@ sd_task (void *z)
          while (!b.doformat && !b.dodismount)
          {
             rgbsd = (o ? 'G' : 'Y');
-            if (sdcd && gpio_get_level (sdcd & IO_MASK) != ((sdcd & IO_INV) ? 0 : 1))
+            if (!(b.sdpresent = op (sdcd)))
             {                   // card removed
                b.dodismount = 1;
                break;
@@ -1980,8 +1984,7 @@ app_main ()
          gps_init ();
       if (b.moving)
          busy = up;
-      if (charger)
-         b.charging = gpio_get_level (charger & IO_MASK) == ((charger & IO_INV) ? 0 : 1);
+      b.charging = io (charger);
       if (b.charging)
          busy = up;
       if (powerman && charger && pwr
