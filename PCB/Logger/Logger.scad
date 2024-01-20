@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 14:24:26
+// Generated 2024-01-20 14:34:27
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -12,8 +12,8 @@
 // Globals
 margin=0.200000;
 lip=2.000000;
-casebottom=5.000000;
-casetop=5.000000;
+casebottom=6.000000;
+casetop=6.000000;
 casewall=3.000000;
 fit=0.000000;
 edge=1.000000;
@@ -328,21 +328,21 @@ if(part)
 
 module m15(part=false,hole=false,block=false,height,N=0)
 { // J3
-// Plug on PCB
+// Socket on PCB
 if(part)
 {
-	b(0,-7.5/2-0.4,0,0.5+N*2.5,7.5,5);
-	b(0,0,0,0.4+2.5*(N-1),3.2,0.4); // pins
-	b(0,-5.85/2-0.4,0,9.18+N*2.5,5.6,0.4); // tab
-	b(0,-5.85/2-0.4,0,3.2+N*2.5,5.6,4); // side
-}
-if(hole)
-{ // Socket
+	for(n=[0:N-1])b(-(N-1)*1.25+n*2.5,5.35,0,1.2,3.2,0.5); // Pins
+	b(-8.25,1.15,0,2.2,5.6,0.2); // Tab
+	b(8.25,1.15,0,2.2,5.6,0.2); // Tab
 	hull()
 	{
-		b(0,-7.5/2-7.5-0.4,0,1.7+N*2.5,7.5,4);
-		b(0,-7.5/2-7.5-0.4,0,1.7+N*2.5-2,7.5,5);
+		b(0,0.9,0,1.7+N*2.5,7.5,4);
+		b(0,0.9,0,1.7+N*2.5-2,7.5,5);
 	}
+}
+if(hole)
+{ // Plug
+	b(0,-7.5/2-2.85,0,0.5+N*2.5,7.5,5);
 }
 }
 
