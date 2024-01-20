@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 14:00:08
+// Generated 2024-01-20 14:15:55
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -303,19 +303,18 @@ if(part)
 
 module m13(part=false,hole=false,block=false,height,N=0)
 { // J1
-rotate([90,0,0])translate([0,4.5,0])
+translate([0,-4.5,0])rotate([90,0,0])
 {
 	if(part)
 	{
-		for(n=[0:N-1])b(-1+N*2,2.85,0,1,3.5,0.5); // pins
-		b(0,0,-1.4,3.9+2*N,6,6); // Body
-		b(-1.55-N,2.4,0,0.8,1.6,4); // Tag
-		b(1.55+N,2.4,0,0.8,1.6,4); // Tag
-	
+		b(0,3,-6,3.9+2*N,6,6); // Body
+		b(-1.55-N,2,-7.6,0.8,4,1.6); // Tag
+		b(1.55+N,2,-7.6,0.8,4,1.6); // Tag
+		for(n=[0:N-1])b(-1+n*2,0.25,-9.5,1,0.5,3.5); // pins
 	}
 	if(hole)
 	{
-		b(2*(N/2)-1,5+3.6,0,2*N+2,6+10,4);
+		b(0,3,0,1.3+N*2,4,10);
 	}
 }
 }
