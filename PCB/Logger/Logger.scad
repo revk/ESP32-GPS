@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 14:18:22
+// Generated 2024-01-20 14:19:10
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -104,11 +104,10 @@ translate([17.700000,17.300000,0.800000])rotate([0,0,-90.000000])m0(part,hole,bl
 parts_top=27;
 // Parts to go on PCB (bottom)
 module parts_bottom(part=false,hole=false,block=false){
-// Missing model J3.1 1815154 (back)
-// Missing model J3.2 1778793 (back)
+translate([2.900000,13.000000,0.000000])rotate([0,0,90.000000])rotate([180,0,0])m15(part,hole,block,casebottom,5); // J3
 }
 
-parts_bottom=0;
+parts_bottom=1;
 module b(cx,cy,z,w,l,h){translate([cx-w/2,cy-l/2,z])cube([w,l,h]);}
 module m0(part=false,hole=false,block=false,height)
 { // RevK:DFN1006-2L C_0402_1005Metric
@@ -324,6 +323,25 @@ module m14(part=false,hole=false,block=false,height)
 if(part)
 {
 	b(0,0,0,3,3,0.5);
+}
+}
+
+module m15(part=false,hole=false,block=false,height,N=0)
+{ // J3
+// PTSM socket
+if(part)
+{
+	hull()
+	{
+		b(0,-7.5/2+0.3,0,1.7+N*2.5,7.5,4);
+		b(0,-7.5/2+0.3,0,1.7+N*2.5-2,7.5,5);
+	}
+	// Pins
+	for(p=[0:N-1])translate([-2.5*(N-1)/2+p*2.5,0,-2.1])cylinder(r1=0.3,r2=1,h=2.1);
+}
+if(hole)
+{
+	b(0,-10.5/2-7.5+0.3,0,1.1+N*2.5,10.5,5);
 }
 }
 
