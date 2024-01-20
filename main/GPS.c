@@ -1704,11 +1704,11 @@ sd_task (void *z)
                         fprintf (o, "<fix>%s</fix>", f->slow.fixmode == 1 ? "none" : f->slow.fixmode == 2 ? "2d" : "3d");
                      if (f->sats)
                         fprintf (o, "<sat>%d</sat>", f->sats);
-                     if (!isnan (f->hdop)&&f->hdop)
+                     if (!isnan (f->hdop) && f->hdop)
                         fprintf (o, "<hdop>%.1f</hdop>", f->hdop);
-                     if (!isnan (f->slow.vdop)&&f->slow.vdop)
+                     if (!isnan (f->slow.vdop) && f->slow.vdop)
                         fprintf (o, "<vdop>%.1f</vdop>", f->slow.vdop);
-                     if (!isnan (f->slow.pdop)&&f->slow.opdop)
+                     if (!isnan (f->slow.pdop) && f->slow.pdop)
                         fprintf (o, "<pdop>%.1f</pdop>", f->slow.pdop);
                      fprintf (o, "</trkpt>\n");
                   }
