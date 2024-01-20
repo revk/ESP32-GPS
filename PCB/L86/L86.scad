@@ -1,6 +1,6 @@
 // Generated case design for L86/L86.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-18 16:26:55
+// Generated 2024-01-20 12:50:37
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -50,14 +50,10 @@ parts_bottom=1;
 module b(cx,cy,z,w,l,h){translate([cx-w/2,cy-l/2,z])cube([w,l,h]);}
 module m0(part=false,hole=false,block=false,height)
 { // U1
-rotate([90,0,0])
+if(part)
 {
-	if(part)
-	{
-		b(0,0,0,18.4,18.4,6.95);
-	}
+	b(0,0,0,18.4,18.4,6.95);
 }
-	
 }
 
 module m1(part=false,hole=false,block=false,height)
