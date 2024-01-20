@@ -74,6 +74,7 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
 	b(logpos,Y,		Log position data)	\
+	b(loggpx,N,		Log in GPX format)	\
 	bl(loglla,Y,		Log lat/lon/alt)	\
 	bl(logund,Y,		Log undulation)		\
 	bl(logdop,Y,		Lod dop)		\
@@ -211,6 +212,7 @@ struct fix_s
    } acc;
    uint8_t quality;             // Fix quality (0=none, 1=GPS, 2=SBAS)
    uint8_t sats;                // Sats used for fix
+   uint8_t home:1;              // This pos is at home
    uint8_t corner:1;            // Corner point for packing
    uint8_t deleted:1;           // Deleted by packing
    uint8_t sett:1;              // Fields set
@@ -782,7 +784,7 @@ nmea (char *s)
             int64_t dx = pos[0] - home[0];
             int64_t dy = pos[1] - home[1];
             int64_t dz = pos[2] - home[2];
-            b.home = ((dx * dx + dy * dy + dz * dz < (int64_t) homem * (int64_t) homem) ? 1 : 0);
+            fix->home = b.home = ((dx * dx + dy * dy + dz * dz < (int64_t) homem * (int64_t) homem) ? 1 : 0);
          }
       }
       if (logodo)
@@ -1151,7 +1153,7 @@ log_line (fix_t * f)
       jo_int (j, "errors", gpserrors);
       gpserrors = 0;
    }
-   if (b.home)
+   if (f->home && f->setecef)
       jo_bool (j, "home", 1);
    return j;
 }
@@ -1305,7 +1307,7 @@ checkupload (void)
       delay = up + 5;
       return;
    }
-   if ((b.sdpresent = io (sdcd)))
+   if (!(b.sdpresent = io (sdcd)))
    {
       ESP_LOGI (TAG, "No upload as no card");
       delay = up + 10;
@@ -1404,7 +1406,14 @@ checkupload (void)
                   esp_http_client_handle_t client = esp_http_client_init (&config);
                   if (client)
                   {
-                     esp_http_client_set_header (client, "Content-Type", "application/json");
+                     const char *ext = strrchr (filename, '.');
+                     if (ext)
+                        ext++;
+                     else
+                        ext = "gps";
+                     char *ct;
+                     asprintf (&ct, "application/%s", ext);
+                     esp_http_client_set_header (client, "Content-Type", ct);
                      ESP_LOGI (TAG, "Sending %s %ld", filename, s.st_size);
                      if (!esp_http_client_open (client, s.st_size))
                      {          // Send
@@ -1424,6 +1433,7 @@ checkupload (void)
                         esp_http_client_close (client);
                      }
                      esp_http_client_cleanup (client);
+                     free (ct);
                   }
                }
                upload = 0;
@@ -1612,6 +1622,7 @@ sd_task (void *z)
          time_t start = 0;
          uint8_t starthome = 0;
          time_t end = 0;
+         uint8_t endhome = 0;
          while (!b.doformat && !b.dodismount)
          {
             rgbsd = (o ? 'G' : 'Y');
@@ -1630,13 +1641,14 @@ sd_task (void *z)
                usleep (100000);
                continue;
             }
-            if (!o && f->sett && f->quality && b.moving)
+            if (!o && f->sett && f->setecef && f->quality && b.moving)
             {                   // Open file
                struct tm t;
                time_t now = f->ecef.t / 1000000LL;
                gmtime_r (&now, &t);
-               sprintf (filename, "%s/%04d-%02d-%02dT%02d-%02d-%02d.json",
-                        sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+               sprintf (filename, "%s/%04d-%02d-%02dT%02d-%02d-%02d.%s",
+                        sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec,
+                        loggpx ? "gpx" : "json");
                o = fopen (filename, "w");
                if (!o)
                {                // Open failed
@@ -1647,7 +1659,7 @@ sd_task (void *z)
                   revk_error ("SD", &j);
                } else
                {                // Open worked
-                  starthome = b.home;
+                  starthome = (f->home | b.home);
                   b.sdempty = 0;
                   b.sdwaiting = 1;
                   revk_disable_wifi ();
@@ -1656,20 +1668,59 @@ sd_task (void *z)
                   jo_string (j, "action", cardstatus = "Log file created");
                   jo_string (j, "filename", filename);
                   revk_info ("SD", &j);
-                  fprintf (o, "{\n \"id\":\"%s\",\n \"version\":\"%s\"", revk_id, revk_version);
-                  if (logpos)
-                     fprintf (o, ",\n \"gps\":[\n");
+                  if (loggpx)
+                  {
+                     fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" //
+                              "<gpx version=\"1.0\">\n" //
+                              "<metadata><name>%s</name></metadata>\n"  //
+                              "<trk><trkseg>\n", revk_id);
+                  } else
+                  {
+                     fprintf (o, "{\n \"id\":\"%s\",\n \"version\":\"%s\"", revk_id, revk_version);
+                     if (logpos)
+                        fprintf (o, ",\n \"gps\":[\n");
+                  }
                }
                line = 0;
             }
             if (o && logpos)
             {
-               jo_t j = log_line (f);
-               char *l = jo_finisha (&j);
-               if (line++)
-                  fprintf (o, ",\n");
-               fprintf (o, "  %s", l);
-               free (l);
+               if (loggpx)
+               {
+                  if (f->setlla)
+                  {
+                     fprintf (o, "<trkpt lat=\"%.8lf\" lon=\"%.8lf\">", f->lat, f->lon);
+                     if (!isnan (f->alt))
+                        fprintf (o, "<ele>%.2f</ele>", f->alt);
+                     if (f->sett)
+                     {
+                        struct tm t;
+                        time_t now = f->ecef.t / 1000000LL;
+                        gmtime_r (&now, &t);
+                        fprintf (o, "<time>%04d-%02d-%02dT%02d:%02d:%02dZ</time>", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                                 t.tm_hour, t.tm_min, t.tm_sec);
+                     }
+                     if (f->slow.fixmode >= 1)
+                        fprintf (o, "<fix>%s</fix>", f->slow.fixmode == 1 ? "none" : f->slow.fixmode == 2 ? "2d" : "3d");
+                     if (f->sats)
+                        fprintf (o, "<sat>%d</sat>", f->sats);
+                     if (!isnan (f->hdop)&&f->hdop)
+                        fprintf (o, "<hdop>%.1f</hdop>", f->hdop);
+                     if (!isnan (f->slow.vdop)&&f->slow.vdop)
+                        fprintf (o, "<vdop>%.1f</vdop>", f->slow.vdop);
+                     if (!isnan (f->slow.pdop)&&f->slow.opdop)
+                        fprintf (o, "<pdop>%.1f</pdop>", f->slow.pdop);
+                     fprintf (o, "</trkpt>\n");
+                  }
+               } else
+               {
+                  jo_t j = log_line (f);
+                  char *l = jo_finisha (&j);
+                  if (line++)
+                     fprintf (o, ",\n");
+                  fprintf (o, "  %s", l);
+                  free (l);
+               }
             }
             if (f->setodo)
             {
@@ -1677,6 +1728,8 @@ sd_task (void *z)
                   odo0 = f->odo;
                odo1 = f->odo;
             }
+            if (f->setecef)
+               endhome = (f->home | b.home);
             if (f->sett)
             {
                end = f->ecef.t / 1000000LL;
@@ -1688,28 +1741,35 @@ sd_task (void *z)
          if (o)
          {                      // Close file
             ESP_LOGE (TAG, "Close file");
-            if (logpos)
-               fprintf (o, "\n ]");
-            if (start)
+            if (loggpx)
             {
-               struct tm t;
-               gmtime_r (&start, &t);
-               fprintf (o, ",\n \"start\":{\"ts\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"home\":%s}",
-                        t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, starthome ? "true" : "false");
-            }
-            if (end)
+               fprintf (o, "</trkseg></trk>\n"  //
+                        "</gpx>\n");
+            } else
             {
-               struct tm t;
-               gmtime_r (&end, &t);
-               fprintf (o, ",\n \"end\":{\"ts\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"home\":%s}",
-                        t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, b.home ? "true" : "false");
+               if (logpos)
+                  fprintf (o, "\n ]");
+               if (start)
+               {
+                  struct tm t;
+                  gmtime_r (&start, &t);
+                  fprintf (o, ",\n \"start\":{\"ts\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"home\":%s}",
+                           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, starthome ? "true" : "false");
+               }
+               if (end)
+               {
+                  struct tm t;
+                  gmtime_r (&end, &t);
+                  fprintf (o, ",\n \"end\":{\"ts\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"home\":%s}",
+                           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, endhome ? "true" : "false");
+               }
+               if (odo0)
+               {
+                  odo1 -= odo0;
+                  fprintf (o, ",\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
+               }
+               fprintf (o, "\n}\n");
             }
-            if (odo0)
-            {
-               odo1 -= odo0;
-               fprintf (o, ",\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
-            }
-            fprintf (o, "\n}\n");
             fclose (o);
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Log file closed");
@@ -1854,6 +1914,7 @@ revk_web_extra (httpd_req_t * req)
 #endif
       )
       revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
+   revk_web_setting_b (req, "GPX Log", "loggpx", loggpx, "Log files in GPX format");
    revk_web_setting_i (req, "Move time", "move", move, "Seconds moving to start journey (quicker if moving fast)");
    revk_web_setting_i (req, "Stop time", "stop", stop, "Seconds stopped to end journey (quicker if at home)");
    revk_web_send (req, "<tr><td colspan=4>");
