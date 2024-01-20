@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 13:47:47
+// Generated 2024-01-20 13:49:19
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -91,7 +91,7 @@ translate([6.900000,4.800000,0.800000])rotate([0,0,-90.000000])m0(part,hole,bloc
 translate([12.000000,4.600000,0.800000])rotate([0,0,180.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([40.700000,9.400000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([19.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-// Missing model J1.1 S2B-PH-SM4-TB
+translate([38.000000,5.000000,0.800000])m13(part,hole,block,casetop,02); // J1 (back)
 // Missing model U2.1 LGA-16_3x3mm_P0.5mm_LayoutBorder3x5y
 translate([17.700000,20.600000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([8.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
@@ -101,7 +101,7 @@ translate([14.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,bloc
 translate([17.700000,17.300000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 }
 
-parts_top=25;
+parts_top=26;
 // Parts to go on PCB (bottom)
 module parts_bottom(part=false,hole=false,block=false){
 // Missing model J3.1 1815154 (back)
@@ -298,6 +298,20 @@ if(part)
 {
 	b(0,0,0,1.6,0.8,1); // Chip
 	b(0,0,0,1.6,0.95,0.2); // Pad size
+}
+}
+
+module m13(part=false,hole=false,block=false,height,N=0)
+{ // J1
+if(part)
+{
+	b(2*(N/2)-1,3.6,0,2*N+2,6,4);
+	b(2*(N/2)-1,0,0,2*N+2,3.2,1.5);
+	for(a=[0:1:N-1])translate([2*a,0,-3])cylinder(d1=0.5,d2=2,h=3,$fn=12);
+}
+if(hole)
+{
+	b(2*(N/2)-1,5+3.6,0,2*N+2,6+10,4);
 }
 }
 
