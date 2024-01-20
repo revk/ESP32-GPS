@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 12:59:05
+// Generated 2024-01-20 13:40:45
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -67,8 +67,7 @@ translate([12.050000,6.937500,0.800000])rotate([0,0,90.000000])m9(part,hole,bloc
 translate([23.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([25.600000,8.800000,0.800000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([16.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-// Missing model J6.1 TF_PUSH
-// Missing model J6.2 MicroSD
+translate([8.600000,16.050000,0.800000])rotate([0,0,180.000000])m10(part,hole,block,casetop); // J6 (back)
 translate([20.000000,5.750000,0.800000])rotate([0,0,-90.000000])m4(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
 translate([1.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([27.500000,8.800000,0.800000])rotate([0,0,180.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
@@ -80,11 +79,11 @@ translate([17.700000,15.700000,0.800000])rotate([0,0,-90.000000])m0(part,hole,bl
 translate([0.700000,9.000000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([15.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([16.600000,23.450000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([20.800000,8.200000,0.800000])m10(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
+translate([20.800000,8.200000,0.800000])m11(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
 translate([20.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([30.937500,6.000000,0.800000])m9(part,hole,block,casetop); // Q2 (back)
 translate([32.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([3.600000,10.000000,0.800000])rotate([0,0,180.000000])m10(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
+translate([3.600000,10.000000,0.800000])rotate([0,0,180.000000])m11(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
 translate([24.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([3.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([30.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
@@ -102,7 +101,7 @@ translate([14.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,bloc
 translate([17.700000,17.300000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 }
 
-parts_top=24;
+parts_top=25;
 // Parts to go on PCB (bottom)
 module parts_bottom(part=false,hole=false,block=false){
 // Missing model J3.1 1815154 (back)
@@ -266,6 +265,22 @@ if(part)
 }
 
 module m10(part=false,hole=false,block=false,height)
+{ // J6
+if(part)
+{
+	b(0,2.45,0,14.85,14.5,2); // Main case
+	b(-7.75,4.3,0,1.2,1.5,0.2); // Tab
+	b(-7.75,-5.3,0,1.2,2.2,0.2); // Tab
+	b(7.75,-5.3,0,1.2,2.2,0.2); // Tab
+	b(-0.95,-4.7,0.75,10,15,1);	// Card
+}
+if(hole)
+{
+	b(-0.95,-4.7,0.75,10,15,1);	// Card
+}
+}
+
+module m11(part=false,hole=false,block=false,height)
 { // RevK:C_0603 C_0603_1608Metric
 // 0603 Capacitor
 if(part)
