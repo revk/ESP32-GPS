@@ -73,7 +73,8 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 	b(gpswalking,N,         GPS Walking mode)       \
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
-	bl(loglla,Y,		Log lat/lon/alt)		\
+	b(logpos,Y,		Log position data)	\
+	bl(loglla,Y,		Log lat/lon/alt)	\
 	bl(logund,Y,		Log undulation)		\
 	bl(logdop,Y,		Lod dop)		\
 	bl(logodo,Y,		Log odometer)		\
@@ -239,7 +240,7 @@ void power_shutdown (void);
 uint8_t
 io (uint8_t gpio)
 {                               // Get GPIO
-   if (gpio && gpio_get_level (gpio & IO_MASK) != ((gpio & IO_INV) ? 0 : 1))
+   if (gpio && gpio_get_level (gpio & IO_MASK) == ((gpio & IO_INV) ? 0 : 1))
       return 1;
    return 0;
 }
@@ -1581,7 +1582,7 @@ sd_task (void *z)
       }
       ESP_LOGI (TAG, "Filesystem mounted");
       b.sdpresent = 1;          // we mounted, so must be
-      rgbsd = 'Y';
+      rgbsd = 'G';              // Writing to card
       if (b.doformat && (ret = esp_vfs_fat_spiflash_format_rw_wl (sd_mount, "GPS")))
       {
          jo_t j = jo_object_alloc ();
@@ -1589,6 +1590,7 @@ sd_task (void *z)
          jo_int (j, "code", ret);
          revk_error ("SD", &j);
       }
+      rgbsd = 'R';              // Oddly this call can hang forever!
       {
          esp_vfs_fat_info (sd_mount, &sdsize, &sdfree);
          jo_t j = jo_object_alloc ();
@@ -1597,6 +1599,7 @@ sd_task (void *z)
          jo_int (j, "free", sdfree);
          revk_info ("SD", &j);
       }
+      rgbsd = 'Y';              // Mounted, ready
       b.doformat = 0;
       checkupload ();
       while (!b.doformat && !b.dodismount && !b.die)
@@ -1606,11 +1609,13 @@ sd_task (void *z)
          char filename[100];
          uint64_t odo0 = 0,
             odo1 = 0;
-         time_t last = 0;
+         time_t start = 0;
+         uint8_t starthome = 0;
+         time_t end = 0;
          while (!b.doformat && !b.dodismount)
          {
             rgbsd = (o ? 'G' : 'Y');
-            if (!(b.sdpresent = op (sdcd)))
+            if (!(b.sdpresent = io (sdcd)))
             {                   // card removed
                b.dodismount = 1;
                break;
@@ -1642,6 +1647,7 @@ sd_task (void *z)
                   revk_error ("SD", &j);
                } else
                {                // Open worked
+                  starthome = b.home;
                   b.sdempty = 0;
                   b.sdwaiting = 1;
                   revk_disable_wifi ();
@@ -1650,13 +1656,13 @@ sd_task (void *z)
                   jo_string (j, "action", cardstatus = "Log file created");
                   jo_string (j, "filename", filename);
                   revk_info ("SD", &j);
-                  fprintf (o,
-                           "{\n \"start\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\n \"id\":\"%s\",\n \"version\":\"%s\",\n \"gps\":[\n",
-                           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, revk_id, revk_version);
+                  fprintf (o, "{\n \"id\":\"%s\",\n \"version\":\"%s\"", revk_id, revk_version);
+                  if (logpos)
+                     fprintf (o, ",\n \"gps\":[\n");
                }
                line = 0;
             }
-            if (o)
+            if (o && logpos)
             {
                jo_t j = log_line (f);
                char *l = jo_finisha (&j);
@@ -1672,24 +1678,36 @@ sd_task (void *z)
                odo1 = f->odo;
             }
             if (f->sett)
-               last = f->ecef.t / 1000000LL;
+            {
+               end = f->ecef.t / 1000000LL;
+               if (!start)
+                  start = end;
+            }
             fixadd (&fixfree, f);       // Discard
          }
          if (o)
          {                      // Close file
             ESP_LOGE (TAG, "Close file");
-            fprintf (o, "\n ]");
+            if (logpos)
+               fprintf (o, "\n ]");
+            if (start)
+            {
+               struct tm t;
+               gmtime_r (&start, &t);
+               fprintf (o, ",\n \"start\":{\"ts\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"home\":%s}",
+                        t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, starthome ? "true" : "false");
+            }
+            if (end)
+            {
+               struct tm t;
+               gmtime_r (&end, &t);
+               fprintf (o, ",\n \"end\":{\"ts\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"home\":%s}",
+                        t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, b.home ? "true" : "false");
+            }
             if (odo0)
             {
                odo1 -= odo0;
                fprintf (o, ",\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
-            }
-            if (last)
-            {
-               struct tm t;
-               gmtime_r (&last, &t);
-               fprintf (o, ",\n \"end\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\"",
-                        t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
             }
             fprintf (o, "\n}\n");
             fclose (o);
@@ -1892,7 +1910,7 @@ app_main ()
 #define str(x) #x
    revk_register ("gps", 0, sizeof (gpsuart), &gpsuart, NULL, SETTING_SECRET);
    revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
-   revk_register ("log", 0, sizeof (loglla), &loglla, "1", SETTING_SECRET | SETTING_BOOLEAN | SETTING_LIVE);
+   revk_register ("log", 0, sizeof (logpos), &logpos, "1", SETTING_SECRET | SETTING_BOOLEAN);
    revk_register ("pack", 0, sizeof (packdist), &packdist, "0", SETTING_SECRET | SETTING_LIVE);
    revk_register ("acc", 0, sizeof (accaddress), &accaddress, "0x19", SETTING_SECRET | SETTING_FIX);
 #define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
@@ -1925,6 +1943,7 @@ app_main ()
 #undef h
 #undef s
 #undef str
+#undef io
    revk_start ();
    if (charger)
    {

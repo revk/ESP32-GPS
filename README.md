@@ -39,6 +39,7 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |Setting|Meaning|
 |-------|-------|
 |`url`|Upload URL|
+|`logpos`|If not set then the log file does not include position data at all|
 |`loglla`|Include `lat`, `lon`, and `alt`|
 |`logcs`|Include `course` and `speed`|
 |`logund`|Include undulation `und`|
