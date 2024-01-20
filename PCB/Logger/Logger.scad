@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 13:50:45
+// Generated 2024-01-20 13:58:11
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -167,7 +167,7 @@ module m4(part=false,hole=false,block=false,height)
 { // RevK:R_1218 R_1218_3246Metric
 if(part)
 {
-	b(0,0,0,1.1,4.6,0.5); // Chip
+	b(0,0,0,3.1,4.6,0.5); // Chip
 	b(-1.475,0,0,1.05,4.75,0.1); // Pad
 	b(1.475,0,0,1.05,4.75,0.1); // Pad
 }
