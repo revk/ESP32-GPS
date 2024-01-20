@@ -1,6 +1,6 @@
 // Generated case design for L86/L86.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-18 16:26:55
+// Generated 2024-01-20 15:40:11
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -12,11 +12,11 @@
 // Globals
 margin=0.200000;
 lip=2.000000;
-casebottom=5.000000;
-casetop=5.000000;
+casebottom=6.000000;
+casetop=8.000000;
 casewall=3.000000;
 fit=0.000000;
-edge=1.000000;
+edge=4.000000;
 pcbthickness=1.600000;
 nohull=false;
 hullcap=1.000000;
@@ -43,21 +43,17 @@ translate([16.750000,9.000000,0.000000])rotate([0,0,-90.000000])rotate([180,0,0]
 translate([18.000000,21.000000,0.000000])rotate([0,0,180.000000])rotate([180,0,0])rotate([-0.000000,-0.000000,-180.000000])m2(part,hole,block,casebottom); // RevK:Battery-Holder-2032 BatteryHolder_Keystone_3034_1x20mm
 translate([18.000000,8.130000,0.000000])rotate([0,0,180.000000])rotate([180,0,0])m3(part,hole,block,casebottom,5); // J1
 translate([19.250000,9.000000,0.000000])rotate([0,0,-90.000000])rotate([180,0,0])m1(part,hole,block,casebottom); // RevK:DFN1006-2L C_0402_1005Metric
-// Missing model C1.1 CP_EIA-7343-31_Kemet-D (back)
+translate([31.000000,13.000000,0.000000])rotate([0,0,90.000000])rotate([180,0,0])m4(part,hole,block,casebottom); // C1
 }
 
-parts_bottom=1;
+parts_bottom=2;
 module b(cx,cy,z,w,l,h){translate([cx-w/2,cy-l/2,z])cube([w,l,h]);}
 module m0(part=false,hole=false,block=false,height)
 { // U1
-rotate([90,0,0])
+if(part)
 {
-	if(part)
-	{
-		b(0,0,0,18.4,18.4,6.95);
-	}
+	b(0,0,0,1+18.4,1+18.4,6.95);
 }
-	
 }
 
 module m1(part=false,hole=false,block=false,height)
@@ -96,6 +92,14 @@ if(hole)
 		b(0,-7.5/2-7.5-0.4,0,1.7+N*2.5,7.5,4);
 		b(0,-7.5/2-7.5-0.4,0,1.7+N*2.5-2,7.5,5);
 	}
+}
+}
+
+module m4(part=false,hole=false,block=false,height)
+{ // C1
+if(part)
+{
+	b(0,0,0,7.5,4.5,3.1);
 }
 }
 

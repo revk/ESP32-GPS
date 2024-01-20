@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-18 16:26:16
+// Generated 2024-01-20 15:39:21
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -12,11 +12,11 @@
 // Globals
 margin=0.200000;
 lip=2.000000;
-casebottom=5.000000;
-casetop=5.000000;
+casebottom=7.000000;
+casetop=7.000000;
 casewall=3.000000;
 fit=0.000000;
-edge=1.000000;
+edge=4.000000;
 pcbthickness=0.800000;
 nohull=false;
 hullcap=1.000000;
@@ -41,15 +41,15 @@ translate([17.100000,25.100000,0.800000])rotate([0,0,90.000000])m1(part,hole,blo
 translate([25.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([17.700000,22.400000,0.800000])rotate([0,0,90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([6.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-// Missing model C2.1 CP_EIA-7343-31_Kemet-D
+translate([38.300000,23.300000,0.800000])rotate([0,0,180.000000])m3(part,hole,block,casetop); // C2 (back)
 translate([13.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([7.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([26.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([38.000000,10.200000,0.800000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-// Missing model R10.1 R_1218_3246Metric
-translate([34.750000,10.000000,0.800000])rotate([0,0,-90.000000])m3(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
-translate([8.400000,7.600000,0.800000])rotate([0,0,-90.000000])m3(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
-translate([27.000000,6.200000,0.800000])rotate([0,0,90.000000])m4(part,hole,block,casetop); // U3 (back)
+translate([16.250000,6.500000,0.800000])rotate([0,0,90.000000])m4(part,hole,block,casetop); // RevK:R_1218 R_1218_3246Metric (back)
+translate([34.750000,10.000000,0.800000])rotate([0,0,-90.000000])m5(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
+translate([8.400000,7.600000,0.800000])rotate([0,0,-90.000000])m5(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
+translate([27.000000,6.200000,0.800000])rotate([0,0,90.000000])m6(part,hole,block,casetop); // U3 (back)
 translate([18.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([32.200000,3.500000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([11.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
@@ -57,19 +57,18 @@ translate([41.700000,9.400000,0.800000])rotate([0,0,90.000000])m2(part,hole,bloc
 translate([0.700000,7.100000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([31.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([27.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([30.800000,8.800000,0.800000])m5(part,hole,block,casetop); // D2 (back)
+translate([30.800000,8.800000,0.800000])m7(part,hole,block,casetop); // D2 (back)
 translate([10.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([23.000000,6.000000,0.800000])rotate([0,0,180.000000])m4(part,hole,block,casetop); // U3 (back)
-translate([38.300000,16.035000,0.800000])rotate([0,0,90.000000])translate([0.000000,-1.050000,0.000000])rotate([90.000000,-0.000000,-0.000000])m6(part,hole,block,casetop); // RevK:USB-C-Socket-H CSP-USC16-TR (back)
+translate([23.000000,6.000000,0.800000])rotate([0,0,180.000000])m6(part,hole,block,casetop); // U3 (back)
+translate([38.300000,16.035000,0.800000])rotate([0,0,90.000000])translate([0.000000,-1.050000,0.000000])rotate([90.000000,-0.000000,-0.000000])m8(part,hole,block,casetop); // RevK:USB-C-Socket-H CSP-USC16-TR (back)
 translate([5.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([26.000000,18.000000,0.800000])m7(part,hole,block,casetop); // U1 (back)
-translate([12.050000,6.937500,0.800000])rotate([0,0,90.000000])m8(part,hole,block,casetop); // Q2 (back)
+translate([26.000000,18.000000,0.800000])m9(part,hole,block,casetop); // U1 (back)
+translate([12.050000,6.937500,0.800000])rotate([0,0,90.000000])m10(part,hole,block,casetop); // Q2 (back)
 translate([23.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([25.600000,8.800000,0.800000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([16.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-// Missing model J6.1 TF_PUSH
-// Missing model J6.2 MicroSD
-translate([20.000000,5.750000,0.800000])rotate([0,0,-90.000000])m3(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
+translate([8.600000,16.050000,0.800000])rotate([0,0,180.000000])m11(part,hole,block,casetop); // J6 (back)
+translate([20.000000,5.750000,0.800000])rotate([0,0,-90.000000])m5(part,hole,block,casetop); // RevK:C_0805 C_0805_2012Metric (back)
 translate([1.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([27.500000,8.800000,0.800000])rotate([0,0,180.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([29.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
@@ -80,11 +79,11 @@ translate([17.700000,15.700000,0.800000])rotate([0,0,-90.000000])m0(part,hole,bl
 translate([0.700000,9.000000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([15.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([16.600000,23.450000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-translate([20.800000,8.200000,0.800000])m9(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
+translate([20.800000,8.200000,0.800000])m12(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
 translate([20.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([30.937500,6.000000,0.800000])m8(part,hole,block,casetop); // Q2 (back)
+translate([30.937500,6.000000,0.800000])m10(part,hole,block,casetop); // Q2 (back)
 translate([32.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
-translate([3.600000,10.000000,0.800000])rotate([0,0,180.000000])m9(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
+translate([3.600000,10.000000,0.800000])rotate([0,0,180.000000])m12(part,hole,block,casetop); // RevK:C_0603 C_0603_1608Metric (back)
 translate([24.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([3.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([30.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
@@ -92,8 +91,8 @@ translate([6.900000,4.800000,0.800000])rotate([0,0,-90.000000])m0(part,hole,bloc
 translate([12.000000,4.600000,0.800000])rotate([0,0,180.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([40.700000,9.400000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
 translate([19.000000,2.900000,0.800000])rotate([0,0,90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
-// Missing model J1.1 S2B-PH-SM4-TB
-// Missing model U2.1 LGA-16_3x3mm_P0.5mm_LayoutBorder3x5y
+translate([38.000000,5.000000,0.800000])m13(part,hole,block,casetop,02); // J1 (back)
+translate([3.000000,7.000000,0.800000])rotate([0,0,90.000000])m14(part,hole,block,casetop); // U2 (back)
 translate([17.700000,20.600000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 translate([8.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,block,casetop); // D12 (back)
 translate([0.700000,5.300000,0.800000])rotate([0,0,-90.000000])m2(part,hole,block,casetop); // RevK:R_0402 R_0402_1005Metric (back)
@@ -102,14 +101,13 @@ translate([14.000000,1.500000,0.800000])rotate([0,0,45.000000])m1(part,hole,bloc
 translate([17.700000,17.300000,0.800000])rotate([0,0,-90.000000])m0(part,hole,block,casetop); // RevK:DFN1006-2L C_0402_1005Metric (back)
 }
 
-parts_top=23;
+parts_top=27;
 // Parts to go on PCB (bottom)
 module parts_bottom(part=false,hole=false,block=false){
-// Missing model J3.1 1815154 (back)
-// Missing model J3.2 1778793 (back)
+translate([2.900000,13.000000,0.000000])rotate([0,0,90.000000])rotate([180,0,0])m15(part,hole,block,casebottom,5); // J3
 }
 
-parts_bottom=0;
+parts_bottom=1;
 module b(cx,cy,z,w,l,h){translate([cx-w/2,cy-l/2,z])cube([w,l,h]);}
 module m0(part=false,hole=false,block=false,height)
 { // RevK:DFN1006-2L C_0402_1005Metric
@@ -157,6 +155,24 @@ if(part)
 }
 
 module m3(part=false,hole=false,block=false,height)
+{ // C2
+if(part)
+{
+	b(0,0,0,7.5,4.5,3.1);
+}
+}
+
+module m4(part=false,hole=false,block=false,height)
+{ // RevK:R_1218 R_1218_3246Metric
+if(part)
+{
+	b(0,0,0,3.1,4.6,0.5); // Chip
+	b(-1.475,0,0,1.05,4.75,0.1); // Pad
+	b(1.475,0,0,1.05,4.75,0.1); // Pad
+}
+}
+
+module m5(part=false,hole=false,block=false,height)
 { // RevK:C_0805 C_0805_2012Metric
 // 0805 Capacitor
 if(part)
@@ -166,7 +182,7 @@ if(part)
 }
 }
 
-module m4(part=false,hole=false,block=false,height)
+module m6(part=false,hole=false,block=false,height)
 { // U3
 // SOT-23-5
 if(part)
@@ -176,7 +192,7 @@ if(part)
 }
 }
 
-module m5(part=false,hole=false,block=false,height)
+module m7(part=false,hole=false,block=false,height)
 { // D2
 // SOD-123 Diode
 if(part)
@@ -186,7 +202,7 @@ if(part)
 }
 }
 
-module m6(part=false,hole=false,block=false,height)
+module m8(part=false,hole=false,block=false,height)
 { // RevK:USB-C-Socket-H CSP-USC16-TR
 // USB connector
 rotate([-90,0,0])translate([-4.47,-3.84,0])
@@ -228,7 +244,7 @@ rotate([-90,0,0])translate([-4.47,-3.84,0])
 }
 }
 
-module m7(part=false,hole=false,block=false,height)
+module m9(part=false,hole=false,block=false,height)
 { // U1
 // ESP32-S3-MINI-1
 translate([-15.4/2,-15.45/2,0])
@@ -245,7 +261,7 @@ translate([-15.4/2,-15.45/2,0])
 }
 }
 
-module m8(part=false,hole=false,block=false,height)
+module m10(part=false,hole=false,block=false,height)
 { // Q2
 // SOT-23
 if(part)
@@ -257,13 +273,76 @@ if(part)
 }
 }
 
-module m9(part=false,hole=false,block=false,height)
+module m11(part=false,hole=false,block=false,height)
+{ // J6
+if(part)
+{
+	b(0,-2.45,0,14.85,14.5,2); // Main case
+	b(-7.75,4.3,0,1.2,1.5,0.2); // Tab
+	b(-7.75,-5.3,0,1.2,2.2,0.2); // Tab
+	b(7.75,-5.3,0,1.2,2.2,0.2); // Tab
+	for(i=[0:8])b(2.25-i*1.1,5.3,0,0.7,1.6,0.4); // Pins
+	b(-0.95,-4.7,0.75,10,15,1);	// Card
+}
+if(hole)
+{
+	b(-0.95,-4.7-5,0.75,10,25,1);	// Card
+}
+}
+
+module m12(part=false,hole=false,block=false,height)
 { // RevK:C_0603 C_0603_1608Metric
 // 0603 Capacitor
 if(part)
 {
 	b(0,0,0,1.6,0.8,1); // Chip
 	b(0,0,0,1.6,0.95,0.2); // Pad size
+}
+}
+
+module m13(part=false,hole=false,block=false,height,N=0)
+{ // J1
+translate([0,-4.5,0])rotate([90,0,0])
+{
+	if(part)
+	{
+		b(0,3,-6,3.9+2*N,6,6); // Body
+		b(-1.55-N,2,-7.6,0.8,4,1.6); // Tag
+		b(1.55+N,2,-7.6,0.8,4,1.6); // Tag
+		for(n=[0:N-1])b(-1+n*2,0.25,-9.5,1,0.5,3.5); // pins
+	}
+	if(hole)
+	{
+		b(0,3,0,1.3+N*2,4,10);
+	}
+}
+}
+
+module m14(part=false,hole=false,block=false,height)
+{ // U2
+if(part)
+{
+	b(0,0,0,3,3,0.5);
+}
+}
+
+module m15(part=false,hole=false,block=false,height,N=0)
+{ // J3
+// Socket on PCB
+if(part)
+{
+	for(n=[0:N-1])b(-(N-1)*1.25+n*2.5,5.35,0,1.2,3.2,0.5); // Pins
+	b(-8.25,1.15,0,2.2,5.6,0.2); // Tab
+	b(8.25,1.15,0,2.2,5.6,0.2); // Tab
+	hull()
+	{
+		b(0,0.9,0,1.7+N*2.5,7.5,4);
+		b(0,0.9,0,1.7+N*2.5-2,7.5,5);
+	}
+}
+if(hole)
+{ // Plug
+	b(0,-7.5/2-2.85,0,0.5+N*2.5,7.5,5);
 }
 }
 
