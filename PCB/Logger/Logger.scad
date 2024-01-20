@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 14:43:14
+// Generated 2024-01-20 15:39:21
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -16,7 +16,7 @@ casebottom=7.000000;
 casetop=7.000000;
 casewall=3.000000;
 fit=0.000000;
-edge=1.000000;
+edge=4.000000;
 pcbthickness=0.800000;
 nohull=false;
 hullcap=1.000000;

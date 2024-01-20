@@ -15,9 +15,9 @@ update:
 	-git push
 
 Logger/Logger.scad: Logger/Logger.kicad_pcb PCBCase/case Makefile PCBCase/case.scad Makefile
-	PCBCase/case -o $@ $< --top=7 --bottom=7 --pcb=2
+	PCBCase/case -o $@ $< --top=7 --bottom=7 --pcb=2 --edge=4
 
 L86/L86.scad: L86/L86.kicad_pcb PCBCase/case Makefile PCBCase/case.scad Makefile
-	PCBCase/case -o $@ $< --top=8 --bottom=6
+	PCBCase/case -o $@ $< --top=8 --bottom=6 --edge=4
 
 

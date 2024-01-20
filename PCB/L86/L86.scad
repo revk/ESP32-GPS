@@ -1,6 +1,6 @@
 // Generated case design for L86/L86.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 14:44:04
+// Generated 2024-01-20 15:40:11
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -16,7 +16,7 @@ casebottom=6.000000;
 casetop=8.000000;
 casewall=3.000000;
 fit=0.000000;
-edge=1.000000;
+edge=4.000000;
 pcbthickness=1.600000;
 nohull=false;
 hullcap=1.000000;
