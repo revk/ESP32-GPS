@@ -1,6 +1,6 @@
 // Generated case design for L86/L86.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 14:35:18
+// Generated 2024-01-20 14:44:04
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5

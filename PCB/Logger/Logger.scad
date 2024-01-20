@@ -1,6 +1,6 @@
 // Generated case design for Logger/Logger.kicad_pcb
 // By https://github.com/revk/PCBCase
-// Generated 2024-01-20 14:34:27
+// Generated 2024-01-20 14:43:14
 // title:	GPS reference
 // date:	${DATE}
 // rev:	5
@@ -12,8 +12,8 @@
 // Globals
 margin=0.200000;
 lip=2.000000;
-casebottom=6.000000;
-casetop=6.000000;
+casebottom=7.000000;
+casetop=7.000000;
 casewall=3.000000;
 fit=0.000000;
 edge=1.000000;
@@ -286,7 +286,7 @@ if(part)
 }
 if(hole)
 {
-	b(-0.95,-4.7,0.75,10,15,1);	// Card
+	b(-0.95,-4.7-5,0.75,10,25,1);	// Card
 }
 }
 
