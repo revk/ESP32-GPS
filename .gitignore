@@ -10,6 +10,7 @@
 build/*
 sdkconfig
 json2gpx
+makepostcodes
 KiCad/*-backups
 KiCad/fp-info-cache
 components/*

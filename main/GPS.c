@@ -1778,8 +1778,10 @@ sd_task (void *z)
          }
          if (o)
          {                      // Close file
-            if (odo0 && odo1)
+            if (odo0 && odo1 && odo1 > odo0)
                odo1 -= odo0;
+            else
+               odo0 = odo1 = 0;
             ESP_LOGE (TAG, "Close file");
             if (loggpx)
             {

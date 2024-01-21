@@ -7,7 +7,7 @@ PROJECT_NAME := GPS
 SUFFIX := $(shell components/ESP32-RevK/buildsuffix)
 MODELS := Display Glider L86
 
-all:	json2gpx
+all:	json2gpx POSTCODE.DAT
 	@echo Make: build/$(PROJECT_NAME)$(SUFFIX).bin
 	@idf.py build
 	@cp build/$(PROJECT_NAME).bin $(PROJECT_NAME)$(SUFFIX).bin
@@ -58,3 +58,9 @@ AJL/ajl.o:
 
 json2gpx: json2gpx.c AJL/ajl.o
 	cc -O -o $@ $< -IAJL ${OPTS} -lpopt AJL/ajl.o
+
+makepostcodes: makepostcodes.c AJL/ajl.o
+	cc -O -o $@ $< ${OPTS}
+
+POSTCODE.DAT: makepostcodes
+	./makepostcodes OSCodePoint/*.csv > POSTCODE.DAT
