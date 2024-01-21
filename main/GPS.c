@@ -75,6 +75,7 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
         b(gpsballoon,N,         GPS Balloon mode)       \
 	b(logpos,Y,		Log position data)	\
 	b(loggpx,N,		Log in GPX format)	\
+	bl(logcsv,Y,		Log in CSV summary)	\
 	bl(loglla,Y,		Log lat/lon/alt)	\
 	bl(logund,Y,		Log undulation)		\
 	bl(logdop,Y,		Lod dop)		\
@@ -239,6 +240,29 @@ fixq_t fixfree = { 0 };         // Queue of free
 
 void power_shutdown (void);
 
+char *
+getts (uint64_t when, char fn)
+{
+   struct tm t;
+   time_t now = when / 1000000LL;
+   gmtime_r (&now, &t);
+   if (t.tm_year < 100)
+      return NULL;
+   uint32_t ms = when / 1000LL % 1000LL;
+   char temp[50],
+    *p = temp;
+   p += sprintf (p, "%04d-%02d-%02dT%02d:%02d:%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+   if (ms)
+      p += sprintf (p, ".%03ld", ms);
+   if (fn)
+   {
+      for (char *p = temp; *p; p++)
+         if (*p == ':' || *p == '.')
+            *p = fn;
+   }
+   return strdup (temp);
+}
+
 uint8_t
 io (uint8_t gpio)
 {                               // Get GPIO
@@ -393,6 +417,16 @@ app_callback (int client, const char *prefix, const char *target, const char *su
          return "Expecting JSON string";
       if (len > sizeof (value))
          return "Too long";
+   }
+   if (!strcmp (suffix, "stop"))
+   {
+      b.moving = 0;
+      return "";
+   }
+   if (!strcmp (suffix, "move"))
+   {
+      b.moving = 1;
+      return "";
    }
    if (!strcmp (suffix, "upgrade"))
    {
@@ -1050,19 +1084,10 @@ log_line (fix_t * f)
    jo_t j = jo_object_alloc ();
    if (f->sett)
    {
-      struct tm t;
-      time_t now = f->ecef.t / 1000000LL;
-      gmtime_r (&now, &t);
-      uint32_t ms = f->ecef.t / 1000LL % 1000LL;
-      char temp[100],
-       *p = temp;
-      p += sprintf (p, "%04d-%02d-%02dT%02d:%02d:%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
-      if (ms)
-         p += sprintf (p, ".%03ld", ms);
-      *p++ = 'Z';
-      *p = 0;
-      if (t.tm_year >= 100)
-         jo_stringf (j, "ts", temp);
+      char *ts = getts (f->ecef.t, 0);
+      if (ts)
+         jo_stringf (j, "ts", ts);
+      free (ts);
    }
    if (logseq)
       jo_int (j, "seq", f->seq);
@@ -1327,10 +1352,23 @@ checkupload (void)
       }
       char zap = 0;
       char *filename = NULL;
+      const char *ct = NULL;
       struct dirent *entry;
       while (!filename && (entry = readdir (dir)))
          if (entry->d_type == DT_REG)
-            asprintf (&filename, "%s/%s", sd_mount, entry->d_name);
+         {
+            const char *e = strchr (entry->d_name, '.');
+            if (!e)
+               continue;
+            if (!strcasecmp (e, ".json"))
+               ct = "application/json";
+            else if (!strcasecmp (e, ".gpx"))
+               ct = "application/gpx+xml";
+            else if (!strcasecmp (e, ".csv"))
+               ct = "text/csv";
+            if (ct)
+               asprintf (&filename, "%s/%s", sd_mount, entry->d_name);
+         }
       closedir (dir);
       if (filename)
       {
@@ -1406,13 +1444,6 @@ checkupload (void)
                   esp_http_client_handle_t client = esp_http_client_init (&config);
                   if (client)
                   {
-                     const char *ext = strrchr (filename, '.');
-                     if (ext)
-                        ext++;
-                     else
-                        ext = "gps";
-                     char *ct;
-                     asprintf (&ct, "application/%s", ext);
                      esp_http_client_set_header (client, "Content-Type", ct);
                      ESP_LOGI (TAG, "Sending %s %ld", filename, s.st_size);
                      if (!esp_http_client_open (client, s.st_size))
@@ -1433,7 +1464,6 @@ checkupload (void)
                         esp_http_client_close (client);
                      }
                      esp_http_client_cleanup (client);
-                     free (ct);
                   }
                }
                upload = 0;
@@ -1536,6 +1566,7 @@ sd_task (void *z)
    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
    slot_config.gpio_cs = sdss & IO_MASK;
    slot_config.host_id = host.slot;
+   uint64_t csvtime = 0;
    while (!b.die)
    {
       if (sdcd)
@@ -1619,10 +1650,14 @@ sd_task (void *z)
          char filename[100];
          uint64_t odo0 = 0,
             odo1 = 0;
-         time_t start = 0;
+         uint64_t starttime = 0;
+         uint64_t endtime;
          uint8_t starthome = 0;
-         time_t end = 0;
          uint8_t endhome = 0;
+         double startlat = NAN,
+            startlon = NAN;
+         double endlat = NAN,
+            endlon = NAN;
          while (!b.doformat && !b.dodismount)
          {
             rgbsd = (o ? 'G' : 'Y');
@@ -1641,47 +1676,52 @@ sd_task (void *z)
                usleep (100000);
                continue;
             }
-            if (!o && f->sett && f->setecef && f->quality && b.moving)
+            if (!o && f->sett && f->setecef && f->setlla && f->quality && b.moving)
             {                   // Open file
-               struct tm t;
-               time_t now = f->ecef.t / 1000000LL;
-               gmtime_r (&now, &t);
-               sprintf (filename, "%s/%04d-%02d-%02dT%02d-%02d-%02d.%s",
-                        sd_mount, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec,
-                        loggpx ? "gpx" : "json");
-               o = fopen (filename, "w");
-               if (!o)
-               {                // Open failed
-                  ESP_LOGE (TAG, "Failed open file %s", filename);
-                  jo_t j = jo_object_alloc ();
-                  jo_string (j, "error", cardstatus = "Failed to create file");
-                  jo_string (j, "filename", filename);
-                  revk_error ("SD", &j);
-               } else
-               {                // Open worked
-                  starthome = (f->home | b.home);
-                  b.sdempty = 0;
-                  b.sdwaiting = 1;
-                  revk_disable_wifi ();
-                  ESP_LOGI (TAG, "Open file %s", filename);
-                  jo_t j = jo_object_alloc ();
-                  jo_string (j, "action", cardstatus = "Log file created");
-                  jo_string (j, "filename", filename);
-                  revk_info ("SD", &j);
-                  if (loggpx)
-                  {
-                     fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" //
-                              "<gpx version=\"1.0\">\n" //
-                              "<metadata><name>%s</name></metadata>\n"  //
-                              "<trk><trkseg>\n", revk_id);
+               char *ts = getts (f->ecef.t, '-');
+               if (ts)
+               {
+                  sprintf (filename, "%s/%s.%s", sd_mount, ts, loggpx ? "gpx" : "json");
+                  free (ts);
+                  o = fopen (filename, "w");
+                  if (!o)
+                  {             // Open failed
+                     ESP_LOGE (TAG, "Failed open file %s", filename);
+                     jo_t j = jo_object_alloc ();
+                     jo_string (j, "error", cardstatus = "Failed to create file");
+                     jo_string (j, "filename", filename);
+                     revk_error ("SD", &j);
                   } else
-                  {
-                     fprintf (o, "{\n \"id\":\"%s\",\n \"version\":\"%s\"", revk_id, revk_version);
-                     if (logpos)
-                        fprintf (o, ",\n \"gps\":[\n");
+                  {             // Open worked
+                     starttime = f->ecef.t;
+                     startlat = f->lat;
+                     startlon = f->lon;
+                     starthome = (f->home | b.home);
+                     if (b.sdempty)
+                        csvtime = 0;
+                     b.sdempty = 0;
+                     b.sdwaiting = 1;
+                     revk_disable_wifi ();
+                     ESP_LOGI (TAG, "Open file %s", filename);
+                     jo_t j = jo_object_alloc ();
+                     jo_string (j, "action", cardstatus = "Log file created");
+                     jo_string (j, "filename", filename);
+                     revk_info ("SD", &j);
+                     if (loggpx)
+                     {
+                        fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"      //
+                                 "<gpx version=\"1.0\">\n"      //
+                                 "<metadata><name>%s</name></metadata>\n"       //
+                                 "<trk><trkseg>\n", revk_id);
+                     } else
+                     {
+                        fprintf (o, "{\n \"id\":\"%s\",\n \"version\":\"%s\"", revk_id, revk_version);
+                        if (logpos)
+                           fprintf (o, ",\n \"gps\":[\n");
+                     }
                   }
+                  line = 0;
                }
-               line = 0;
             }
             if (o && logpos)
             {
@@ -1694,11 +1734,10 @@ sd_task (void *z)
                         fprintf (o, "<ele>%.2f</ele>", f->alt);
                      if (f->sett)
                      {
-                        struct tm t;
-                        time_t now = f->ecef.t / 1000000LL;
-                        gmtime_r (&now, &t);
-                        fprintf (o, "<time>%04d-%02d-%02dT%02d:%02d:%02dZ</time>", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
-                                 t.tm_hour, t.tm_min, t.tm_sec);
+                        char *ts = getts (f->ecef.t, 0);
+                        if (ts)
+                           fprintf (o, "<time>%s</time>", ts);
+                        free (ts);
                      }
                      if (f->slow.fixmode >= 1)
                         fprintf (o, "<fix>%s</fix>", f->slow.fixmode == 1 ? "none" : f->slow.fixmode == 2 ? "2d" : "3d");
@@ -1728,18 +1767,19 @@ sd_task (void *z)
                   odo0 = f->odo;
                odo1 = f->odo;
             }
-            if (f->setecef)
-               endhome = (f->home | b.home);
-            if (f->sett)
+            if (f->sett && f->setecef && f->setlla)
             {
-               end = f->ecef.t / 1000000LL;
-               if (!start)
-                  start = end;
+               endhome = (f->home | b.home);
+               endtime = f->ecef.t;
+               endlat = f->lat;
+               endlon = f->lon;
             }
             fixadd (&fixfree, f);       // Discard
          }
          if (o)
          {                      // Close file
+            if (odo0 && odo1)
+               odo1 -= odo0;
             ESP_LOGE (TAG, "Close file");
             if (loggpx)
             {
@@ -1749,25 +1789,21 @@ sd_task (void *z)
             {
                if (logpos)
                   fprintf (o, "\n ]");
-               if (start)
+               if (starttime)
                {
-                  struct tm t;
-                  gmtime_r (&start, &t);
-                  fprintf (o, ",\n \"start\":{\"ts\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"home\":%s}",
-                           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, starthome ? "true" : "false");
+                  char *ts = getts (starttime, 0);
+                  fprintf (o, ",\n \"start\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s}", ts, startlat, startlon,
+                           starthome ? "true" : "false");
+                  free (ts);
                }
-               if (end)
+               if (endtime)
                {
-                  struct tm t;
-                  gmtime_r (&end, &t);
-                  fprintf (o, ",\n \"end\":{\"ts\":\"%04d-%02d-%02dT%02d:%02d:%02dZ\",\"home\":%s}",
-                           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, endhome ? "true" : "false");
+                  char *ts = getts (endtime, 0);
+                  fprintf (o, ",\n \"end\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s}", ts, endlat, endlon,
+                           endhome ? "true" : "false");
                }
-               if (odo0)
-               {
-                  odo1 -= odo0;
+               if (odo0 && odo1)
                   fprintf (o, ",\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
-               }
                fprintf (o, "\n}\n");
             }
             fclose (o);
@@ -1775,6 +1811,51 @@ sd_task (void *z)
             jo_string (j, "action", cardstatus = "Log file closed");
             jo_string (j, "filename", filename);
             revk_info ("SD", &j);
+            if (!csvtime)
+               csvtime = starttime;
+            if (logcsv)
+            {
+               char *ts = getts (csvtime, '-');
+               sprintf (filename, "%s/%s.csv", sd_mount, ts);
+               o = fopen (filename, "r");
+               if (o)
+               {                // Append
+                  fclose (o);
+                  o = fopen (filename, "a");
+               } else
+               {                // Create
+                  o = fopen (filename, "w");
+                  if (o)
+                  {
+                     ESP_LOGI (TAG, "Open file %s", filename);
+                     jo_t j = jo_object_alloc ();
+                     jo_string (j, "action", cardstatus = "CSV file created");
+                     jo_string (j, "filename", filename);
+                     revk_info ("SD", &j);
+                     fprintf (o, "\"Time\",\"Latitude\",\"Longitude\",\"Distance\"\n");
+                  }
+               }
+               if (!o)
+               {
+                  ESP_LOGE (TAG, "Failed open file %s", filename);
+                  jo_t j = jo_object_alloc ();
+                  jo_string (j, "error", cardstatus = "Failed to create CSV file");
+                  jo_string (j, "filename", filename);
+                  revk_error ("SD", &j);
+               } else
+               {
+                  char *ts = getts (starttime, 0);
+                  fprintf (o, "%s,%.9lf,%.9lf\n", ts, startlat, startlon);
+                  free (ts);
+                  ts = getts (endtime, 0);
+                  fprintf (o, "%s,%.9lf,%.9lf", ts, endlat, endlon);
+                  free (ts);
+                  if (odo0 && odo1)
+                     fprintf (o, ",%lld.%02lld", odo1 / 100, odo1 % 100);
+                  fprintf (o, "\n\n");
+                  fclose (o);
+               }
+            }
          }
          checkupload ();
       }
