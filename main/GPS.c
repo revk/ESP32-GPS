@@ -295,13 +295,6 @@ checkpostcode (void)
 char *
 getpostcode (double lat, double lon)
 {
-   {
-      jo_t j = jo_object_alloc ();
-      jo_litf (j, "lat", "%.9lf", lat);
-      jo_litf (j, "lon", "%.9lf", lon);
-      jo_bool (j, "postcode", b.postcode);
-      revk_error ("postcode", &j);
-   }
    if (!b.postcode)
       return NULL;
    // Find OS grid reference
@@ -350,9 +343,9 @@ getpostcode (double lat, double lon)
    // Look up postcode
 
    size_t grid = sizeof (postcodedat);
-   size_t data = grid + (4 * postcodedat.w * postcodedat.h+1);
+   size_t data = grid + 4 * (postcodedat.w * postcodedat.h + 1);
    grid += 4 * ((N / postcodedat.grid - postcodedat.n) * postcodedat.w + E / postcodedat.grid - postcodedat.e);
-   uint32_t pos[2];
+   uint32_t pos[2] = { 0 };
    struct
    {
       uint32_t e,
@@ -379,18 +372,19 @@ getpostcode (double lat, double lon)
    }
    long best = 0;
    char postcode[8] = { 0 };
-   while (pos[0] < pos[1])
-   {
-      pos[0]++;
-      if (read (i, &p, sizeof (p)) != sizeof (p))
-         break;
-      long d = (long) (p.e - E) * (long) (p.e - E) + (long) (p.n - N) * (long) (p.n - N);
-      if (!*postcode || d < best)
+   int c = pos[1] - pos[0];
+   if (c > 0)
+      while (c--)
       {
-         best = d;
-         memcpy (postcode, p.postcode, sizeof (postcode));
+         if (read (i, &p, sizeof (p)) != sizeof (p))
+            break;
+         long d = (long) (p.e - E) * (long) (p.e - E) + (long) (p.n - N) * (long) (p.n - N);
+         if (!*postcode || d < best)
+         {
+            best = d;
+            memcpy (postcode, p.postcode, sizeof (postcode));
+         }
       }
-   }
    close (i);
    jo_t j = jo_object_alloc ();
    jo_litf (j, "lat", "%.9lf", lat);
