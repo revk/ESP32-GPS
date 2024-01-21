@@ -328,10 +328,8 @@ getpostcode (double lat, double lon)
    long double VI = v / 120.0L * powl (cosl (phi), 5.0L) * (5.0L - 18.0L * powl (tanl (phi), 2.0L)
                                                             + powl (tanl (phi), 4.0L) + 14.0L * eta2 - 58.0L * powl (tanl (phi),
                                                                                                                      2.0L) * eta2);
-   int N =
-      (long double) (I + II * powl (lambda - lambda0, 2.0L) + III * powl (lambda - lambda0, 4.0L) +
-                     IIIA * powl (lambda - lambda0, 6.0L));
-   int E = (long double) (E0 + IV * (lambda - lambda0) + V * powl (lambda - lambda0, 3.0L) + VI * powl (lambda - lambda0, 5.0L));
+   int N = I + II * powl (lambda - lambda0, 2.0L) + III * powl (lambda - lambda0, 4.0L) + IIIA * powl (lambda - lambda0, 6.0L);
+   int E = E0 + IV * (lambda - lambda0) + V * powl (lambda - lambda0, 3.0L) + VI * powl (lambda - lambda0, 5.0L);
 
    // Check valid
    if (E < postcodedat.e * postcodedat.grid || E >= (postcodedat.e + postcodedat.w) * postcodedat.grid ||       //
