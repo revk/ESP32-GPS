@@ -2010,7 +2010,7 @@ revk_web_extra (httpd_req_t * req)
       if (!isnan (status.hdop) && status.hdop != 0)
          revk_web_send (req, " HDOP=%.1f", status.hdop);
       if ((home[0] || home[1] || home[2]) && (pos[0] || pos[1] || pos[2]))
-         revk_web_send (req, " Move %.0fm",
+         revk_web_send (req, " Moved %.0fm",
                         sqrt ((home[0] - pos[0]) * (home[0] - pos[0]) + (home[1] - pos[1]) * (home[1] - pos[1]) +
                               (home[2] - pos[2]) * (home[2] - pos[2])));
    } else if (b.home)
