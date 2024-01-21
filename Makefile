@@ -63,4 +63,5 @@ makepostcodes: makepostcodes.c AJL/ajl.o
 	cc -O -o $@ $< ${OPTS}
 
 POSTCODE.DAT: makepostcodes
-	./makepostcodes OSCodePoint/*.csv > POSTCODE.DAT
+	./makepostcodes OSCodePoint/*.csv > POSTCODE.NEW
+	mv -f POSTCODE.NEW POSTCODE.DAT
