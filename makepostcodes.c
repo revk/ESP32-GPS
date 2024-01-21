@@ -22,8 +22,8 @@
 // - MINN/GRID
 // - GRIDWIDTH
 // - GRIDHEIGHT
-// Then for each row from MINN up, and each column from MINE across, LE 32 bit number for record
-// - Note read next record for next grid square start, unless last record then end of file.
+// Then for each row from MINN up, and each column from MINE across, LE 32 bit number for record, plus 1
+// - Note read next record for next grid square start, hence plus 1
 // Records (all in grid and nearest entries that are not in grid))
 // - E (LE 32 bit)
 // - N (LE 32 bit)
@@ -227,6 +227,7 @@ main (int argc, const char *argv[])
       }
       warnx ("%07dN %.2d%% %d", bn, 100 * y / gridh, pos);
    }
+   writeu32 (pos);
    warnx ("Max per grid %d", maxcount);
    for (postcode_t * p = list; p; p = p->next)
    {

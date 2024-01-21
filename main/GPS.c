@@ -134,6 +134,7 @@ uint32_t vtgdue = 0;
 uint32_t busy = 0;              // Uptime last busy
 httpd_handle_t webserver = NULL;
 const char sd_mount[] = "/sd";
+const char postcodefile[] = "/sd/POSTCODE.DAT";
 led_strip_handle_t strip = NULL;
 SemaphoreHandle_t cmd_mutex = NULL;
 SemaphoreHandle_t ack_semaphore = NULL;
@@ -168,6 +169,7 @@ struct
    uint8_t sbas:1;              // Current fix is SBAS
    uint8_t home:1;              // At home
    uint8_t charging:1;          // Charger
+   uint8_t postcode:1;          // We have postcode
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -261,6 +263,150 @@ getts (uint64_t when, char fn)
             *p = fn;
    }
    return strdup (temp);
+}
+
+#define	POSTCODEDATMAGIX	20240121
+struct
+{
+   uint32_t magic;
+   uint32_t grid;
+   uint32_t e;
+   uint32_t n;
+   uint32_t w;
+   uint32_t h;
+} postcodedat = { 0 };
+
+void
+checkpostcode (void)
+{
+   b.postcode = 0;
+   int i = open (postcodefile, O_RDONLY);
+   if (i >= 0)
+   {
+      if (read (i, &postcodedat, sizeof (postcodedat)) == sizeof (postcodedat) && postcodedat.magic == POSTCODEDATMAGIX)
+         b.postcode = 1;
+      close (i);
+   }
+}
+
+#define pi      3.1415926535897932384626433832795028L
+#define secl(x) (1.0L/cosl(x))
+
+char *
+getpostcode (double lat, double lon)
+{
+   {
+      jo_t j = jo_object_alloc ();
+      jo_litf (j, "lat", "%.9lf", lat);
+      jo_litf (j, "lon", "%.9lf", lon);
+      jo_bool (j, "postcode", b.postcode);
+      revk_error ("postcode", &j);
+   }
+   if (!b.postcode)
+      return NULL;
+   // Find OS grid reference
+   static const long double a = 6378137.000L;   // semi-major-axis
+   static const long double b = 6356752.3141L;  // semi-minor-axis
+   const long double F0 = 0.9996012717L;        // scale factor on central meridian
+   const long double phi0 = 49.0L * pi / 180.0L;        // True origin N
+   const long double lambda0 = -2.0L * pi / 180.0L;     // True origin W
+   const long double E0 = 400000.0L;    // Easting of true origin
+   const long double N0 = -100000.0L;   // Northing of true origin
+   long double phi = lat * pi / 180.0L;
+   long double lambda = lon * pi / 180.0L;
+   const long double e2 = (a * a - b * b) / (a * a);    // ellipsoid squared eccentricity
+   const long double n = (a - b) / (a + b);     // B2
+   const long double n2 = n * n;
+   const long double n3 = n2 * n;
+   long double v = a * F0 * powl (1.0L - e2 * powl (sinl (phi), 2.0L), -0.5L);  // B3
+   long double rho = a * F0 * (1.0L - e2) * powl (1 - e2 * powl (sinl (phi), 2.0L), -1.5L);     // B4
+   long double eta2 = (v / rho) - 1.0L; // B5
+   long double M = b * F0 * ((1.0L + n + (5.0L / 4.0L) * n2 + (5.0L / 4.0L) * n3) * (phi - phi0)
+                             - (3.0L * n + 3.0L * n2 + (21.0L / 8.0L) * n3) * sinl (phi - phi0) * cosl (phi + phi0)
+                             + ((15.0L / 8.0L) * n2 + (15.0L / 8.0L) * n3) * sinl (2.0L * (phi - phi0)) * cosl (2.0L * (phi + phi0))
+                             - (35.0L / 24.0L) * n3 * sinl (3.0L * (phi - phi0)) * cosl (3.0L * (phi + phi0)));
+   long double I = M + N0;
+   long double II = v / 2.0L * sinl (phi) * cosl (phi);
+   long double III = v / 24.0L * sinl (phi) * powl (cosl (phi), 3.0L) * (5.0L - powl (tanl (phi), 2.0L) + 9.0L * eta2);
+   long double IIIA =
+      v / 720.0L * sinl (phi) * powl (cosl (phi), 5.0L) * (61.0L - 58.0L * powl (tanl (phi), 2.0L) + powl (tanl (phi), 4.0L));
+   long double IV = v * cosl (phi);
+   long double V = v / 6.0L * powl (cosl (phi), 3.0L) * (v / rho - powl (tanl (phi), 2.0L));
+   long double VI = v / 120.0L * powl (cosl (phi), 5.0L) * (5.0L - 18.0L * powl (tanl (phi), 2.0L)
+                                                            + powl (tanl (phi), 4.0L) + 14.0L * eta2 - 58.0L * powl (tanl (phi),
+                                                                                                                     2.0L) * eta2);
+   int N =
+      (long double) (I + II * powl (lambda - lambda0, 2.0L) + III * powl (lambda - lambda0, 4.0L) +
+                     IIIA * powl (lambda - lambda0, 6.0L));
+   int E = (long double) (E0 + IV * (lambda - lambda0) + V * powl (lambda - lambda0, 3.0L) + VI * powl (lambda - lambda0, 5.0L));
+
+   // Check valid
+   if (E < postcodedat.e * postcodedat.grid || E >= (postcodedat.e + postcodedat.w) * postcodedat.grid ||       //
+       N < postcodedat.n * postcodedat.grid || N >= (postcodedat.n + postcodedat.h) * postcodedat.grid)
+      return NULL;              // Out of range
+
+   // TODO not coming out close enough!
+
+   // Look up postcode
+
+   size_t grid = sizeof (postcodedat);
+   size_t data = grid + (4 * postcodedat.w * postcodedat.h+1);
+   grid += 4 * ((N / postcodedat.grid - postcodedat.n) * postcodedat.w + E / postcodedat.grid - postcodedat.e);
+   uint32_t pos[2];
+   struct
+   {
+      uint32_t e,
+        n;
+      char postcode[8];
+   } p;
+   int i = open (postcodefile, O_RDONLY);
+   if (i < 0)
+      return NULL;
+   if (lseek (i, grid, SEEK_SET) < 0)
+   {
+      close (i);
+      return NULL;
+   }
+   if (read (i, pos, sizeof (pos)) != sizeof (pos))
+   {
+      close (i);
+      return NULL;
+   }
+   if (lseek (i, data + pos[0] * sizeof (p), SEEK_SET) < 0)
+   {
+      close (i);
+      return NULL;
+   }
+   long best = 0;
+   char postcode[8] = { 0 };
+   while (pos[0] < pos[1])
+   {
+      pos[0]++;
+      if (read (i, &p, sizeof (p)) != sizeof (p))
+         break;
+      long d = (long) (p.e - E) * (long) (p.e - E) + (long) (p.n - N) * (long) (p.n - N);
+      if (!*postcode || d < best)
+      {
+         best = d;
+         memcpy (postcode, p.postcode, sizeof (postcode));
+      }
+   }
+   close (i);
+   jo_t j = jo_object_alloc ();
+   jo_litf (j, "lat", "%.9lf", lat);
+   jo_litf (j, "lon", "%.9lf", lon);
+   jo_int (j, "e", E);
+   jo_int (j, "n", N);
+   jo_int (j, "grid", grid);
+   jo_int (j, "data", data);
+   jo_int (j, "pos0", pos[0]);
+   jo_int (j, "pos1", pos[1]);
+   if (*postcode && !postcode[7])
+      jo_string (j, "postcode", postcode);
+   revk_error ("postcode", &j);
+   if (!*postcode || postcode[7])
+      return NULL;
+   return strdup (postcode);
 }
 
 uint8_t
@@ -1594,7 +1740,7 @@ sd_task (void *z)
             while (!(b.sdpresent = io (sdcd)))
                wait (1);        // Waiting for card inserted
          }
-         if ((pos[0] || pos[1] || pos[2]) && (home[0] || home[1] || home[2]) && !b.home)
+         if (!gpsdebug && (pos[0] || pos[1] || pos[2]) && (home[0] || home[1] || home[2]) && !b.home)
             revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
@@ -1642,6 +1788,7 @@ sd_task (void *z)
       }
       rgbsd = 'Y';              // Mounted, ready
       b.doformat = 0;
+      checkpostcode ();
       checkupload ();
       while (!b.doformat && !b.dodismount && !b.die)
       {
@@ -1701,7 +1848,8 @@ sd_task (void *z)
                         csvtime = 0;
                      b.sdempty = 0;
                      b.sdwaiting = 1;
-                     revk_disable_wifi ();
+                     if (!gpsdebug)
+                        revk_disable_wifi ();
                      ESP_LOGI (TAG, "Open file %s", filename);
                      jo_t j = jo_object_alloc ();
                      jo_string (j, "action", cardstatus = "Log file created");
@@ -1818,7 +1966,10 @@ sd_task (void *z)
             if (logcsv)
             {
                char *ts = getts (csvtime, '-');
+               char *startpostcode = getpostcode (startlat, startlon);
+               char *endpostcode = getpostcode (endlat, endlon);
                sprintf (filename, "%s/%s.csv", sd_mount, ts);
+               free (ts);
                o = fopen (filename, "r");
                if (o)
                {                // Append
@@ -1834,7 +1985,10 @@ sd_task (void *z)
                      jo_string (j, "action", cardstatus = "CSV file created");
                      jo_string (j, "filename", filename);
                      revk_info ("SD", &j);
-                     fprintf (o, "\"Time\",\"Latitude\",\"Longitude\",\"Distance\"\n");
+                     fprintf (o, "\"Time\",\"Latitude\",\"Longitude\"");
+                     if (b.postcode)
+                        fprintf (o, ",\"Postcode\"");
+                     fprintf (o, ",\"Distance\"\n");
                   }
                }
                if (!o)
@@ -1847,16 +2001,23 @@ sd_task (void *z)
                } else
                {
                   char *ts = getts (starttime, 0);
-                  fprintf (o, "%s,%.9lf,%.9lf\n", ts, startlat, startlon);
+                  fprintf (o, "%s,%.9lf,%.9lf", ts, startlat, startlon);
+                  if (b.postcode)
+                     fprintf (o, ",\"%s\"", startpostcode ? : "");
+                  fprintf (o, "\n");
                   free (ts);
                   ts = getts (endtime, 0);
                   fprintf (o, "%s,%.9lf,%.9lf", ts, endlat, endlon);
                   free (ts);
+                  if (b.postcode)
+                     fprintf (o, ",\"%s\"", endpostcode ? : "");
                   if (odo0 && odo1)
                      fprintf (o, ",%lld.%02lld", odo1 / 100, odo1 % 100);
                   fprintf (o, "\n\n");
                   fclose (o);
                }
+               free (startpostcode);
+               free (endpostcode);
             }
          }
          checkupload ();
