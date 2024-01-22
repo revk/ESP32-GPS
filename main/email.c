@@ -449,6 +449,7 @@ email_send (const char *emailto, const char *contenttype, const char *filename, 
    ret = 0;
 
  exit:
+   upload = 0;
    mbedtls_net_free (&server_fd);
    mbedtls_ssl_free (&ssl);
    mbedtls_ssl_config_free (&conf);
