@@ -9,6 +9,7 @@
  *
  * SPDX-FileContributor: 2015-2021 Espressif Systems (Shanghai) CO LTD
  */
+#include <revk.h>
 #include <string.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
@@ -43,9 +44,8 @@ extern char *emailfrom;
 
 #define SERVER_USES_STARTSSL 1
 
-static const char *TAG = "smtp_example";
+static const char *TAG = "Email";
 
-#define TASK_STACK_SIZE     (8 * 1024)
 #define BUF_SIZE            512
 
 #define VALIDATE_MBEDTLS_RETURN(ret, min_valid_ret, max_valid_ret, goto_label)  \
@@ -273,7 +273,7 @@ perform_tls_handshake (mbedtls_ssl_context * ssl)
 }
 
 int
-email_send (const char *emailto, const char *contenttype, FILE * i)
+email_send (const char *emailto, const char *contenttype, const char *subject,FILE * i)
 {
    if (!*emailhost)
       return 599;
@@ -447,11 +447,11 @@ email_send (const char *emailto, const char *contenttype, FILE * i)
 
    ESP_LOGI (TAG, "Write Content");
    /* We do not take action if message sending is partly failed. */
-   len = snprintf ((char *) buf, BUF_SIZE, "From: %s\r\n"       //
-                   "Subject: mbed TLS Test mail\r\n"    //
-                   "To: %s\r\n" //
+   len = snprintf ((char *) buf, BUF_SIZE, "From: %s <%s>\r\n"       //
+                   "Subject: %s\r\n"    //
+                   "To: <%s>\r\n" //
                    "MIME-Version: 1.0 (mime-construct 1.9)\n",  //
-                   "ESP32 SMTP Client", emailto);
+                   revk_id,emailfrom, subject,emailto);
 
     /**
      * Note: We are not validating return for some ssl_writes.

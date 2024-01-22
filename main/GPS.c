@@ -1595,7 +1595,8 @@ checkupload (void)
             {
                if (strchr (url, '@'))
                {
-                  response = email_send (url, ct, i);
+                  ESP_LOGI (TAG, "Email %s", url);
+                  response = email_send (url, ct, filename + sizeof (sd_mount), i);
                } else
                {
                   char *u;
@@ -2339,7 +2340,7 @@ app_main ()
    revk_task ("NMEA", nmea_task, NULL, 5);
    revk_task ("Log", log_task, NULL, 5);
    revk_task ("Pack", pack_task, NULL, 5);
-   revk_task ("SD", sd_task, NULL, 5);
+   revk_task ("SD", sd_task, NULL, 10);
    // Web interface
    httpd_config_t config = HTTPD_DEFAULT_CONFIG ();
    config.max_uri_handlers = 5 + revk_num_web_handlers ();
