@@ -228,13 +228,9 @@ perform_tls_handshake (mbedtls_ssl_context * ssl)
 {
    int ret = -1;
    uint32_t flags;
-   char *buf = NULL;
-   buf = (char *) calloc (1, BUF_SIZE);
-   if (buf == NULL)
-   {
-      ESP_LOGE (TAG, "calloc failed for size %d", BUF_SIZE);
-      goto exit;
-   }
+   char *buf = mallocspi (BUF_SIZE);
+   if (!buf)
+      return 599;
 
    ESP_LOGI (TAG, "Performing the SSL/TLS handshake...");
 
@@ -265,15 +261,12 @@ perform_tls_handshake (mbedtls_ssl_context * ssl)
    ret = 0;                     /* No error */
 
  exit:
-   if (buf)
-   {
-      free (buf);
-   }
+   free (buf);
    return ret;
 }
 
 int
-email_send (const char *emailto, const char *contenttype, const char *subject,FILE * i)
+email_send (const char *emailto, const char *contenttype, const char *subject, FILE * i)
 {
    if (!*emailhost)
       return 599;
@@ -350,12 +343,9 @@ email_send (const char *emailto, const char *contenttype, const char *subject,FI
 
    mbedtls_ssl_set_bio (&ssl, &server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
 
-   buf = (char *) calloc (1, BUF_SIZE);
-   if (buf == NULL)
-   {
-      ESP_LOGE (TAG, "calloc failed for size %d", BUF_SIZE);
+   buf = mallocspi (BUF_SIZE);
+   if (!buf)
       goto exit;
-   }
 #if SERVER_USES_STARTSSL
    /* Get response */
    ret = write_and_get_response (&server_fd, (unsigned char *) buf, 0);
@@ -447,11 +437,11 @@ email_send (const char *emailto, const char *contenttype, const char *subject,FI
 
    ESP_LOGI (TAG, "Write Content");
    /* We do not take action if message sending is partly failed. */
-   len = snprintf ((char *) buf, BUF_SIZE, "From: %s <%s>\r\n"       //
+   len = snprintf ((char *) buf, BUF_SIZE, "From: %s <%s>\r\n"  //
                    "Subject: %s\r\n"    //
-                   "To: <%s>\r\n" //
+                   "To: <%s>\r\n"       //
                    "MIME-Version: 1.0 (mime-construct 1.9)\n",  //
-                   revk_id,emailfrom, subject,emailto);
+                   revk_id, emailfrom, subject, emailto);
 
     /**
      * Note: We are not validating return for some ssl_writes.
@@ -484,6 +474,7 @@ email_send (const char *emailto, const char *contenttype, const char *subject,FI
    ret = 0;                     /* No errors */
 
  exit:
+   ESP_LOGE (TAG, "Ret=%d", ret);
    mbedtls_net_free (&server_fd);
    mbedtls_x509_crt_free (&cacert);
    mbedtls_ssl_free (&ssl);
