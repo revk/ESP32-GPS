@@ -26,7 +26,7 @@ The s/w uses the [RevK library](https://github.com/revk/ESP32-RevK) which provid
 
 Note: Remove SD card to enable WiFi, WiFi AP mode, and settings. While SD is inserted WiFi AP and settings are disabled, and WiFi only when stationary (and at home if `home` set).
 
-## Log upload
+## File upload
 
 When back on WiFi, and not moving, all log files on the SD card are uploaded as a POST to specified URL (which can be https if using known certificates, including Let's Encrypt). Once uploaded it is deleted from the SD card. If no URL is set, the file stays on the SD card and can be accesses using a card reader as needed.
 
@@ -112,8 +112,8 @@ The log format is a simple JSON object.
 
 |Top level fields|Meaning|
 |----------------|-------|
-|`start`|Start time of the log file|
-|`end`|End time of the log file|
+|`start`|Start information including timestamp|
+|`end`|End information including timestamp|
 |`id`|MAC of logger|
 |`version`|S/W version of logger|
 |`distance`|Distance covered by log file from odometer readings|
@@ -124,6 +124,16 @@ The fix point data is generally self explanatory. `speed` is kph. `odo` and `alt
 Note that the odometer logic is internal to the L86, and may track distance travelled if stationary without clear satellite coverage (such as indoors). As such it makes sense to use this for a definite journey if not kept in good view of sky, or off when not in use.
 
 Whilst location data (`lat`/`lon`/`alt`/`ecef`) is per fix, some data is slower, such as `course`, `speed`, `epe`, `vdop`/`pdop`, and active sats, and as such they do not change every fix.
+
+## CSV Format
+
+The CSV contains a line for start and a line for end of each journey uploaded - where multiple files have been recorded, one CSV provides details of all the journeys.
+
+The data includes timestamp, grid reference, and distance travelled.
+
+## Postcodes
+
+If the `POSTCODE.DAT` file is placed on to the microSD then postcodes are added for start and end of journey. This is the nearest postcode to the location based on the *centre* of the postcode from ordnance survey data. Some postcodes are an odd shape so this may be an adjacent postcode to the one you expect. This is included in the JSON and CSV files.
 
 ## WiFi
 

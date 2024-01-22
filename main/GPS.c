@@ -1913,7 +1913,7 @@ sd_task (void *z)
                   fprintf (o, ",\n \"start\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, startlat, startlon,
                            starthome ? "true" : "false");
                   if (startpostcode)
-                     fprintf (o, ",\"nearest-postcode\":\"%s\"", startpostcode);
+                     fprintf (o, ",\"postcode\":\"%s\"", startpostcode);
                   fprintf (o, "}");
                   free (ts);
                }
