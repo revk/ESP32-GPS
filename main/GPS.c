@@ -1595,6 +1595,7 @@ checkupload (void)
             {
                if (strchr (url, '@'))
                {
+		       ESP_LOGD(TAG,"Email %s",url);
                   response = email_send (url, ct, i);
                } else
                {
