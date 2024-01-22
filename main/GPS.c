@@ -1,7 +1,8 @@
 // GPS logger
 // Copyright (c) 2019-2024 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
-// TODO ACC ADC for battery
+// TODO charger has very weak pull down - do we see when charge cycle complete?
+// TODO email upload option
 
 __attribute__((unused))
      const char TAG[] = "GPS";
