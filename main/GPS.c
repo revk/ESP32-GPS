@@ -2171,7 +2171,7 @@ revk_state_extra (jo_t j)
       jo_int (j, "sdsize", sdsize);
    if (b.charging)
       jo_bool (j, "charging", 1);
-   int bat = 100 * (adc[0] - 3.3);
+   int bat = 100 * 2 * (adc[0] - 3.3);
    if (bat < 0)
       bat = 0;
    if (bat > 100)
