@@ -42,7 +42,7 @@ extern char *emailpass;
 extern char *emailport;
 extern char *emailfrom;
 
-#define SERVER_USES_STARTSSL 1
+//#define SERVER_USES_STARTSSL
 
 static const char *TAG = "Email";
 
@@ -78,9 +78,7 @@ write_and_get_response (mbedtls_net_context * sock_fd, unsigned char *buf, size_
      idx = 0;
 
    if (len)
-   {
-      ESP_LOGD (TAG, "%s", buf);
-   }
+      ESP_LOGI (TAG, ">%s", buf);
 
    if (len && (ret = mbedtls_net_send (sock_fd, buf, len)) <= 0)
    {
@@ -100,8 +98,10 @@ write_and_get_response (mbedtls_net_context * sock_fd, unsigned char *buf, size_
          goto exit;
       }
 
-      data[len] = '\0';
-      printf ("\n%s", data);
+      data[len] = 0;
+
+      ESP_LOGI (TAG, "<%s", data);
+
       len = ret;
       for (i = 0; i < len; i++)
       {
@@ -141,9 +141,7 @@ write_ssl_and_get_response (mbedtls_ssl_context * ssl, unsigned char *buf, size_
      idx = 0;
 
    if (len)
-   {
-      ESP_LOGD (TAG, "%s", buf);
-   }
+      ESP_LOGI (TAG, ">%s", buf);
 
    while (len && (ret = mbedtls_ssl_write (ssl, buf, len)) <= 0)
    {
@@ -161,9 +159,7 @@ write_ssl_and_get_response (mbedtls_ssl_context * ssl, unsigned char *buf, size_
       ret = mbedtls_ssl_read (ssl, data, len);
 
       if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE)
-      {
          continue;
-      }
 
       if (ret <= 0)
       {
@@ -171,7 +167,7 @@ write_ssl_and_get_response (mbedtls_ssl_context * ssl, unsigned char *buf, size_
          goto exit;
       }
 
-      ESP_LOGD (TAG, "%s", data);
+      ESP_LOGI (TAG, "<%s", data);
 
       len = ret;
       for (i = 0; i < len; i++)
@@ -207,9 +203,7 @@ write_ssl_data (mbedtls_ssl_context * ssl, unsigned char *buf, size_t len)
    int ret;
 
    if (len)
-   {
       ESP_LOGD (TAG, "%s", buf);
-   }
 
    while (len && (ret = mbedtls_ssl_write (ssl, buf, len)) <= 0)
    {
@@ -266,7 +260,7 @@ perform_tls_handshake (mbedtls_ssl_context * ssl)
 }
 
 int
-email_send (const char *emailto, const char *contenttype, const char *subject, FILE * i)
+email_send (const char *emailto, const char *contenttype, const char *filename, const char *subject, FILE * i)
 {
    if (!*emailhost)
       return 599;
@@ -346,13 +340,13 @@ email_send (const char *emailto, const char *contenttype, const char *subject, F
    buf = mallocspi (BUF_SIZE);
    if (!buf)
       goto exit;
-#if SERVER_USES_STARTSSL
+
    /* Get response */
    ret = write_and_get_response (&server_fd, (unsigned char *) buf, 0);
    VALIDATE_MBEDTLS_RETURN (ret, 200, 299, exit);
 
    ESP_LOGI (TAG, "Writing EHLO to server...");
-   len = snprintf ((char *) buf, BUF_SIZE, "EHLO %s\r\n", "ESP32");
+   len = snprintf ((char *) buf, BUF_SIZE, "EHLO %s\r\n", "ESP32.local");
    ret = write_and_get_response (&server_fd, (unsigned char *) buf, len);
    VALIDATE_MBEDTLS_RETURN (ret, 200, 299, exit);
 
@@ -362,27 +356,14 @@ email_send (const char *emailto, const char *contenttype, const char *subject, F
    VALIDATE_MBEDTLS_RETURN (ret, 200, 299, exit);
 
    ret = perform_tls_handshake (&ssl);
-   if (ret != 0)
-   {
+   if (ret)
       goto exit;
-   }
-#else /* SERVER_USES_STARTSSL */
-   ret = perform_tls_handshake (&ssl);
-   if (ret != 0)
-   {
-      goto exit;
-   }
 
-   /* Get response */
-   ret = write_ssl_and_get_response (&ssl, (unsigned char *) buf, 0);
-   VALIDATE_MBEDTLS_RETURN (ret, 200, 299, exit);
-   ESP_LOGI (TAG, "Writing EHLO to server...");
-
-   len = snprintf ((char *) buf, BUF_SIZE, "EHLO %s\r\n", "ESP32");
+   ESP_LOGI (TAG, "Writing EHLO to server... again");
+   len = snprintf ((char *) buf, BUF_SIZE, "EHLO %s\r\n", "ESP32.local");
    ret = write_ssl_and_get_response (&ssl, (unsigned char *) buf, len);
    VALIDATE_MBEDTLS_RETURN (ret, 200, 299, exit);
 
-#endif /* SERVER_USES_STARTSSL */
 
    if (*emailuser)
    {
@@ -394,7 +375,7 @@ email_send (const char *emailto, const char *contenttype, const char *subject, F
       ret = write_ssl_and_get_response (&ssl, (unsigned char *) buf, len);
       VALIDATE_MBEDTLS_RETURN (ret, 200, 399, exit);
 
-      ESP_LOGI (TAG, "Write USER NAME");
+      ESP_LOGI (TAG, "Write USER NAME %s", emailuser);
       ret = mbedtls_base64_encode ((unsigned char *) base64_buffer, sizeof (base64_buffer),
                                    &base64_len, (unsigned char *) emailuser, strlen (emailuser));
       if (ret != 0)
@@ -420,77 +401,63 @@ email_send (const char *emailto, const char *contenttype, const char *subject, F
    }
 
    /* Compose email */
-   ESP_LOGI (TAG, "Write MAIL FROM");
+   ESP_LOGI (TAG, "Write MAIL FROM %s", emailfrom);
    len = snprintf ((char *) buf, BUF_SIZE, "MAIL FROM:<%s>\r\n", emailfrom);
    ret = write_ssl_and_get_response (&ssl, (unsigned char *) buf, len);
    VALIDATE_MBEDTLS_RETURN (ret, 200, 299, exit);
 
-   ESP_LOGI (TAG, "Write RCPT");
+   ESP_LOGI (TAG, "Write RCPT %s", emailto);
    len = snprintf ((char *) buf, BUF_SIZE, "RCPT TO:<%s>\r\n", emailto);
    ret = write_ssl_and_get_response (&ssl, (unsigned char *) buf, len);
    VALIDATE_MBEDTLS_RETURN (ret, 200, 299, exit);
 
-   ESP_LOGI (TAG, "Write DATA");
+   ESP_LOGI (TAG, "Write DATA subject %s", subject);
    len = snprintf ((char *) buf, BUF_SIZE, "DATA\r\n");
    ret = write_ssl_and_get_response (&ssl, (unsigned char *) buf, len);
    VALIDATE_MBEDTLS_RETURN (ret, 300, 399, exit);
 
    ESP_LOGI (TAG, "Write Content");
    /* We do not take action if message sending is partly failed. */
-   len = snprintf ((char *) buf, BUF_SIZE, "From: %s <%s>\r\n"  //
+   len = snprintf ((char *) buf, BUF_SIZE, "From: \"%s\" <%s>\r\n"      //
                    "Subject: %s\r\n"    //
                    "To: <%s>\r\n"       //
-                   "MIME-Version: 1.0 (mime-construct 1.9)\n",  //
-                   revk_id, emailfrom, subject, emailto);
+                   "MIME-Version: 1.0\r\n"      //
+                   "Content-Type: %s\r\n"       // 
+                   "Content-Disposition: attachment;filename=%s;\r\n"   //
+                   "\r\n", revk_id, emailfrom, subject, emailto, contenttype, filename);
 
-    /**
-     * Note: We are not validating return for some ssl_writes.
-     * If by chance, it's failed; at worst email will be incomplete!
-     */
    ret = write_ssl_data (&ssl, (unsigned char *) buf, len);
-
-   /* Multipart boundary */
-   len = snprintf ((char *) buf, BUF_SIZE, "Content-Type: multipart/mixed;boundary=XYZabcd1234\n" "--XYZabcd1234\n");
-   ret = write_ssl_data (&ssl, (unsigned char *) buf, len);
-
-   /* Text */
-   len = snprintf ((char *) buf, BUF_SIZE,
-                   "Content-Type: text/plain\n"
-                   "This is a simple test mail from the SMTP client example.\r\n" "\r\n" "Enjoy!\n\n--XYZabcd1234\n");
-   ret = write_ssl_data (&ssl, (unsigned char *) buf, len);
-
-   // Send data
-
-   len = snprintf ((char *) buf, BUF_SIZE, "\n--XYZabcd1234\n");
-   ret = write_ssl_data (&ssl, (unsigned char *) buf, len);
+   while (!ret)
+   {
+      len = fread (buf, 1, BUF_SIZE, i);
+      if (len <= 0)
+         break;
+      ret = write_ssl_data (&ssl, (unsigned char *) buf, len);
+   }
 
    len = snprintf ((char *) buf, BUF_SIZE, "\r\n.\r\n");
    ret = write_ssl_and_get_response (&ssl, (unsigned char *) buf, len);
    VALIDATE_MBEDTLS_RETURN (ret, 200, 299, exit);
-   ESP_LOGI (TAG, "Email sent!");
+   ESP_LOGI (TAG, "Email sent, ret=%d", ret);
 
    /* Close connection */
    mbedtls_ssl_close_notify (&ssl);
-   ret = 0;                     /* No errors */
+   ret = 0;
 
  exit:
-   ESP_LOGE (TAG, "Ret=%d", ret);
    mbedtls_net_free (&server_fd);
    mbedtls_ssl_free (&ssl);
    mbedtls_ssl_config_free (&conf);
    mbedtls_ctr_drbg_free (&ctr_drbg);
    mbedtls_entropy_free (&entropy);
 
-   if (ret != 0)
+   if (ret)
    {
       mbedtls_strerror (ret, buf, 100);
       ESP_LOGE (TAG, "Last error was: -0x%x - %s", -ret, buf);
    }
 
    putchar ('\n');              /* Just a new line */
-   if (buf)
-   {
-      free (buf);
-   }
-   return ret;
+   free (buf);
+   return ret ? : 200;
 }

@@ -32,13 +32,17 @@ When back on WiFi, and not moving, all log files on the SD card are uploaded as 
 
 The post includes a *query* string that is the MAC and start date/time as a filename. But this is included in the JSON data.
 
+## File email
+
+The file can, instead, be emailed. Fill in `email` settings and put an email address in `url`.
+
 ## Important settings
 
 Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GPS/packdist 2` to set `packdist` to `2`. Settings can also be sent in JSON format. To see settings, send just `settings/GPS`.
 
 |Setting|Meaning|
 |-------|-------|
-|`url`|Upload URL|
+|`url`|Upload URL or email address|
 |`logpos`|If not set then the log file does not include position data at all|
 |`loggpx`|If set, the log file is GPX format not JSON|
 |`logcsv`|If set, a CSV file is created for all journeys being uploaded at once|
@@ -69,6 +73,11 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`homem`|Proximity to `home` for home working|
 |`powerman`|Shutdown to deep sleep when USB power is off (after a few minutes)|
 |`powerstop`|Stop journey quickly if USB power goes off and not moving|
+|`emailhost`|Host name/IP of email server|
+|`emailport`|Host port of email server|
+|`emailuser`|Username for email server|
+|`emailpass`|Password for email server|
+|`emailfrom`|From email address|
 
 ## LEDs
 

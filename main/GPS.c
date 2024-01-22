@@ -1479,10 +1479,7 @@ checkupload (void)
    uint32_t up = uptime ();
    static uint32_t delay = 0;
    if (delay > up)
-   {
-      ESP_LOGD (TAG, "No upload as waiting");
       return;
-   }
    if (b.sdempty)
    {
       ESP_LOGI (TAG, "No upload as empty");
@@ -1596,7 +1593,7 @@ checkupload (void)
                if (strchr (url, '@'))
                {
                   ESP_LOGI (TAG, "Email %s", url);
-                  response = email_send (url, ct, filename + sizeof (sd_mount), i);
+                  response = email_send (url, ct, filename + sizeof (sd_mount),filename + sizeof (sd_mount), i);
                } else
                {
                   char *u;
@@ -2019,7 +2016,7 @@ sd_task (void *z)
                      fprintf (o, "\"Time\",\"Latitude\",\"Longitude\"");
                      if (b.postcode)
                         fprintf (o, ",\"Closest postcode\"");
-                     fprintf (o, ",\"Distance\"\n");
+                     fprintf (o, ",\"Distance\"\r\n");
                   }
                }
                if (!o)
@@ -2035,7 +2032,7 @@ sd_task (void *z)
                   fprintf (o, "%s,%.9lf,%.9lf", ts, startlat, startlon);
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", startpostcode ? : "");
-                  fprintf (o, "\n");
+                  fprintf (o, "\r\n");
                   free (ts);
                   ts = getts (endtime, 0);
                   fprintf (o, "%s,%.9lf,%.9lf", ts, endlat, endlon);
@@ -2044,7 +2041,7 @@ sd_task (void *z)
                      fprintf (o, ",\"%s\"", endpostcode ? : "");
                   if (odo0 && odo1)
                      fprintf (o, ",%lld.%02lld", odo1 / 100, odo1 % 100);
-                  fprintf (o, "\n\n");
+                  fprintf (o, "\r\n\r\n");
                   fclose (o);
                }
                free (startpostcode);
