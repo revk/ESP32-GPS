@@ -476,7 +476,6 @@ email_send (const char *emailto, const char *contenttype, const char *subject, F
  exit:
    ESP_LOGE (TAG, "Ret=%d", ret);
    mbedtls_net_free (&server_fd);
-   mbedtls_x509_crt_free (&cacert);
    mbedtls_ssl_free (&ssl);
    mbedtls_ssl_config_free (&conf);
    mbedtls_ctr_drbg_free (&ctr_drbg);
