@@ -1878,15 +1878,15 @@ sd_task (void *z)
                      revk_info ("SD", &j);
                      if (loggpx)
                      {
-                        fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"      //
-                                 "<gpx version=\"1.0\">\n"      //
-                                 "<metadata><name>%s</name></metadata>\n"       //
-                                 "<trk><trkseg>\n", revk_id);
+                        fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n"      //
+                                 "<gpx version=\"1.0\">\r\n"      //
+                                 "<metadata><name>%s</name></metadata>\r\n"       //
+                                 "<trk><trkseg>\r\n", revk_id);
                      } else
                      {
-                        fprintf (o, "{\n \"id\":\"%s\",\n \"version\":\"%s\"", revk_id, revk_version);
+                        fprintf (o, "{\r\n \"id\":\"%s\",\r\n \"version\":\"%s\"", revk_id, revk_version);
                         if (logpos)
-                           fprintf (o, ",\n \"gps\":[\n");
+                           fprintf (o, ",\r\n \"gps\":[\r\n");
                      }
                   }
                   line = 0;
@@ -1918,14 +1918,14 @@ sd_task (void *z)
                         fprintf (o, "<vdop>%.1f</vdop>", f->slow.vdop);
                      if (!isnan (f->slow.pdop) && f->slow.pdop)
                         fprintf (o, "<pdop>%.1f</pdop>", f->slow.pdop);
-                     fprintf (o, "</trkpt>\n");
+                     fprintf (o, "</trkpt>\r\n");
                   }
                } else
                {
                   jo_t j = log_line (f);
                   char *l = jo_finisha (&j);
                   if (line++)
-                     fprintf (o, ",\n");
+                     fprintf (o, ",\r\n");
                   fprintf (o, "  %s", l);
                   free (l);
                }
@@ -1957,16 +1957,16 @@ sd_task (void *z)
             ESP_LOGE (TAG, "Close file");
             if (loggpx)
             {
-               fprintf (o, "</trkseg></trk>\n"  //
-                        "</gpx>\n");
+               fprintf (o, "</trkseg></trk>\r\n"  //
+                        "</gpx>\r\n");
             } else
             {
                if (logpos)
-                  fprintf (o, "\n ]");
+                  fprintf (o, "\r\n ]");
                if (starttime)
                {
                   char *ts = getts (starttime, 0);
-                  fprintf (o, ",\n \"start\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, startlat, startlon,
+                  fprintf (o, ",\r\n \"start\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, startlat, startlon,
                            starthome ? "true" : "false");
                   if (startpostcode)
                      fprintf (o, ",\"postcode\":\"%s\"", startpostcode);
@@ -1976,15 +1976,15 @@ sd_task (void *z)
                if (endtime)
                {
                   char *ts = getts (endtime, 0);
-                  fprintf (o, ",\n \"end\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, endlat, endlon,
+                  fprintf (o, ",\r\n \"end\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, endlat, endlon,
                            endhome ? "true" : "false");
                   if (endpostcode)
                      fprintf (o, ",\"nearest-postcode\":\"%s\"", endpostcode);
                   fprintf (o, "}");
                }
                if (odo0 && odo1)
-                  fprintf (o, ",\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
-               fprintf (o, "\n}\n");
+                  fprintf (o, ",\r\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
+               fprintf (o, "\n}\r\n");
             }
             fclose (o);
             jo_t j = jo_object_alloc ();
