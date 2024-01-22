@@ -67,6 +67,8 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`packtime`|If *packing* and this is non zero then time is also a factor, with this being the allowed deviation in seconds|
 |`home`|An array of ECEF whole metres for home location (use web interface settings to set this from GPS). If set WiFi only comes on at home|
 |`homem`|Proximity to `home` for home working|
+|`powerman`|Shutdown to deep sleep when USB power is off (after a few minutes)|
+|`powerstop`|Stop journey quickly if USB power goes off and not moving|
 
 ## LEDs
 

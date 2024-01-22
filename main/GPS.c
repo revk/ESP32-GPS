@@ -39,6 +39,7 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
      	io(pwr,-15,		System PWR)	\
      	io(charger,-33,		Charger status)	\
 	bl(powerman,N,		Power management)	\
+	bl(powerstop,N,		Power off end journey)	\
      	io(rgb,2,		RGB LED Strip)	\
      	u8f(leds,17,		RGB LEDs)	\
 	s32al(home,3,		Home location) \
@@ -1058,7 +1059,7 @@ nmea (char *s)
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
             revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= stop || b.home))
+         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= stop || b.home || (powerstop && !b.charging)))
          {
             b.moving = 0;
             jo_t j = jo_object_alloc ();
@@ -2129,7 +2130,8 @@ revk_web_extra (httpd_req_t * req)
        && (charger & IO_MASK) <= 21
 #endif
       )
-      revk_web_setting_b (req, "Power", "powerman", powerman, "Turn off when USB power goes off");
+      revk_web_setting_b (req, "Power down", "powerman", powerman, "Turn off when USB power goes off");
+   revk_web_setting_b (req, "Power stop", "powerstop", powerstop, "End Journey quickly when power goes off");
    revk_web_setting_b (req, "GPX Log", "loggpx", loggpx, "Log files in GPX format");
    revk_web_setting_i (req, "Move time", "move", move, "Seconds moving to start journey (quicker if moving fast)");
    revk_web_setting_i (req, "Stop time", "stop", stop, "Seconds stopped to end journey (quicker if at home)");
