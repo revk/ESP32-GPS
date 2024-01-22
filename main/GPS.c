@@ -19,12 +19,13 @@ __attribute__((unused))
 #include "esp_http_server.h"
 #include "esp_crt_bundle.h"
 #include <driver/i2c.h>
+#include "email.h"
 
 #ifdef	CONFIG_FATFS_LFN_NONE
 #error Need long file names
 #endif
 
-//#define	POSTCODEDEBUG	// Debug for postcode lookup
+//#define       POSTCODEDEBUG   // Debug for postcode lookup
 
 #define	SYSTEMS	3
 
@@ -97,6 +98,11 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 	u16(packdist,0,	 	Pack delta m)	\
 	u16(packtime,0,		Pack delta s)	\
 	s(url,,			URL to post data)	\
+	s(emailhost,,		Email server)	\
+	s(emailport,587,	Email portname)	\
+	s(emailuser,,		Email username)	\
+	s(emailpass,,		Email password)	\
+	s(emailfrom,,		Email from)	\
 
 #define s32al(n,a,t)	int32_t n[a];
 #define u32(n,d,t)	uint32_t n;
@@ -1583,50 +1589,56 @@ checkupload (void)
          } else
          {
             ESP_LOGI (TAG, "Send %s", filename);
+            int response = 0;
             FILE *i = fopen (filename, "r");
             if (i)
             {
-               char *u;
-               asprintf (&u, "%s?%s-%s", url, revk_id, filename + sizeof (sd_mount));
-               esp_http_client_config_t config = {
-                  .url = u,
-                  .crt_bundle_attach = esp_crt_bundle_attach,
-                  .method = HTTP_METHOD_POST,
-               };
-#define	BLOCK	2048
-               char *buf = mallocspi (BLOCK);
-               int response = 0;
-               if (buf)
+               if (strchr (url, '@'))
                {
-                  esp_http_client_handle_t client = esp_http_client_init (&config);
-                  if (client)
+                  response = email_send (url, ct, i);
+               } else
+               {
+                  char *u;
+                  asprintf (&u, "%s?%s-%s", url, revk_id, filename + sizeof (sd_mount));
+                  esp_http_client_config_t config = {
+                     .url = u,
+                     .crt_bundle_attach = esp_crt_bundle_attach,
+                     .method = HTTP_METHOD_POST,
+                  };
+#define	BLOCK	2048
+                  char *buf = mallocspi (BLOCK);
+                  if (buf)
                   {
-                     esp_http_client_set_header (client, "Content-Type", ct);
-                     ESP_LOGI (TAG, "Sending %s %ld", filename, s.st_size);
-                     if (!esp_http_client_open (client, s.st_size))
-                     {          // Send
-                        int total = 0;
-                        int len = 0;
-                        while ((len = fread (buf, 1, BLOCK, i)) > 0)
-                        {
-                           total += len;
-                           upload = total * 100 / s.st_size;
-                           ESP_LOGI (TAG, "%d bytes (%d%%)", total, upload);
-                           esp_http_client_write (client, buf, len);
-                           busy = uptime ();
+                     esp_http_client_handle_t client = esp_http_client_init (&config);
+                     if (client)
+                     {
+                        esp_http_client_set_header (client, "Content-Type", ct);
+                        ESP_LOGI (TAG, "Sending %s %ld", filename, s.st_size);
+                        if (!esp_http_client_open (client, s.st_size))
+                        {       // Send
+                           int total = 0;
+                           int len = 0;
+                           while ((len = fread (buf, 1, BLOCK, i)) > 0)
+                           {
+                              total += len;
+                              upload = total * 100 / s.st_size;
+                              ESP_LOGI (TAG, "%d bytes (%d%%)", total, upload);
+                              esp_http_client_write (client, buf, len);
+                              busy = uptime ();
+                           }
+                           esp_http_client_fetch_headers (client);
+                           esp_http_client_flush_response (client, &len);
+                           response = esp_http_client_get_status_code (client);
+                           esp_http_client_close (client);
                         }
-                        esp_http_client_fetch_headers (client);
-                        esp_http_client_flush_response (client, &len);
-                        response = esp_http_client_get_status_code (client);
-                        esp_http_client_close (client);
+                        esp_http_client_cleanup (client);
                      }
-                     esp_http_client_cleanup (client);
                   }
-               }
-               upload = 0;
-               free (u);
-               free (buf);
+                  upload = 0;
+                  free (u);
+                  free (buf);
 #undef	BLOCK
+               }
                ESP_LOGI (TAG, "Sent, Response %d", response);
                if (response / 100 == 2)
                {
@@ -2169,7 +2181,15 @@ web_root (httpd_req_t * req)
 void
 revk_web_extra (httpd_req_t * req)
 {
-   revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
+   revk_web_setting_s (req, "Target", "url", url, "URL or Email address", NULL, 0);
+   if (strchr (url, '@'))
+   {
+      revk_web_setting_s (req, "Email host", "emailhost", emailhost, "Email host", NULL, 0);
+      revk_web_setting_s (req, "Email port", "emailport", emailport, "Email port", NULL, 0);
+      revk_web_setting_s (req, "Email user", "emailuser", emailuser, "Email user", NULL, 0);
+      revk_web_setting_s (req, "Email pass", "emailpass", emailpass, "Email pass", NULL, 0);
+      revk_web_setting_s (req, "Email from", "emailfrom", emailfrom, "Email from", NULL, 0);
+   }
    if (pwr && (usb || (charging
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
                        && (charging & IO_MASK) <= 21
