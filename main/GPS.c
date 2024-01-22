@@ -1,7 +1,6 @@
 // GPS logger
 // Copyright (c) 2019-2024 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
-// TODO charger has very weak pull down - do we see when charge cycle complete?
 // TODO email upload option
 
 __attribute__((unused))
@@ -38,7 +37,8 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 #define IO_INV          0x40
 #define settings	\
      	io(pwr,-15,		System PWR)	\
-     	io(charger,-33,		Charger status)	\
+     	io(charging,-33,	Charging status)	\
+     	io(usb,,		USB power status)	\
 	bl(powerman,N,		Power management)	\
 	bl(powerstop,N,		Power off end journey)	\
      	io(rgb,2,		RGB LED Strip)	\
@@ -170,7 +170,8 @@ struct
    uint8_t accok:1;             // ACC OK
    uint8_t sbas:1;              // Current fix is SBAS
    uint8_t home:1;              // At home
-   uint8_t charging:1;          // Charger
+   uint8_t charging:1;          // Charging
+   uint8_t usb:1;               // USB power
    uint8_t postcode:1;          // We have postcode
 } volatile b = { 0 };
 
@@ -301,82 +302,107 @@ checkpostcode (void)
 char *
 getpostcode (double lat, double lon)
 {
-   if (!b.postcode)
-      return NULL;
-   int N = lon * postcodedat.scale;
-   int E = lat * postcodedat.scale;
-
-   // Check valid
-   if (E < postcodedat.e || E >= postcodedat.e + postcodedat.w * postcodedat.grid ||    //
-       N < postcodedat.n || N >= postcodedat.n + postcodedat.h * postcodedat.grid)
-      return NULL;              // Out of range
-
-   // Look up postcode
-
+   const char *e = NULL;
    size_t grid = sizeof (postcodedat);
    size_t data = grid + 4 * (postcodedat.w * postcodedat.h + 1);
-   grid += 4 * ((N - postcodedat.n) / postcodedat.grid * postcodedat.w + (E - postcodedat.e) / postcodedat.grid);
-   uint32_t pos[2] = { 0 };
-   struct
-   {
-      int32_t e,
-        n;
-      char postcode[8];
-   } p;
-   int i = open (postcodefile, O_RDONLY);
-   if (i < 0)
-      return NULL;
-   if (lseek (i, grid, SEEK_SET) < 0)
-   {
-      close (i);
-      return NULL;
-   }
-   if (read (i, pos, sizeof (pos)) != sizeof (pos))
-   {
-      close (i);
-      return NULL;
-   }
-   if (lseek (i, data + pos[0] * sizeof (p), SEEK_SET) < 0)
-   {
-      close (i);
-      return NULL;
-   }
-   long best = 0;
    char postcode[8] = { 0 };
-   int c = pos[1] - pos[0];
-   if (c > 0)
-      while (c--)
-      {
-         if (read (i, &p, sizeof (p)) != sizeof (p))
-            break;
-         long d = (long) (p.e - E) * (long) (p.e - E) + (long) (p.n - N) * (long) (p.n - N);
-         if (!*postcode || d < best)
+   uint32_t pos[2] = { 0 };
+   int E = 0,
+      N = 0;
+   if (!b.postcode)
+      e = "No postcode file";
+   if (!e)
+   {
+      N = lat * postcodedat.scale;
+      E = lon * postcodedat.scale;
+
+      // Check valid
+      if (E < postcodedat.e || E >= postcodedat.e + postcodedat.w * postcodedat.grid || //
+          N < postcodedat.n || N >= postcodedat.n + postcodedat.h * postcodedat.grid)
+         e = "Out of range";
+      else
+      {                         // Look up postcode
+         grid += 4 * ((N - postcodedat.n) / postcodedat.grid * postcodedat.w + (E - postcodedat.e) / postcodedat.grid);
+         struct
          {
-            best = d;
-            memcpy (postcode, p.postcode, sizeof (postcode));
+            int32_t e,
+              n;
+            char postcode[8];
+         } p;
+         int i = open (postcodefile, O_RDONLY);
+         if (i < 0)
+            e = "Cannot open postcode file";
+         else
+         {
+            if (lseek (i, grid, SEEK_SET) < 0)
+               e = "Cannot seek grid";
+            else if (read (i, pos, sizeof (pos)) != sizeof (pos))
+               e = "Cannot read pos";
+            else
+            {
+               if (lseek (i, data + pos[0] * sizeof (p), SEEK_SET) < 0)
+                  e = "Cannot seek record";
+               else
+               {
+                  long best = 0;
+                  int c = pos[1] - pos[0];
+                  if (c > 0)
+                     while (c--)
+                     {
+                        if (read (i, &p, sizeof (p)) != sizeof (p))
+                        {
+                           e = "End of file";
+                           break;
+                        }
+                        long d = (long) (p.e - E) * (long) (p.e - E) + (long) (p.n - N) * (long) (p.n - N);
+                        if (!*postcode || d < best)
+                        {
+                           best = d;
+                           memcpy (postcode, p.postcode, sizeof (postcode));
+                        }
+                     }
+               }
+            }
          }
+         close (i);
       }
-   close (i);
+   }
    jo_t j = jo_object_alloc ();
+   if (e)
+      jo_string (j, "error", e);
    jo_litf (j, "lat", "%.9lf", lat);
    jo_litf (j, "lon", "%.9lf", lon);
-   jo_int (j, "e", E);
-   jo_int (j, "n", N);
-   jo_int (j, "grid", grid);
-   jo_int (j, "data", data);
-   jo_int (j, "pos0", pos[0]);
-   jo_int (j, "pos1", pos[1]);
+   if (E)
+      jo_int (j, "e", E);
+   if (N)
+      jo_int (j, "n", N);
+   if (b.postcode)
+   {
+      jo_int (j, "scale", postcodedat.scale);
+      jo_int (j, "grid", postcodedat.grid);
+      jo_int (j, "basee", postcodedat.e);
+      jo_int (j, "basen", postcodedat.n);
+      jo_int (j, "width", postcodedat.w);
+      jo_int (j, "heightr", postcodedat.h);
+      jo_int (j, "grid", grid);
+      jo_int (j, "data", data);
+      jo_int (j, "pos0", pos[0]);
+      jo_int (j, "pos1", pos[1]);
+   }
    if (*postcode && !postcode[7])
       jo_string (j, "postcode", postcode);
    revk_error ("postcode", &j);
-   if (postcode[7])
-      return NULL;
-   int l = strlen (postcode);
-   if (l < 5)
-      return NULL;
-   char *temp = malloc (9);
-   sprintf (temp, "%.*s %s", l - 3, postcode, postcode + l - 3);
-   return temp;
+   if (!postcode[7])
+   {
+      int l = strlen (postcode);
+      if (l > 5)
+      {
+         char *temp = malloc (9);
+         sprintf (temp, "%.*s %s", l - 3, postcode, postcode + l - 3);
+         return temp;
+      }
+   }
+   return NULL;
 }
 
 uint8_t
@@ -1063,7 +1089,7 @@ nmea (char *s)
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", "Started moving");
             revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= stop || b.home || (powerstop && !b.charging)))
+         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= stop || b.home || (powerstop && !b.usb)))
          {
             b.moving = 0;
             jo_t j = jo_object_alloc ();
@@ -2129,13 +2155,14 @@ void
 revk_web_extra (httpd_req_t * req)
 {
    revk_web_setting_s (req, "Upload URL", "url", url, "URL", NULL, 0);
-   if (pwr && charger
+   if (pwr && (usb || (charging
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-       && (charger & IO_MASK) <= 21
+                       && (charging & IO_MASK) <= 21
 #endif
-      )
+               )))
       revk_web_setting_b (req, "Power down", "powerman", powerman, "Turn off when USB power goes off");
-   revk_web_setting_b (req, "Power stop", "powerstop", powerstop, "End Journey quickly when power goes off");
+   if (usb)
+      revk_web_setting_b (req, "Power stop", "powerstop", powerstop, "End Journey quickly when power goes off");
    revk_web_setting_b (req, "GPX Log", "loggpx", loggpx, "Log files in GPX format");
    revk_web_setting_i (req, "Move time", "move", move, "Seconds moving to start journey (quicker if moving fast)");
    revk_web_setting_i (req, "Stop time", "stop", stop, "Seconds stopped to end journey (quicker if at home)");
@@ -2171,6 +2198,8 @@ revk_state_extra (jo_t j)
       jo_int (j, "sdsize", sdsize);
    if (b.charging)
       jo_bool (j, "charging", 1);
+   if (b.usb)
+      jo_bool (j, "usb", 1);
    int bat = 100 * 2 * (adc[0] - 3.3);
    if (bat < 0)
       bat = 0;
@@ -2228,10 +2257,16 @@ app_main ()
 #undef str
 #undef io
    revk_start ();
-   if (charger)
+   if (usb)
    {
-      gpio_reset_pin (charger & IO_MASK);
-      gpio_set_direction (charger & IO_MASK, GPIO_MODE_INPUT);
+      gpio_reset_pin (usb & IO_MASK);
+      gpio_pulldown_en (usb & IO_MASK);
+      gpio_set_direction (usb & IO_MASK, GPIO_MODE_INPUT);
+   }
+   if (charging)
+   {
+      gpio_reset_pin (charging & IO_MASK);
+      gpio_set_direction (charging & IO_MASK, GPIO_MODE_INPUT);
    }
    if (pwr)
    {                            // System power
@@ -2286,14 +2321,15 @@ app_main ()
          gps_init ();
       if (b.moving)
          busy = up;
-      b.charging = io (charger);
-      if (b.charging)
+      b.charging = io (charging);
+      b.usb = io (usb);
+      if (b.charging || b.usb)
          busy = up;
-      if (powerman && charger && pwr
+      if (powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.7
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-          && (charger & IO_MASK) <= 21
+                                                  && (charging & IO_MASK) <= 21
 #endif
-          && !b.charging && busy + (b.sdpresent ? 60 : 600) < up)
+                              )) && busy + (b.sdpresent ? 60 : 600) < up)
          revk_restart ("Power down", 1);
    }
 }
@@ -2304,15 +2340,23 @@ power_shutdown (void)
    ESP_LOGE (TAG, "Good night");
    b.die = 1;
    sleep (2);
-   if (powerman && charger && pwr
+   if (pwr)
+      gpio_hold_en (pwr & IO_MASK);     // Power stuff down before reset or sleep
+   if (powerman && pwr && ((usb & !b.usb) || (charging && !b.charging && adc[0] < 3.7
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-       && (charger & IO_MASK) <= 21
+                                              && (charging & IO_MASK) <= 21
 #endif
-      )
-   {                            // Consider deep sleep
-      uint64_t mask = 1LL << (charger & IO_MASK);
-      esp_sleep_enable_ext1_wakeup (mask, (charger & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
+                           )))
+   {                            // Deep sleep
+      if (usb)
+      {                         // USB based
+         uint64_t mask = 1LL << (usb & IO_MASK);
+         esp_sleep_enable_ext1_wakeup (mask, (usb & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
+      } else
+      {                         // Charging based
+         uint64_t mask = 1LL << (charging & IO_MASK);
+         esp_sleep_enable_ext1_wakeup (mask, (charging & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
+      }
       esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
-   } else if (pwr)
-      gpio_hold_en (pwr & IO_MASK);
+   }
 }

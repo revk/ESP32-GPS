@@ -156,6 +156,7 @@ main (int argc, const char *argv[])
       putchar (i >> 24);
    }
    writeu32 (MAGIC);
+   writeu32 (SCALE);
    writeu32 (GRID);
    writeu32 (basee);
    writeu32 (basen);
