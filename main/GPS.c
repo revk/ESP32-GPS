@@ -265,15 +265,16 @@ getts (uint64_t when, char fn)
    return strdup (temp);
 }
 
-#define	POSTCODEDATMAGIX	20240121
+#define	POSTCODEDATMAGIX	20240122
 struct
 {
-   uint32_t magic;
-   uint32_t grid;
-   uint32_t e;
-   uint32_t n;
-   uint32_t w;
-   uint32_t h;
+   int32_t magic;
+   int32_t scale;
+   int32_t grid;
+   int32_t e;
+   int32_t n;
+   int32_t w;
+   int32_t h;
 } postcodedat = { 0 };
 
 void
@@ -297,56 +298,23 @@ getpostcode (double lat, double lon)
 {
    if (!b.postcode)
       return NULL;
-   // Find OS grid reference
-   static const long double a = 6378137.000L;   // semi-major-axis
-   static const long double b = 6356752.3141L;  // semi-minor-axis
-   const long double F0 = 0.9996012717L;        // scale factor on central meridian
-   const long double phi0 = 49.0L * pi / 180.0L;        // True origin N
-   const long double lambda0 = -2.0L * pi / 180.0L;     // True origin W
-   const long double E0 = 400000.0L;    // Easting of true origin
-   const long double N0 = -100000.0L;   // Northing of true origin
-   long double phi = lat * pi / 180.0L;
-   long double lambda = lon * pi / 180.0L;
-   const long double e2 = (a * a - b * b) / (a * a);    // ellipsoid squared eccentricity
-   const long double n = (a - b) / (a + b);     // B2
-   const long double n2 = n * n;
-   const long double n3 = n2 * n;
-   long double v = a * F0 * powl (1.0L - e2 * powl (sinl (phi), 2.0L), -0.5L);  // B3
-   long double rho = a * F0 * (1.0L - e2) * powl (1 - e2 * powl (sinl (phi), 2.0L), -1.5L);     // B4
-   long double eta2 = (v / rho) - 1.0L; // B5
-   long double M = b * F0 * ((1.0L + n + (5.0L / 4.0L) * n2 + (5.0L / 4.0L) * n3) * (phi - phi0)
-                             - (3.0L * n + 3.0L * n2 + (21.0L / 8.0L) * n3) * sinl (phi - phi0) * cosl (phi + phi0)
-                             + ((15.0L / 8.0L) * n2 + (15.0L / 8.0L) * n3) * sinl (2.0L * (phi - phi0)) * cosl (2.0L * (phi + phi0))
-                             - (35.0L / 24.0L) * n3 * sinl (3.0L * (phi - phi0)) * cosl (3.0L * (phi + phi0)));
-   long double I = M + N0;
-   long double II = v / 2.0L * sinl (phi) * cosl (phi);
-   long double III = v / 24.0L * sinl (phi) * powl (cosl (phi), 3.0L) * (5.0L - powl (tanl (phi), 2.0L) + 9.0L * eta2);
-   long double IIIA =
-      v / 720.0L * sinl (phi) * powl (cosl (phi), 5.0L) * (61.0L - 58.0L * powl (tanl (phi), 2.0L) + powl (tanl (phi), 4.0L));
-   long double IV = v * cosl (phi);
-   long double V = v / 6.0L * powl (cosl (phi), 3.0L) * (v / rho - powl (tanl (phi), 2.0L));
-   long double VI = v / 120.0L * powl (cosl (phi), 5.0L) * (5.0L - 18.0L * powl (tanl (phi), 2.0L)
-                                                            + powl (tanl (phi), 4.0L) + 14.0L * eta2 - 58.0L * powl (tanl (phi),
-                                                                                                                     2.0L) * eta2);
-   int N = I + II * powl (lambda - lambda0, 2.0L) + III * powl (lambda - lambda0, 4.0L) + IIIA * powl (lambda - lambda0, 6.0L);
-   int E = E0 + IV * (lambda - lambda0) + V * powl (lambda - lambda0, 3.0L) + VI * powl (lambda - lambda0, 5.0L);
+   int N = lon * postcodedat.scale;
+   int E = lat * postcodedat.scale;
 
    // Check valid
-   if (E < postcodedat.e * postcodedat.grid || E >= (postcodedat.e + postcodedat.w) * postcodedat.grid ||       //
-       N < postcodedat.n * postcodedat.grid || N >= (postcodedat.n + postcodedat.h) * postcodedat.grid)
+   if (E < postcodedat.e || E >= postcodedat.e + postcodedat.w * postcodedat.grid ||    //
+       N < postcodedat.n || N >= postcodedat.n + postcodedat.h * postcodedat.grid)
       return NULL;              // Out of range
-
-   // TODO not coming out close enough!
 
    // Look up postcode
 
    size_t grid = sizeof (postcodedat);
    size_t data = grid + 4 * (postcodedat.w * postcodedat.h + 1);
-   grid += 4 * ((N / postcodedat.grid - postcodedat.n) * postcodedat.w + E / postcodedat.grid - postcodedat.e);
+   grid += 4 * ((N - postcodedat.n) / postcodedat.grid * postcodedat.w + (E - postcodedat.e) / postcodedat.grid);
    uint32_t pos[2] = { 0 };
    struct
    {
-      uint32_t e,
+      int32_t e,
         n;
       char postcode[8];
    } p;
@@ -1979,7 +1947,7 @@ sd_task (void *z)
                      revk_info ("SD", &j);
                      fprintf (o, "\"Time\",\"Latitude\",\"Longitude\"");
                      if (b.postcode)
-                        fprintf (o, ",\"Postcode\"");
+                        fprintf (o, ",\"Closest postcode\"");
                      fprintf (o, ",\"Distance\"\n");
                   }
                }

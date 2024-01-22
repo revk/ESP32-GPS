@@ -50,8 +50,8 @@ update:
 	git submodule update --init --remote --merge --recursive
 	git commit -a -m "Library update"
 
-CCOPTS=-I. -I/usr/local/ssl/include -D_GNU_SOURCE -g -Wall -funsigned-char -lm
-OPTS=-L/usr/local/ssl/lib ${CCOPTS}
+CCOPTS=-I. -D_GNU_SOURCE -g -Wall -funsigned-char -lm
+OPTS=${CCOPTS}
 
 AJL/ajl.o:
 	make -C AJL
@@ -59,8 +59,14 @@ AJL/ajl.o:
 json2gpx: json2gpx.c AJL/ajl.o
 	cc -O -o $@ $< -IAJL ${OPTS} -lpopt AJL/ajl.o
 
-makepostcodes: makepostcodes.c AJL/ajl.o
-	cc -O -o $@ $< ${OPTS}
+makepostcodes: makepostcodes.c AJL/ajl.o OSTN02_OSGM02_GB.o ostn02.o
+	cc -O -o $@ $< OSTN02_OSGM02_GB.o ostn02.o ${OPTS}
+
+ostn02.o: ostn02.c
+	cc -fPIC -O -DLIB -c -o $@ $< ${CCOPTS}
+
+OSTN02_OSGM02_GB.o: OSTN02_OSGM02_GB.c
+	cc -fPIC -O -DLIB -c -o $@ $< ${CCOPTS}
 
 POSTCODE.DAT: makepostcodes
 	./makepostcodes OSCodePoint/*.csv > POSTCODE.NEW
