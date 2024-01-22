@@ -267,6 +267,8 @@ getts (uint64_t when, char fn)
    p += sprintf (p, "%04d-%02d-%02dT%02d:%02d:%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
    if (ms)
       p += sprintf (p, ".%03ld", ms);
+   *p++ = 'Z';
+   *p = 0;
    if (fn)
    {
       for (char *p = temp; *p; p++)
@@ -1597,7 +1599,10 @@ checkupload (void)
                } else
                {
                   char *u;
-                  asprintf (&u, "%s?%s-%s", url, revk_id, filename + sizeof (sd_mount));
+                  asprintf (&u, "%s?%s-%s", url, hostname, filename + sizeof (sd_mount));
+                  for (char *p = u + strlen (url) + 1; *p; p++)
+                     if (!isalnum ((int) *p) && *p != '.')
+                        *p = '-';
                   esp_http_client_config_t config = {
                      .url = u,
                      .crt_bundle_attach = esp_crt_bundle_attach,
@@ -1884,9 +1889,20 @@ sd_task (void *z)
                                  "<trk><trkseg>\r\n", revk_id);
                      } else
                      {
-                        fprintf (o, "{\r\n \"id\":\"%s\",\r\n \"version\":\"%s\"", revk_id, revk_version);
+                        jo_t j = jo_object_alloc ();
+                        jo_string (j, "id", revk_id);
+                        jo_string (j, "name", hostname);
+                        jo_string (j, "version", revk_version);
                         if (logpos)
-                           fprintf (o, ",\r\n \"gps\":[\r\n");
+                           jo_array (j, "gps");
+                        char *json = jo_finisha (&j);
+                        int len = strlen (json);
+                        json[--len] = 0;
+                        if (logpos)
+                           json[--len] = 0;
+
+                        fprintf (o, "%s\r\n", json);
+                        free (json);
                      }
                   }
                   line = 0;
@@ -1963,28 +1979,38 @@ sd_task (void *z)
             {
                if (logpos)
                   fprintf (o, "\r\n ]");
+               jo_t j = jo_object_alloc ();
                if (starttime)
                {
                   char *ts = getts (starttime, 0);
-                  fprintf (o, ",\r\n \"start\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, startlat, startlon,
-                           starthome ? "true" : "false");
+                  jo_object (j, "start");
+                  jo_string (j, "ts", ts);
+                  jo_litf (j, "lat", "%.9lf", startlat);
+                  jo_litf (j, "lon", "%.9lf", startlon);
+                  jo_bool (j, "home", starthome);
                   if (startpostcode)
-                     fprintf (o, ",\"postcode\":\"%s\"", startpostcode);
-                  fprintf (o, "}");
+                     jo_string (j, "postcode", startpostcode);
+                  jo_close (j);
                   free (ts);
                }
                if (endtime)
                {
                   char *ts = getts (endtime, 0);
-                  fprintf (o, ",\r\n \"end\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, endlat, endlon,
-                           endhome ? "true" : "false");
+                  jo_object (j, "end");
+                  jo_string (j, "ts", ts);
+                  jo_litf (j, "lat", "%.9lf", endlat);
+                  jo_litf (j, "lon", "%.9lf", endlon);
+                  jo_bool (j, "home", endhome);
                   if (endpostcode)
-                     fprintf (o, ",\"nearest-postcode\":\"%s\"", endpostcode);
-                  fprintf (o, "}");
+                     jo_string (j, "postcode", endpostcode);
+                  jo_close (j);
+                  free (ts);
                }
                if (odo0 && odo1)
-                  fprintf (o, ",\r\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
-               fprintf (o, "\n}\r\n");
+                  jo_litf (j, "distance", "%lld.%02lld", odo1 / 100, odo1 % 100);
+               char *json = jo_finisha (&j);
+               fprintf (o, ",\r\n%s\r\n", json + 1);
+               free (json);
             }
             fclose (o);
             jo_t j = jo_object_alloc ();
