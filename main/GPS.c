@@ -286,7 +286,10 @@ checkpostcode (void)
    if (i >= 0)
    {
       if (read (i, &postcodedat, sizeof (postcodedat)) == sizeof (postcodedat) && postcodedat.magic == POSTCODEDATMAGIX)
+      {
+         ESP_LOGI (TAG, "Postcode file present");
          b.postcode = 1;
+      }
       close (i);
    }
 }
