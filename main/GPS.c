@@ -24,7 +24,7 @@ __attribute__((unused))
 #error Need long file names
 #endif
 
-#define	POSTCODEDEBUG
+//#define	POSTCODEDEBUG	// Debug for postcode lookup
 
 #define	SYSTEMS	3
 
@@ -302,7 +302,7 @@ checkpostcode (void)
 #define secl(x) (1.0L/cosl(x))
 
 #ifdef	POSTCODEDEBUG
-#define	pe(x) e=#x
+#define	pe(x) e=x
 #else
 #define	pe(x) e=1
 #endif
@@ -312,7 +312,7 @@ getpostcode (double lat, double lon)
 #ifdef	POSTCODEDEBUG
    const char *e = NULL;
 #else
-   uint8_t e=0;
+   uint8_t e = 0;
 #endif
    size_t grid = sizeof (postcodedat);
    size_t data = grid + 4 * (postcodedat.w * postcodedat.h + 1);
@@ -321,16 +321,16 @@ getpostcode (double lat, double lon)
    int E = 0,
       N = 0;
    if (!b.postcode)
-      pe( "No postcode file");
+      pe ("No postcode file");
    if (!e)
    {
-      N = lat * postcodedat.scale;
       E = lon * postcodedat.scale;
+      N = lat * postcodedat.scale;
 
       // Check valid
       if (E < postcodedat.e || E >= postcodedat.e + postcodedat.w * postcodedat.grid || //
           N < postcodedat.n || N >= postcodedat.n + postcodedat.h * postcodedat.grid)
-         pe( "Out of range");
+         pe ("Out of range");
       else
       {                         // Look up postcode
          grid += 4 * ((N - postcodedat.n) / postcodedat.grid * postcodedat.w + (E - postcodedat.e) / postcodedat.grid);
@@ -342,17 +342,17 @@ getpostcode (double lat, double lon)
          } p;
          int i = open (postcodefile, O_RDONLY);
          if (i < 0)
-            pe( "Cannot open postcode file");
+            pe ("Cannot open postcode file");
          else
          {
             if (lseek (i, grid, SEEK_SET) < 0)
-               pe(e = "Cannot seek grid");
+               pe ("Cannot seek grid");
             else if (read (i, pos, sizeof (pos)) != sizeof (pos))
-               pe( "Cannot read pos");
+               pe ("Cannot read pos");
             else
             {
                if (lseek (i, data + pos[0] * sizeof (p), SEEK_SET) < 0)
-                  pe( "Cannot seek record");
+                  pe ("Cannot seek record");
                else
                {
                   long best = 0;
@@ -362,7 +362,7 @@ getpostcode (double lat, double lon)
                      {
                         if (read (i, &p, sizeof (p)) != sizeof (p))
                         {
-                           pe( "End of file");
+                           pe ("End of file");
                            break;
                         }
                         long d = (long) (p.e - E) * (long) (p.e - E) + (long) (p.n - N) * (long) (p.n - N);
@@ -378,8 +378,8 @@ getpostcode (double lat, double lon)
          close (i);
       }
    }
-   jo_t j = jo_object_alloc ();
 #ifdef	POSTCODEDEBUG
+   jo_t j = jo_object_alloc ();
    if (e)
       jo_string (j, "error", e);
    jo_litf (j, "lat", "%.9lf", lat);
@@ -405,7 +405,7 @@ getpostcode (double lat, double lon)
       jo_string (j, "postcode", postcode);
    revk_error ("postcode", &j);
 #endif
-   if (!e&&!postcode[7])
+   if (!e && !postcode[7])
    {
       int l = strlen (postcode);
       if (l > 5)
@@ -417,6 +417,7 @@ getpostcode (double lat, double lon)
    }
    return NULL;
 }
+
 #undef pe
 
 uint8_t
