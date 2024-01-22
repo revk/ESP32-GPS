@@ -41,6 +41,7 @@ extern char *emailuser;
 extern char *emailpass;
 extern char *emailport;
 extern char *emailfrom;
+extern uint8_t upload;
 
 //#define SERVER_USES_STARTSSL
 
@@ -260,7 +261,7 @@ perform_tls_handshake (mbedtls_ssl_context * ssl)
 }
 
 int
-email_send (const char *emailto, const char *contenttype, const char *filename, const char *subject, FILE * i)
+email_send (const char *emailto, const char *contenttype, const char *filename, const char *subject, FILE * i, int filelen)
 {
    if (!*emailhost)
       return 599;
@@ -427,11 +428,14 @@ email_send (const char *emailto, const char *contenttype, const char *filename, 
                    "\r\n", revk_id, emailfrom, subject, emailto, contenttype, filename);
 
    ret = write_ssl_data (&ssl, (unsigned char *) buf, len);
+   int total = 0;
    while (!ret)
    {
       len = fread (buf, 1, BUF_SIZE, i);
       if (len <= 0)
          break;
+      total += len;
+      upload = total * 100 / filelen;
       ret = write_ssl_data (&ssl, (unsigned char *) buf, len);
    }
 

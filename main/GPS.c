@@ -1593,7 +1593,7 @@ checkupload (void)
                if (strchr (url, '@'))
                {
                   ESP_LOGI (TAG, "Email %s", url);
-                  response = email_send (url, ct, filename + sizeof (sd_mount),filename + sizeof (sd_mount), i);
+                  response = email_send (url, ct, filename + sizeof (sd_mount), filename + sizeof (sd_mount), i, s.st_size);
                } else
                {
                   char *u;
@@ -1878,9 +1878,9 @@ sd_task (void *z)
                      revk_info ("SD", &j);
                      if (loggpx)
                      {
-                        fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n"      //
-                                 "<gpx version=\"1.0\">\r\n"      //
-                                 "<metadata><name>%s</name></metadata>\r\n"       //
+                        fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n"    //
+                                 "<gpx version=\"1.0\">\r\n"    //
+                                 "<metadata><name>%s</name></metadata>\r\n"     //
                                  "<trk><trkseg>\r\n", revk_id);
                      } else
                      {
@@ -1957,7 +1957,7 @@ sd_task (void *z)
             ESP_LOGE (TAG, "Close file");
             if (loggpx)
             {
-               fprintf (o, "</trkseg></trk>\r\n"  //
+               fprintf (o, "</trkseg></trk>\r\n"        //
                         "</gpx>\r\n");
             } else
             {
