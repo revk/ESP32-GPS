@@ -364,9 +364,14 @@ getpostcode (double lat, double lon)
    if (*postcode && !postcode[7])
       jo_string (j, "postcode", postcode);
    revk_error ("postcode", &j);
-   if (!*postcode || postcode[7])
+   if (postcode[7])
       return NULL;
-   return strdup (postcode);
+   int l = strlen (postcode);
+   if (l < 5)
+      return NULL;
+   char *temp = malloc (9);
+   sprintf (temp, "%.*s %s", l - 3, postcode, postcode + l - 3);
+   return temp;
 }
 
 uint8_t
@@ -1664,7 +1669,7 @@ sd_task (void *z)
    }
    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
       .format_if_mount_failed = 1,
-      .max_files = 1,
+      .max_files = 2,
       .allocation_unit_size = 16 * 1024,
       .disk_status_check_enable = 1,
    };
@@ -1890,6 +1895,9 @@ sd_task (void *z)
                odo1 -= odo0;
             else
                odo0 = odo1 = 0;
+            // Postcode open is second file
+            char *startpostcode = getpostcode (startlat, startlon);
+            char *endpostcode = getpostcode (endlat, endlon);
             ESP_LOGE (TAG, "Close file");
             if (loggpx)
             {
@@ -1902,15 +1910,21 @@ sd_task (void *z)
                if (starttime)
                {
                   char *ts = getts (starttime, 0);
-                  fprintf (o, ",\n \"start\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s}", ts, startlat, startlon,
+                  fprintf (o, ",\n \"start\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, startlat, startlon,
                            starthome ? "true" : "false");
+                  if (startpostcode)
+                     fprintf (o, ",\"nearest-postcode\":\"%s\"", startpostcode);
+                  fprintf (o, "}");
                   free (ts);
                }
                if (endtime)
                {
                   char *ts = getts (endtime, 0);
-                  fprintf (o, ",\n \"end\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s}", ts, endlat, endlon,
+                  fprintf (o, ",\n \"end\":{\"ts\":\"%s\",\"lat\":%.9lf,\"lon\":%.9lf,\"home\":%s", ts, endlat, endlon,
                            endhome ? "true" : "false");
+                  if (endpostcode)
+                     fprintf (o, ",\"nearest-postcode\":\"%s\"", endpostcode);
+                  fprintf (o, "}");
                }
                if (odo0 && odo1)
                   fprintf (o, ",\n \"distance\":%lld.%02lld", odo1 / 100, odo1 % 100);
@@ -1926,8 +1940,6 @@ sd_task (void *z)
             if (logcsv)
             {
                char *ts = getts (csvtime, '-');
-               char *startpostcode = getpostcode (startlat, startlon);
-               char *endpostcode = getpostcode (endlat, endlon);
                sprintf (filename, "%s/%s.csv", sd_mount, ts);
                free (ts);
                o = fopen (filename, "r");
