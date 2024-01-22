@@ -1281,9 +1281,9 @@ log_line (fix_t * f)
    if (logepe && f->setepe && f->slow.fixmode >= 1)
    {
       if (f->hepe > 0)
-         jo_litf (j, "hepe", "%f", f->hepe);
+         jo_litf (j, "hepe", "%.2f", f->hepe);
       if (f->vepe > 0 && f->slow.fixmode >= 3)
-         jo_litf (j, "vepe", "%f", f->vepe);
+         jo_litf (j, "vepe", "%.2f", f->vepe);
    }
    if (logdop)
    {
