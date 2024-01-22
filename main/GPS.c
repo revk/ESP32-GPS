@@ -1463,7 +1463,7 @@ checkupload (void)
       while (!filename && (entry = readdir (dir)))
          if (entry->d_type == DT_REG)
          {
-            const char *e = strchr (entry->d_name, '.');
+            const char *e = strrchr (entry->d_name, '.');
             if (!e)
                continue;
             if (!strcasecmp (e, ".json"))
