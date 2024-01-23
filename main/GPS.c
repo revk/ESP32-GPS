@@ -1161,7 +1161,7 @@ nmea (char *s)
    if (!strcmp (f[0], "PQODO") && n >= 2)
    {
       if (*f[1] == 'R' && !atoi (f[2]))
-         gps_cmd ("$PQODO,W,1,%d",ODOBASE);      // Start ODO
+         gps_cmd ("$PQODO,W,1,%d", ODOBASE);    // Start ODO
       if (*f[1] == 'Q' && fix)
       {
          fix->odo = parse (f[2], 2);    // Read ODO
@@ -1964,7 +1964,7 @@ sd_task (void *z)
          }
          if (o)
          {                      // Close file
-            if (odo0>=ODOBASE && odo1>=ODOBASE && odo1 > odo0)
+            if (odo0 >= ODOBASE && odo1 >= ODOBASE && odo1 > odo0)
                odo1 -= odo0;
             else
                odo0 = odo1 = 0;
