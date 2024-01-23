@@ -425,7 +425,7 @@ email_send (const char *emailto, const char *contenttype, const char *filename, 
                    "MIME-Version: 1.0\r\n"      //
                    "Content-Type: %s\r\n"       // 
                    "Content-Disposition: attachment;filename=%s;\r\n"   //
-                   "\r\n", revk_id, emailfrom, subject, emailto, contenttype, filename);
+                   "\r\n", hostname, emailfrom, subject, emailto, contenttype, filename);
 
    ret = write_ssl_data (&ssl, (unsigned char *) buf, len);
    int total = 0;

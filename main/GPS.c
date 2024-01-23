@@ -26,6 +26,7 @@ __attribute__((unused))
 #endif
 
 //#define       POSTCODEDEBUG   // Debug for postcode lookup
+#define	ODOBASE	100000000
 
 #define	SYSTEMS	3
 
@@ -1160,7 +1161,7 @@ nmea (char *s)
    if (!strcmp (f[0], "PQODO") && n >= 2)
    {
       if (*f[1] == 'R' && !atoi (f[2]))
-         gps_cmd ("$PQODO,W,1,100000000");      // Start ODO
+         gps_cmd ("$PQODO,W,1,%d",ODOBASE);      // Start ODO
       if (*f[1] == 'Q' && fix)
       {
          fix->odo = parse (f[2], 2);    // Read ODO
@@ -1963,7 +1964,7 @@ sd_task (void *z)
          }
          if (o)
          {                      // Close file
-            if (odo0 && odo1 && odo1 > odo0)
+            if (odo0>=ODOBASE && odo1>=ODOBASE && odo1 > odo0)
                odo1 -= odo0;
             else
                odo0 = odo1 = 0;
@@ -2006,7 +2007,7 @@ sd_task (void *z)
                   jo_close (j);
                   free (ts);
                }
-               if (odo0 && odo1)
+               if (odo1)
                   jo_litf (j, "distance", "%lld.%02lld", odo1 / 100, odo1 % 100);
                char *json = jo_finisha (&j);
                fprintf (o, ",\r\n%s\r\n", json + 1);
@@ -2065,7 +2066,7 @@ sd_task (void *z)
                   free (ts);
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", endpostcode ? : "");
-                  if (odo0 && odo1)
+                  if (odo1)
                      fprintf (o, ",%lld.%02lld", odo1 / 100, odo1 % 100);
                   fprintf (o, "\r\n\r\n");
                   fclose (o);
