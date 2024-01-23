@@ -811,7 +811,7 @@ gps_init (void)
    gps_cmd ("$PMTK401");        // Q_DGPS
    gps_cmd ("$PMTK413");        // Q_SBAS
    gps_cmd ("$PMTK869,0");      // Query EASY
-   gps_cmd ("$PQODO,R");        // Read ODO
+   gps_cmd ("$PQODO,R");        // Read ODO status
    //gps_cmd ("$PMTK605");     // Q_RELEASE
    b.gpsstarted = 1;
 }
@@ -1160,9 +1160,9 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "PQODO") && n >= 2)
    {
-      if (*f[1] == 'R' && !atoi (f[2]))
+      if ((*f[1] == 'R' && !atoi (f[2])) || (*f[2] == 'Q' && atoi (f[2]) < ODOBASE))
          gps_cmd ("$PQODO,W,1,%d", ODOBASE);    // Start ODO
-      if (*f[1] == 'Q' && fix)
+      else if (*f[1] == 'Q' && fix)
       {
          fix->odo = parse (f[2], 2);    // Read ODO
          fix->setodo = 1;
@@ -2266,7 +2266,7 @@ revk_state_extra (jo_t j)
    if (bat > 100)
       bat = 100;
    jo_int (j, "bat", bat);
-   // TODO adc[2] relates to temp, but not clear of mapping
+   // Note adc[2] relates to temp, but not clear of mapping
    jo_close (j);
 }
 
