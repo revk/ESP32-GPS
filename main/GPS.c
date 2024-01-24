@@ -1,8 +1,6 @@
 // GPS logger
 // Copyright (c) 2019-2024 Adrian Kennard, Andrews & Arnold Limited, see LICENSE file (GPL)
 
-// TODO email upload option
-
 __attribute__((unused))
      const char TAG[] = "GPS";
 
@@ -139,7 +137,8 @@ settings
 #define	GSARATE	10
 #define	GSVRATE	10
 #define VTGRATE 5
-   uint32_t zdadue = 0;         // Uptime when due
+   uint32_t ecefdue = 0;        // Uptime when next due by
+int32_t zdadue = 0;
 uint32_t gsadue = 0;
 uint32_t gsvdue = 0;
 uint32_t vtgdue = 0;
@@ -865,6 +864,8 @@ nmea_timeout (uint32_t up)
       status.course = NAN;
       status.speed = NAN;
    }
+   if (ecefdue && ecefdue < up)
+      ecefdue = 0;
 }
 
 void
@@ -987,6 +988,7 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "ECEFPOSVEL") && n >= 7)
    {
+      ecefdue = up + 2;
       startfix (f[1]);
       if (fix && strlen (f[2]) > 6 && strlen (f[3]) > 6 && strlen (f[4]) > 6)
       {
@@ -2159,7 +2161,7 @@ rgb_task (void *z)
             revk_led (strip, l++, 255, revk_rgb ('K'));
          // Flag issues in last LED
          if (!zdadue)
-            revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb (status.fixmode ? 'Y' : 'R')); // No GPS clock
+            revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb (ecefdue ? 'Y' : 'R'));        // No GPS clock
          else if (!b.moving)
             revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb (b.home ? 'O' : 'M')); // Not moving
       }
