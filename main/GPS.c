@@ -1763,7 +1763,7 @@ sd_task (void *z)
          {                      // Waiting card removed
             rgbsd = 'B';
             jo_t j = jo_object_alloc ();
-            jo_string (j, "action", cardstatus = "Remove card");
+            jo_string (j, "action", cardstatus = revk_shutting_down (NULL) ? "Card dismounted for shutdown" : "Remove card");
             revk_info ("SD", &j);
             b.dodismount = 0;
             while ((b.sdpresent = io (sdcd)))
@@ -2159,7 +2159,7 @@ rgb_task (void *z)
             revk_led (strip, l++, 255, revk_rgb ('K'));
          // Flag issues in last LED
          if (!zdadue)
-            revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb ('R'));        // No GPS clock
+            revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb (status.fixmode ? 'Y' : 'R')); // No GPS clock
          else if (!b.moving)
             revk_led (strip, leds - 1, b.charging ? fade : 255, revk_rgb (b.home ? 'O' : 'M')); // Not moving
       }
