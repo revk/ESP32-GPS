@@ -81,7 +81,7 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 
 ## LEDs
 
-There is one LED by the SD card that shows the status of the SD card (on older boards this is first LED on LED strip);
+There is one LED by the SD card that shows the status of the SD card (on older boards this is first LED on LED strip). This pulses if data ready to send.
 
 |Colour|Meaning|
 |------|-------|
@@ -99,15 +99,14 @@ There is a string of LEDs to show satellite status, in order...
 - Yellow LEDs show for GLONASS GPS, 2 sats per LED, last is dim if odd number
 - Cyan LEDs show for GALILEO GPS, 2 sats per LED, last is dim if odd number
 - If no active satellites and no SBAS a single red LED shows
-- If there is less than a 3D fix the satellite LEDs blink
+- If there is less than a 3D fix the satellite LEDs pulse
 
-Also, the last LED is over written with RED if no GPS receiver, or ORANGE if stationary at home, or MAGENTA if stationary not at home (or home not set).
+Also, the last LED is over written with RED if no GPS receiver (YELLOW if some data but no clock yet), or ORANGE if stationary at home, or MAGENTA if stationary not at home (or home not set). This pulses if charging.
 
 There are also special situations where the LEDs show a bar graph, this starts at the other end to avoid confusion with satellite status.
 
 - Yellow for progress of software upgrade.
 - Cyan for progress of log upload (per file).
-
 
 ## Point reduction
 
