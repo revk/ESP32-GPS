@@ -2404,11 +2404,11 @@ app_main ()
       b.usb = io (usb);
       if (b.charging || b.usb)
          busy = up;
-      if (powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.7
+      if (!revk_shutting_down (NULL) && powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.7
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                                                  && (charging & IO_MASK) <= 21
+                                                                            && (charging & IO_MASK) <= 21
 #endif
-                              )) && busy + (b.sdpresent ? 60 : 600) < up)
+                                                        )) && busy + (b.sdpresent ? 60 : 600) < up)
          revk_restart ("Power down", 1);
    }
 }
