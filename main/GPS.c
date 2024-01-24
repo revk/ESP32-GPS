@@ -2281,6 +2281,7 @@ revk_state_extra (jo_t j)
    if (bat > 100)
       bat = 100;
    jo_int (j, "bat", bat);
+   jo_litf (j, "voltage", "%.1f", adc[0]);
    // Note adc[2] relates to temp, but not clear of mapping
    jo_close (j);
 }
@@ -2334,12 +2335,14 @@ app_main ()
    revk_start ();
    if (usb)
    {
+      rtc_gpio_deinit (usb & IO_MASK);
       gpio_reset_pin (usb & IO_MASK);
       gpio_pulldown_en (usb & IO_MASK);
       gpio_set_direction (usb & IO_MASK, GPIO_MODE_INPUT);
    }
    if (charging)
    {
+      rtc_gpio_deinit (charging & IO_MASK);
       gpio_reset_pin (charging & IO_MASK);
       gpio_set_direction (charging & IO_MASK, GPIO_MODE_INPUT);
    }
@@ -2421,7 +2424,6 @@ power_shutdown (void)
 #endif
                            )))
    {                            // Deep sleep
-      ESP_LOGE (TAG, "Deep sleep");
       jo_t j = jo_object_alloc ();
       jo_string (j, "action", "poweroff");
       revk_error (TAG, &j);
@@ -2432,20 +2434,19 @@ power_shutdown (void)
          gpio_hold_dis (pwr & IO_MASK);
          gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 1 : 0);
       }
+      ESP_LOGE (TAG, "Deep sleep");
       if (usb)
       {                         // USB based
          rtc_gpio_set_direction_in_sleep (usb & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
          rtc_gpio_pullup_dis (usb & IO_MASK);
          rtc_gpio_pulldown_en (usb & IO_MASK);
-         uint64_t mask = 1LL << (usb & IO_MASK);
-         esp_sleep_enable_ext1_wakeup (mask, (usb & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
+         esp_sleep_enable_ext0_wakeup (usb & IO_MASK, (usb & IO_INV) ? 0 : 1);
       } else
       {                         // Charging based
          rtc_gpio_set_direction_in_sleep (charging & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
          rtc_gpio_pullup_en (charging & IO_MASK);
          rtc_gpio_pulldown_dis (charging & IO_MASK);
-         uint64_t mask = 1LL << (charging & IO_MASK);
-         esp_sleep_enable_ext1_wakeup (mask, (charging & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
+         esp_sleep_enable_ext0_wakeup (charging & IO_MASK, (charging & IO_INV) ? 0 : 1);
       }
       esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
    }
