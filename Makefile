@@ -57,16 +57,16 @@ AJL/ajl.o:
 	make -C AJL
 
 json2gpx: json2gpx.c AJL/ajl.o
-	cc -O -o $@ $< -IAJL ${OPTS} -lpopt AJL/ajl.o
+	gcc -O -o $@ $< -IAJL ${OPTS} -lpopt AJL/ajl.o
 
 makepostcodes: makepostcodes.c AJL/ajl.o OSTN02_OSGM02_GB.o ostn02.o
-	cc -O -o $@ $< OSTN02_OSGM02_GB.o ostn02.o ${OPTS}
+	gcc -O -o $@ $< OSTN02_OSGM02_GB.o ostn02.o ${OPTS}
 
 ostn02.o: ostn02.c
-	cc -fPIC -O -DLIB -c -o $@ $< ${CCOPTS}
+	gcc -fPIC -O -DLIB -c -o $@ $< ${CCOPTS}
 
 OSTN02_OSGM02_GB.o: OSTN02_OSGM02_GB.c
-	cc -fPIC -O -DLIB -c -o $@ $< ${CCOPTS}
+	gcc -fPIC -O -DLIB -c -o $@ $< ${CCOPTS}
 
 POSTCODE.DAT: makepostcodes
 	./makepostcodes OSCodePoint/*.csv > POSTCODE.NEW
