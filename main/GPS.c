@@ -2404,7 +2404,7 @@ app_main ()
       b.usb = io (usb);
       if (b.charging || b.usb)
          busy = up;
-      if (!revk_shutting_down (NULL) && powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.7
+      if (!revk_shutting_down (NULL) && powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.8
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
                                                                             && (charging & IO_MASK) <= 21
 #endif
@@ -2418,7 +2418,7 @@ power_shutdown (void)
 {
    b.die = 1;
    sleep (2);
-   if (powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.7
+   if (powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.8
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
                                                && (charging & IO_MASK) <= 21
 #endif
