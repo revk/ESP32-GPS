@@ -17,4 +17,4 @@ KiCad/fp-info-cache
 components/*
 dependencies.lock
 managed_components
-
+*.dSYM

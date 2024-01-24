@@ -41,7 +41,7 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 #define IO_INV          0x40
 #define settings	\
      	io(pwr,-15,		System PWR)	\
-     	io(charging,-33,	Charging status)	\
+     	io(charging,-4,		Charging status)	\
      	io(usb,,		USB power status)	\
 	bl(powerman,N,		Power management)	\
 	bl(powerstop,N,		Power off end journey)	\
