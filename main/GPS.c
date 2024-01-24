@@ -343,9 +343,9 @@ getpostcode (double lat, double lon)
       static const uint16_t cossq[] =   // Square of cosine scaled by 1000
       { 1000, 999, 998, 997, 995, 992, 989, 985, 980, 975, 969, 963, 956, 949, 941, 933, 924, 914, 904, 894, 883, 871, 859, 847,
          834, 821, 807, 793, 779, 764, 749, 734, 719, 703, 687, 671, 654, 637, 620, 603, 586, 569, 552, 534, 517, 499, 482, 465,
-            447, 430, 413, 396, 379, 362,
+         447, 430, 413, 396, 379, 362,
          345, 328, 312, 296, 280, 265, 250, 235, 220, 206, 192, 178, 165, 152, 140, 128, 116, 105, 95, 85, 75, 66, 58, 50, 43, 36,
-            30, 24, 19, 14, 10, 7, 4,
+         30, 24, 19, 14, 10, 7, 4,
          2, 1, 0, 0
       };
       adjust = cossq[adjust];
@@ -2344,10 +2344,11 @@ app_main ()
    }
    if (pwr)
    {                            // System power
+      gpio_hold_dis (pwr & IO_MASK);
       gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
       gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
-      gpio_hold_dis (pwr & IO_MASK);
-      sleep (1);                // Power on
+      gpio_hold_en (pwr & IO_MASK);
+      usleep (100000);          // Power on
    }
    if (leds && rgb)
    {
@@ -2411,17 +2412,25 @@ app_main ()
 void
 power_shutdown (void)
 {
-   ESP_LOGE (TAG, "Good night");
    b.die = 1;
    sleep (2);
-   if (pwr)
-      gpio_hold_en (pwr & IO_MASK);     // Power stuff down before reset or sleep
-   if (powerman && pwr && ((usb & !b.usb) || (charging && !b.charging && adc[0] < 3.7
+   if (powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.7
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                                              && (charging & IO_MASK) <= 21
+                                               && (charging & IO_MASK) <= 21
 #endif
                            )))
    {                            // Deep sleep
+	   ESP_LOGE(TAG,"Deep sleep");
+      jo_t j = jo_object_alloc ();
+      jo_string (j, "action", "poweroff");
+      revk_error (TAG, &j);
+      sleep (5);
+      if (pwr)
+      {                         // Power down
+         ESP_LOGE (TAG, "Power off");
+         gpio_hold_dis (pwr & IO_MASK);
+         gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 1 : 0);
+      }
       if (usb)
       {                         // USB based
          uint64_t mask = 1LL << (usb & IO_MASK);
@@ -2432,5 +2441,12 @@ power_shutdown (void)
          esp_sleep_enable_ext1_wakeup (mask, (charging & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
       }
       esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
+   } else
+   {
+	   ESP_LOGE(TAG,"Restart");
+      jo_t j = jo_object_alloc ();
+      jo_string (j, "action", "reset");
+      revk_error (TAG, &j);
+      sleep (5);
    }
 }
