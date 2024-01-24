@@ -11,6 +11,7 @@ __attribute__((unused))
 #include <aes/esp_aes.h>
 #include <driver/i2c.h>
 #include <driver/uart.h>
+#include <driver/rtc_io.h>
 #include <math.h>
 #include "esp_sntp.h"
 #include "esp_vfs_fat.h"
@@ -2420,7 +2421,7 @@ power_shutdown (void)
 #endif
                            )))
    {                            // Deep sleep
-	   ESP_LOGE(TAG,"Deep sleep");
+      ESP_LOGE (TAG, "Deep sleep");
       jo_t j = jo_object_alloc ();
       jo_string (j, "action", "poweroff");
       revk_error (TAG, &j);
@@ -2433,20 +2434,19 @@ power_shutdown (void)
       }
       if (usb)
       {                         // USB based
+         rtc_gpio_set_direction_in_sleep (usb & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
+         rtc_gpio_pullup_dis (usb & IO_MASK);
+         rtc_gpio_pulldown_en (usb & IO_MASK);
          uint64_t mask = 1LL << (usb & IO_MASK);
          esp_sleep_enable_ext1_wakeup (mask, (usb & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
       } else
       {                         // Charging based
+         rtc_gpio_set_direction_in_sleep (charging & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
+         rtc_gpio_pullup_en (charging & IO_MASK);
+         rtc_gpio_pulldown_dis (charging & IO_MASK);
          uint64_t mask = 1LL << (charging & IO_MASK);
          esp_sleep_enable_ext1_wakeup (mask, (charging & IO_INV) ? ESP_EXT1_WAKEUP_ALL_LOW : ESP_EXT1_WAKEUP_ANY_HIGH);
       }
       esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
-   } else
-   {
-	   ESP_LOGE(TAG,"Restart");
-      jo_t j = jo_object_alloc ();
-      jo_string (j, "action", "reset");
-      revk_error (TAG, &j);
-      sleep (5);
    }
 }
