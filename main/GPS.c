@@ -2406,9 +2406,9 @@ app_main ()
          busy = up;
       if (!revk_shutting_down (NULL) && powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.8
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                                                                            && (charging & IO_MASK) <= 21
+                                                                                && (charging & IO_MASK) <= 21
 #endif
-                                                        )) && busy + (b.sdpresent ? 60 : 600) < up)
+                                                            )) && busy + (b.sdpresent && status.fixmode > 1 ? 60 : 600) < up)
          revk_restart ("Power down", 1);
    }
 }
@@ -2424,9 +2424,6 @@ power_shutdown (void)
 #endif
                            )))
    {                            // Deep sleep
-      jo_t j = jo_object_alloc ();
-      jo_string (j, "action", "poweroff");
-      revk_error (TAG, &j);
       sleep (5);
       if (pwr)
       {                         // Power down
