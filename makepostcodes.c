@@ -30,6 +30,15 @@
 // - N (LE 32 bit)
 // - postcode (8 bytes, null terminated, no space)
 
+void
+writeu32 (unsigned int i)
+{                               // LE
+   putchar (i);
+   putchar (i >> 8);
+   putchar (i >> 16);
+   putchar (i >> 24);
+}
+
 int debug = 0;
 
 typedef struct postcode_s postcode_t;
@@ -107,7 +116,7 @@ main (int argc, const char *argv[])
             int N = lat * SCALE;
             int x = (E - BLOCKE) / BLOCK,
                y = (N - BLOCKN) / BLOCK;
-            if (x>=0&&y>=0&&x < BLOCKW && y < BLOCKH)
+            if (x >= 0 && y >= 0 && x < BLOCKW && y < BLOCKH)
             {
                total++;
                memmove (postcode + l - 4, postcode + l - 3, 4); // Remove space
@@ -148,13 +157,6 @@ main (int argc, const char *argv[])
    warnx ("E %d-%d N %d-%d total=%d grid %d/%d", basee, maxe, basen, maxn, total, gridw, gridh);
    // Generate postcode file
    // Header
-   void writeu32 (unsigned int i)
-   {                            // LE
-      putchar (i);
-      putchar (i >> 8);
-      putchar (i >> 16);
-      putchar (i >> 24);
-   }
    writeu32 (MAGIC);
    writeu32 (SCALE);
    writeu32 (GRID);
@@ -250,7 +252,7 @@ main (int argc, const char *argv[])
          edge (lb, le, bn, lt, le, tn);
          edge (rb, re, bn, rt, re, tn);
          // In grid
-         for (postcode_t * f = postcodes[(le-BLOCKE) / BLOCK][(bn-BLOCKN) / BLOCK]; f; f = f->next)
+         for (postcode_t * f = postcodes[(le - BLOCKE) / BLOCK][(bn - BLOCKN) / BLOCK]; f; f = f->next)
             if (f->n >= bn && f->n <= tn && f->e >= le && f->e <= re)
                add (f, (le + re) / 2, (bn + tn) / 2);
          if (count > maxcount)
