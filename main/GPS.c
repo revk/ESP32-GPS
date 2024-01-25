@@ -25,7 +25,7 @@ __attribute__((unused))
 #endif
 
 //#define       POSTCODEDEBUG   // Debug for postcode lookup
-#define	ODOBASE	100000000
+#define	ODOBASE	10000000000     // cm
 
 #define	SYSTEMS	3
 
@@ -146,6 +146,7 @@ uint32_t busy = 0;              // Uptime last busy
 httpd_handle_t webserver = NULL;
 const char sd_mount[] = "/sd";
 const char postcodefile[] = "/sd/POSTCODE.DAT";
+const char odometer[] = "/sd/ODOMETER.TXT";
 led_strip_handle_t strip = NULL;
 SemaphoreHandle_t cmd_mutex = NULL;
 SemaphoreHandle_t ack_semaphore = NULL;
@@ -159,7 +160,9 @@ char rgbsd = 'K';
 const char *cardstatus = NULL;
 int32_t pos[3] = { 0 };         // last x/y/z
 
-RTC_NOINIT_ATTR uint64_t csvtime = 0;
+uint64_t odoadjust = 0;
+
+RTC_NOINIT_ATTR uint64_t csvtime;
 
 float adc[3];                   // ADCs
 
@@ -255,6 +258,36 @@ fixq_t fixsd = { 0 };           // Queue to record to SD
 fixq_t fixfree = { 0 };         // Queue of free
 
 void power_shutdown (void);
+
+int64_t
+parse (const char *p, uint8_t places)
+{
+   if (!p || !*p)
+      return 0;
+   const char *s = p;
+   if (*p == '-')
+      p++;
+   int64_t v = 0;
+   while (*p && isdigit ((int) *p))
+      v = v * 10 + *p++ - '0';
+   if (*p == '.')
+   {
+      p++;
+      while (places && *p && isdigit ((int) *p))
+      {
+         v = v * 10 + *p++ - '0';
+         places--;
+      }
+   }
+   while (places)
+   {
+      v *= 10;
+      places--;
+   }
+   if (*s == '-')
+      v = 0 - v;
+   return v;
+}
 
 char *
 getts (uint64_t when, char fn)
@@ -827,6 +860,8 @@ gps_init (void)
    gps_cmd ("$PMTK401");        // Q_DGPS
    gps_cmd ("$PMTK413");        // Q_SBAS
    gps_cmd ("$PMTK869,0");      // Query EASY
+   if (!b.moving)
+      gps_cmd ("$PQODO,W,1,%lld", ODOBASE / 100LL);     // Start ODO
    gps_cmd ("$PQODO,R");        // Read ODO status
    //gps_cmd ("$PMTK605");     // Q_RELEASE
    b.gpsstarted = 1;
@@ -895,34 +930,6 @@ nmea (char *s)
    }
    if (!n)
       return;
-   int64_t parse (const char *p, uint8_t places)
-   {
-      if (!p || !*p)
-         return 0;
-      const char *s = p;
-      if (*p == '-')
-         p++;
-      int64_t v = 0;
-      while (*p && isdigit ((int) *p))
-         v = v * 10 + *p++ - '0';
-      if (*p == '.')
-      {
-         p++;
-         while (places && *p && isdigit ((int) *p))
-         {
-            v = v * 10 + *p++ - '0';
-            places--;
-         }
-      }
-      while (places)
-      {
-         v *= 10;
-         places--;
-      }
-      if (*s == '-')
-         v = 0 - v;
-      return v;
-   }
    uint32_t up = uptime ();
    nmea_timeout (up);
    static uint8_t century = 19;
@@ -1179,8 +1186,8 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "PQODO") && n >= 2)
    {
-      if ((*f[1] == 'R' && !atoi (f[2])) || (*f[2] == 'Q' && atoi (f[2]) < ODOBASE))
-         gps_cmd ("$PQODO,W,1,%d", ODOBASE);    // Start ODO
+      if ((*f[1] == 'R' && !atoi (f[2])) || (!b.moving && *f[2] == 'Q' && parse (f[2], 2) < ODOBASE))
+         gps_cmd ("$PQODO,W,1,%d", ODOBASE / 100LL);    // Start ODO
       else if (*f[1] == 'Q' && fix)
       {
          fix->odo = parse (f[2], 2);    // Read ODO
@@ -1357,7 +1364,7 @@ log_line (fix_t * f)
    if (logdsq && !isnan (f->dsq))
       jo_litf (j, "dsq", "%f", f->dsq);
    if (logodo && f->setodo && f->odo)
-      jo_litf (j, "odo", "%lld.%02lld", f->odo / 100, f->odo % 100);
+      jo_litf (j, "odo", "%lld.%02lld", (f->odo + odoadjust) / 100LL, (f->odo + odoadjust) % 100LL);
    if (gpserrors)
    {
       jo_int (j, "errors", gpserrors);
@@ -1869,6 +1876,27 @@ sd_task (void *z)
                usleep (100000);
                continue;
             }
+            if (!o && f->setodo && f->odo >= ODOBASE)
+            {                   // Waiting
+               if (!odo0)
+               {
+                  FILE *o = fopen (odometer, "r");
+                  if (o)
+                  {
+                     char temp[30];
+                     int l = fread (temp, 1, sizeof (temp) - 1, o);
+                     fclose (o);
+                     if (l > 0 && l < sizeof (temp))
+                     {
+                        temp[l] = 0;
+                        odo0 = parse (temp, 2);
+                     }
+                  }
+                  if (!odo0)
+                     odo0 = ODOBASE;
+               }
+               odoadjust = odo0 - f->odo;
+            }
             if (!o && f->sett && f->setecef && f->setlla && f->quality && b.moving)
             {                   // Open file
                char *ts = getts (f->ecef.t, '-');
@@ -1969,8 +1997,8 @@ sd_task (void *z)
             if (f->setodo)
             {
                if (!odo0)
-                  odo0 = f->odo;
-               odo1 = f->odo;
+                  odo0 = f->odo + odoadjust;
+               odo1 = f->odo + odoadjust;
             }
             if (f->sett && f->setecef && f->setlla)
             {
@@ -1983,10 +2011,9 @@ sd_task (void *z)
          }
          if (o)
          {                      // Close file
+            int64_t distance = 0;
             if (odo0 >= ODOBASE && odo1 >= ODOBASE && odo1 > odo0)
-               odo1 -= odo0;
-            else
-               odo0 = odo1 = 0;
+               distance = odo1 - odo0;
             // Postcode open is second file
             char *startpostcode = getpostcode (startlat, startlon);
             char *endpostcode = getpostcode (endlat, endlon);
@@ -2026,19 +2053,28 @@ sd_task (void *z)
                   jo_close (j);
                   free (ts);
                }
-               if (odo1)
-                  jo_litf (j, "distance", "%lld.%02lld", odo1 / 100, odo1 % 100);
+               if (distance)
+                  jo_litf (j, "distance", "%lld.%02lld", distance / 100LL, distance % 100LL);
                char *json = jo_finisha (&j);
                fprintf (o, ",\r\n%s\r\n", json + 1);
                free (json);
             }
             fclose (o);
+            if (distance)
+            {                   // Odometer update
+               FILE *o = fopen (odometer, "w+");
+               if (o)
+               {
+                  fprintf (o, "%lld.%02lld", odo1 / 100LL, odo1 % 100LL);
+                  fclose (o);
+               }
+            }
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Log file closed");
             jo_string (j, "filename", filename);
             revk_info ("SD", &j);
             if (!csvtime || csvtime > starttime || csvtime + 86400LL * 30LL * 1000000LL < starttime)
-               csvtime = starttime; // csvtime is in RTC memory so needs sanity check
+               csvtime = starttime;     // csvtime is in RTC memory so needs sanity check
             if (logcsv)
             {
                char *ts = getts (csvtime, '-');
