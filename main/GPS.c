@@ -2435,15 +2435,19 @@ power_shutdown (void)
          gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 1 : 0);
       }
       ESP_LOGE (TAG, "Deep sleep");
-      if(sdcd)
+      if (sdcd)
       {
          rtc_gpio_set_direction_in_sleep (sdcd & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
          rtc_gpio_pullup_en (sdcd & IO_MASK);
          rtc_gpio_pulldown_dis (sdcd & IO_MASK);
-         esp_sleep_enable_ext0_wakeup (sdcd & IO_MASK, 1-gpio_get_level(sdcd&IO_MASK));
+         esp_sleep_enable_ext0_wakeup (sdcd & IO_MASK, 1 - gpio_get_level (sdcd & IO_MASK));
       }
       if (usb)
       {                         // USB based
+         rtc_gpio_set_direction_in_sleep (usb & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
+         rtc_gpio_pullup_dis (usb & IO_MASK);
+         rtc_gpio_pulldown_en (usb & IO_MASK);
+         esp_sleep_enable_ext0_wakeup (usb & IO_MASK, (usb & IO_INV) ? 0 : 1);
       } else
       {                         // Charging based
          rtc_gpio_set_direction_in_sleep (charging & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
