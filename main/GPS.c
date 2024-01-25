@@ -159,6 +159,8 @@ char rgbsd = 'K';
 const char *cardstatus = NULL;
 int32_t pos[3] = { 0 };         // last x/y/z
 
+RTC_NOINIT_ATTR uint64_t csvtime = 0;
+
 float adc[3];                   // ADCs
 
 uint64_t sdsize = 0,            // SD card data
@@ -1757,7 +1759,6 @@ sd_task (void *z)
    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
    slot_config.gpio_cs = sdss & IO_MASK;
    slot_config.host_id = host.slot;
-   uint64_t csvtime = 0;
    while (!b.die)
    {
       if (sdcd)
@@ -2036,8 +2037,8 @@ sd_task (void *z)
             jo_string (j, "action", cardstatus = "Log file closed");
             jo_string (j, "filename", filename);
             revk_info ("SD", &j);
-            if (!csvtime)
-               csvtime = starttime;
+            if (!csvtime || csvtime > starttime || csvtime + 86400LL * 30LL * 1000000LL < starttime)
+               csvtime = starttime; // csvtime is in RTC memory so needs sanity check
             if (logcsv)
             {
                char *ts = getts (csvtime, '-');
@@ -2439,15 +2440,15 @@ power_shutdown (void)
          rtc_gpio_set_direction_in_sleep (usb & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
          rtc_gpio_pullup_dis (usb & IO_MASK);
          rtc_gpio_pulldown_en (usb & IO_MASK);
-         REVK_ERR_CHECK(esp_sleep_enable_ext0_wakeup (usb & IO_MASK, (usb & IO_INV) ? 0 : 1));
+         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (usb & IO_MASK, (usb & IO_INV) ? 0 : 1));
       } else
       {                         // Charging based
          rtc_gpio_set_direction_in_sleep (charging & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
          rtc_gpio_pullup_en (charging & IO_MASK);
          rtc_gpio_pulldown_dis (charging & IO_MASK);
-         REVK_ERR_CHECK(esp_sleep_enable_ext0_wakeup (charging & IO_MASK, (charging & IO_INV) ? 0 : 1));
+         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (charging & IO_MASK, (charging & IO_INV) ? 0 : 1));
       }
-      sleep(1);
+      sleep (1);
       esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
    }
 }
