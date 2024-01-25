@@ -189,7 +189,7 @@ struct slow_s
 {                               // Slow updated data
    uint8_t gsv[SYSTEMS];        // Sats in view
    uint8_t gsa[SYSTEMS];        // Sats active
-   uint8_t fixmode;             // Fix mode from slow update
+   uint8_t fixmode;             // Fix mode from slow update, 1=none, 2=2d, 3=3d
    float course;
    float speed;
    float hdop;                  // Slow hdop
@@ -1716,6 +1716,7 @@ sd_task (void *z)
    esp_err_t ret;
    if (sdcd)
    {
+      rtc_gpio_deinit (sdcd & IO_MASK);
       gpio_reset_pin (sdcd & IO_MASK);
       gpio_set_direction (sdcd & IO_MASK, GPIO_MODE_INPUT);
    }
@@ -2410,7 +2411,7 @@ app_main ()
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
                                                                                 && (charging & IO_MASK) <= 21
 #endif
-                                                            )) && busy + (b.sdpresent && status.fixmode > 1 ? 60 : 600) < up)
+                                                            )) && busy + (b.sdpresent && status.fixmode >= 3 ? 60 : 600) < up)
          revk_restart ("Power down", 1);
    }
 }
@@ -2434,12 +2435,15 @@ power_shutdown (void)
          gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 1 : 0);
       }
       ESP_LOGE (TAG, "Deep sleep");
+      if(sdcd)
+      {
+         rtc_gpio_set_direction_in_sleep (sdcd & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
+         rtc_gpio_pullup_en (sdcd & IO_MASK);
+         rtc_gpio_pulldown_dis (sdcd & IO_MASK);
+         esp_sleep_enable_ext0_wakeup (sdcd & IO_MASK, 1-gpio_get_level(sdcd&IO_MASK));
+      }
       if (usb)
       {                         // USB based
-         rtc_gpio_set_direction_in_sleep (usb & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
-         rtc_gpio_pullup_dis (usb & IO_MASK);
-         rtc_gpio_pulldown_en (usb & IO_MASK);
-         esp_sleep_enable_ext0_wakeup (usb & IO_MASK, (usb & IO_INV) ? 0 : 1);
       } else
       {                         // Charging based
          rtc_gpio_set_direction_in_sleep (charging & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
