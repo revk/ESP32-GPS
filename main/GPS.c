@@ -2068,6 +2068,7 @@ sd_task (void *z)
                   fprintf (o, "%lld.%02lld", odo1 / 100LL, odo1 % 100LL);
                   fclose (o);
                }
+               odo0 += distance;        // For next journey, no need to re-read file
             }
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Log file closed");
