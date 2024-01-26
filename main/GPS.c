@@ -2036,6 +2036,8 @@ sd_task (void *z)
                   char *ts = getts (starttime, 0);
                   jo_object (j, "start");
                   jo_string (j, "ts", ts);
+                  if (odostart >= ODOBASE)
+                     jo_litf (j, "odo", "%lld.%02lld", odostart / 100LL, odostart % 100LL);
                   jo_litf (j, "lat", "%.9lf", startlat);
                   jo_litf (j, "lon", "%.9lf", startlon);
                   jo_bool (j, "home", starthome);
@@ -2049,6 +2051,8 @@ sd_task (void *z)
                   char *ts = getts (endtime, 0);
                   jo_object (j, "end");
                   jo_string (j, "ts", ts);
+                  if (odonow >= ODOBASE)
+                     jo_litf (j, "odo", "%lld.%02lld", odonow / 100LL, odonow % 100LL);
                   jo_litf (j, "lat", "%.9lf", endlat);
                   jo_litf (j, "lon", "%.9lf", endlon);
                   jo_bool (j, "home", endhome);
