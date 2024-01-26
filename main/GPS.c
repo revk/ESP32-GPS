@@ -1849,6 +1849,24 @@ sd_task (void *z)
       b.doformat = 0;
       checkpostcode ();
       checkupload ();
+      {                         // Check odometer
+         FILE *o = fopen (odometer, "r");
+         if (o)
+         {
+            char temp[30];
+            int l = fread (temp, 1, sizeof (temp) - 1, o);
+            fclose (o);
+            if (l > 0 && l < sizeof (temp))
+            {
+               temp[l] = 0;
+               odostart = parse (temp, 2);
+            }
+         }
+         if (!odostart)
+            odostart = ODOBASE;
+         odonow = odostart;
+         revk_command ("status", NULL);
+      }
       while (!b.doformat && !b.dodismount && !b.die)
       {
          FILE *o = NULL;
@@ -1869,25 +1887,6 @@ sd_task (void *z)
             {                   // card removed
                b.dodismount = 1;
                break;
-            }
-            if (!o && !odostart)
-            {
-               FILE *o = fopen (odometer, "r");
-               if (o)
-               {
-                  char temp[30];
-                  int l = fread (temp, 1, sizeof (temp) - 1, o);
-                  fclose (o);
-                  if (l > 0 && l < sizeof (temp))
-                  {
-                     temp[l] = 0;
-                     odostart = parse (temp, 2);
-                  }
-               }
-               if (!odostart)
-                  odostart = ODOBASE;
-               odonow = odostart;
-               revk_command ("status", NULL);
             }
             fix_t *f = fixget (&fixsd);
             if (!f)
@@ -2073,6 +2072,7 @@ sd_task (void *z)
                   fclose (o);
                }
                odostart += distance;    // For next journey, no need to re-read file
+               revk_command ("status", NULL);
             }
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Log file closed");
