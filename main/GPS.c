@@ -1870,6 +1870,25 @@ sd_task (void *z)
                b.dodismount = 1;
                break;
             }
+            if (!o && !odostart)
+            {
+               FILE *o = fopen (odometer, "r");
+               if (o)
+               {
+                  char temp[30];
+                  int l = fread (temp, 1, sizeof (temp) - 1, o);
+                  fclose (o);
+                  if (l > 0 && l < sizeof (temp))
+                  {
+                     temp[l] = 0;
+                     odostart = parse (temp, 2);
+                  }
+               }
+               if (!odostart)
+                  odostart = ODOBASE;
+               odonow = odostart;
+               revk_command ("status", NULL);
+            }
             fix_t *f = fixget (&fixsd);
             if (!f)
             {                   // End of queue
@@ -1881,28 +1900,7 @@ sd_task (void *z)
                continue;
             }
             if (!o && f->setodo && f->odo >= ODOBASE)
-            {                   // Waiting
-               if (!odostart)
-               {
-                  FILE *o = fopen (odometer, "r");
-                  if (o)
-                  {
-                     char temp[30];
-                     int l = fread (temp, 1, sizeof (temp) - 1, o);
-                     fclose (o);
-                     if (l > 0 && l < sizeof (temp))
-                     {
-                        temp[l] = 0;
-                        odostart = parse (temp, 2);
-                     }
-                  }
-                  if (!odostart)
-                     odostart = ODOBASE;
-                  odonow = odostart;
-                  revk_command ("status", NULL);
-               }
-               odoadjust = odostart - f->odo;
-            }
+               odoadjust = odostart - f->odo;   // Avoid drift
             if (!o && f->sett && f->setecef && f->setlla && f->quality && b.moving)
             {                   // Open file
                char *ts = getts (f->ecef.t, '-');
@@ -2128,8 +2126,8 @@ sd_task (void *z)
                   free (ts);
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", endpostcode ? : "");
-                  if (odonow)
-                     fprintf (o, ",%lld.%02lld", odonow / 100, odonow % 100);
+                  if (distance)
+                     fprintf (o, ",%lld.%02lld", distance / 100, distance % 100);
                   fprintf (o, "\r\n\r\n");
                   fclose (o);
                }
