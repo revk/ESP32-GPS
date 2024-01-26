@@ -2015,6 +2015,7 @@ sd_task (void *z)
          }
          if (o)
          {                      // Close file
+            int64_t timer = endtime - starttime;
             int64_t distance = 0;
             if (odostart >= ODOBASE && odonow >= ODOBASE && odonow > odostart)
                distance = odonow - odostart;
@@ -2063,6 +2064,13 @@ sd_task (void *z)
                }
                if (distance)
                   jo_litf (j, "distance", "%lld.%02lld", distance / 100LL, distance % 100LL);
+               if (timer)
+                  jo_litf (j, "time", "%lld.%03lld", timer / 1000000LL, timer / 1000LL % 1000LL);
+               if (timer > 0 && distance > 0)
+               {
+                  int64_t speed = distance * 360000LL / timer;     // Distance is 0.01, timer is 0.000001, so this is km/h*10
+                  jo_litf (j, "speed", "%lld.%01lld", speed / 10LL, timer % 10LL);
+               }
                char *json = jo_finisha (&j);
                fprintf (o, ",\r\n%s\r\n", json + 1);
                free (json);
