@@ -1897,7 +1897,7 @@ sd_task (void *z)
                      }
                   }
                   if (!odostart)
-                     odostart = ODOBASE;
+                     odonow = odostart = ODOBASE;
                   revk_command ("status", NULL);
                }
                odoadjust = odostart - f->odo;
