@@ -1194,7 +1194,8 @@ nmea (char *s)
       else if (*f[1] == 'Q' && fix)
       {
          fix->odo = parse (f[2], 2);    // Read ODO
-         fix->setodo = 1;
+         if (fix->odo >= ODOBASE)
+            fix->setodo = 1;
       }
       return;
    }
@@ -1899,7 +1900,10 @@ sd_task (void *z)
                continue;
             }
             if (!o && f->setodo && f->odo >= ODOBASE)
+            {
                odoadjust = odostart - f->odo;   // Avoid drift
+               ESP_LOGE (TAG, "odaadjust %lld", odoadjust);
+            }
             if (!o && f->sett && f->setecef && f->setlla && f->quality && b.moving)
             {                   // Open file
                char *ts = getts (f->ecef.t, '-');
@@ -1997,7 +2001,7 @@ sd_task (void *z)
                   free (l);
                }
             }
-            if (f->setodo)
+            if (f->setodo && f->odo >= ODOBASE)
             {
                if (!odostart)
                   odostart = f->odo + odoadjust;
