@@ -2115,7 +2115,7 @@ sd_task (void *z)
                      jo_string (j, "action", cardstatus = "CSV file created");
                      jo_string (j, "filename", filename);
                      revk_info ("SD", &j);
-                     fprintf (o, "\"Time\",\"Latitude\",\"Longitude\"");
+                     fprintf (o, "\"Time\",\"Latitude\",\"Longitude\",\"Odometer\"");
                      if (b.postcode)
                         fprintf (o, ",\"Closest postcode\"");
                      fprintf (o, ",\"Distance\"\r\n");
@@ -2131,13 +2131,17 @@ sd_task (void *z)
                } else
                {
                   char *ts = getts (starttime, 0);
-                  fprintf (o, "%s,%.9lf,%.9lf", ts, startlat, startlon);
+                  fprintf (o, "%s,%.9lf,%.9lf,", ts, startlat, startlon);
+                  if (odostart >= ODOBASE)
+                     fprintf (o, "%lld.%02lld", odostart / 100LL, odostart % 100LL);
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", startpostcode ? : "");
                   fprintf (o, "\r\n");
                   free (ts);
                   ts = getts (endtime, 0);
-                  fprintf (o, "%s,%.9lf,%.9lf", ts, endlat, endlon);
+                  fprintf (o, "%s,%.9lf,%.9lf,", ts, endlat, endlon);
+                  if (odonow >= ODOBASE)
+                     fprintf (o, "%lld.%02lld", odonow / 100LL, odonow % 100LL);
                   free (ts);
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", endpostcode ? : "");
