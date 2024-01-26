@@ -2086,7 +2086,6 @@ sd_task (void *z)
                   fprintf (o, "%lld.%02lld", odonow / 100LL, odonow % 100LL);
                   fclose (o);
                }
-               odostart += distance;    // For next journey, no need to re-read file
                revk_command ("status", NULL);
             }
             jo_t j = jo_object_alloc ();
@@ -2153,6 +2152,7 @@ sd_task (void *z)
                free (startpostcode);
                free (endpostcode);
             }
+            odostart = odonow;  // next journey
          }
          checkupload ();
       }
