@@ -2068,8 +2068,10 @@ sd_task (void *z)
                   jo_litf (j, "time", "%lld.%03lld", timer / 1000000LL, timer / 1000LL % 1000LL);
                if (timer > 0 && distance > 0)
                {
-                  int64_t speed = distance * 360000LL / timer;     // Distance is 0.01, timer is 0.000001, so this is km/h*10
+                  int64_t speed = distance * 360000LL / timer;  // Distance is 0.01, timer is 0.000001, so this is km/h*10
                   jo_litf (j, "speed", "%lld.%01lld", speed / 10LL, timer % 10LL);
+                  if (logmph)
+                     jo_litf (j, "mph", "%.1f", (float) speed / 16.09344);
                }
                char *json = jo_finisha (&j);
                fprintf (o, ",\r\n%s\r\n", json + 1);
