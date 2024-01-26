@@ -79,6 +79,7 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
         b(gpsflight,N,          GPS Flight mode)        \
         b(gpsballoon,N,         GPS Balloon mode)       \
 	b(logpos,Y,		Log position data)	\
+	b(logmqtt,N,		Log position to MQTT JSON) \
 	b(loggpx,N,		Log in GPX format)	\
 	bl(logcsv,Y,		Log in CSV summary)	\
 	bl(loglla,Y,		Log lat/lon/alt)	\
@@ -160,7 +161,9 @@ char rgbsd = 'K';
 const char *cardstatus = NULL;
 int32_t pos[3] = { 0 };         // last x/y/z
 
-uint64_t odoadjust = 0;
+uint64_t odoadjust = 0;         // Adjust PQODO
+uint64_t odostart = 0;          // Adjusted journey start
+uint64_t odonow = 0;            // Adjusted current
 
 RTC_NOINIT_ATTR uint64_t csvtime;
 
@@ -1377,7 +1380,7 @@ log_line (fix_t * f)
 
 void
 log_task (void *z)
-{                               // Log via MQTT
+{                               // Log via MQTT and pre buffer for movement
    while (!b.die)
    {
       if (!fixlog.count || (!b.moving && fixlog.base && fixlog.base->quality && fixlog.count < move))
@@ -1388,8 +1391,11 @@ log_task (void *z)
       fix_t *f = fixget (&fixlog);
       if (!f)
          continue;
-      jo_t j = log_line (f);
-      revk_info ("GPS", &j);
+      if (logmqtt)
+      {
+         jo_t j = log_line (f);
+         revk_info ("GPS", &j);
+      }
       // Pass on - if packing, and TS and ECEF, to packing, else if packing and no TS or ECEF then drop as packing does not do those. Else direct to SD
       fixadd (packdist && packmin ? !f->sett || !f->setecef ? &fixfree : &fixpack : &fixsd, f);
    }
@@ -1848,8 +1854,6 @@ sd_task (void *z)
          FILE *o = NULL;
          int line = 0;
          char filename[100];
-         uint64_t odo0 = 0,
-            odo1 = 0;
          uint64_t starttime = 0;
          uint64_t endtime;
          uint8_t starthome = 0;
@@ -1878,7 +1882,7 @@ sd_task (void *z)
             }
             if (!o && f->setodo && f->odo >= ODOBASE)
             {                   // Waiting
-               if (!odo0)
+               if (!odostart)
                {
                   FILE *o = fopen (odometer, "r");
                   if (o)
@@ -1889,13 +1893,14 @@ sd_task (void *z)
                      if (l > 0 && l < sizeof (temp))
                      {
                         temp[l] = 0;
-                        odo0 = parse (temp, 2);
+                        odostart = parse (temp, 2);
                      }
                   }
-                  if (!odo0)
-                     odo0 = ODOBASE;
+                  if (!odostart)
+                     odostart = ODOBASE;
                }
-               odoadjust = odo0 - f->odo;
+               odoadjust = odostart - f->odo;
+               odonow = odostart;
             }
             if (!o && f->sett && f->setecef && f->setlla && f->quality && b.moving)
             {                   // Open file
@@ -1996,9 +2001,9 @@ sd_task (void *z)
             }
             if (f->setodo)
             {
-               if (!odo0)
-                  odo0 = f->odo + odoadjust;
-               odo1 = f->odo + odoadjust;
+               if (!odostart)
+                  odostart = f->odo + odoadjust;
+               odonow = f->odo + odoadjust;
             }
             if (f->sett && f->setecef && f->setlla)
             {
@@ -2012,8 +2017,8 @@ sd_task (void *z)
          if (o)
          {                      // Close file
             int64_t distance = 0;
-            if (odo0 >= ODOBASE && odo1 >= ODOBASE && odo1 > odo0)
-               distance = odo1 - odo0;
+            if (odostart >= ODOBASE && odonow >= ODOBASE && odonow > odostart)
+               distance = odonow - odostart;
             // Postcode open is second file
             char *startpostcode = getpostcode (startlat, startlon);
             char *endpostcode = getpostcode (endlat, endlon);
@@ -2065,10 +2070,10 @@ sd_task (void *z)
                FILE *o = fopen (odometer, "w+");
                if (o)
                {
-                  fprintf (o, "%lld.%02lld", odo1 / 100LL, odo1 % 100LL);
+                  fprintf (o, "%lld.%02lld", odonow / 100LL, odonow % 100LL);
                   fclose (o);
                }
-               odo0 += distance;        // For next journey, no need to re-read file
+               odostart += distance;    // For next journey, no need to re-read file
             }
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Log file closed");
@@ -2122,8 +2127,8 @@ sd_task (void *z)
                   free (ts);
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", endpostcode ? : "");
-                  if (odo1)
-                     fprintf (o, ",%lld.%02lld", odo1 / 100, odo1 % 100);
+                  if (odonow)
+                     fprintf (o, ",%lld.%02lld", odonow / 100, odonow % 100);
                   fprintf (o, "\r\n\r\n");
                   fclose (o);
                }
@@ -2323,6 +2328,8 @@ revk_state_extra (jo_t j)
       bat = 100;
    jo_int (j, "bat", bat);
    jo_litf (j, "voltage", "%.1f", adc[0]);
+   if (odonow)
+      jo_litf (j, "odo", "%lld.%02lld", odonow / 100LL, odonow % 100LL);
    // Note adc[2] relates to temp, but not clear of mapping
    jo_close (j);
 }

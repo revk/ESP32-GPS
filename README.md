@@ -44,6 +44,7 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |-------|-------|
 |`url`|Upload URL or email address|
 |`logpos`|If not set then the log file does not include position data at all|
+|`logmqtt`|Log position data (in JSON format) to MQTT|
 |`loggpx`|If set, the log file is GPX format not JSON|
 |`logcsv`|If set, a CSV file is created for all journeys being uploaded at once|
 |`loglla`|Include `lat`, `lon`, and `alt`|
