@@ -1897,11 +1897,11 @@ sd_task (void *z)
                      }
                   }
                   if (!odostart)
-                     odonow = odostart = ODOBASE;
+                     odostart = ODOBASE;
+                  odonow = odostart;
                   revk_command ("status", NULL);
                }
                odoadjust = odostart - f->odo;
-               odonow = odostart;
             }
             if (!o && f->sett && f->setecef && f->setlla && f->quality && b.moving)
             {                   // Open file
