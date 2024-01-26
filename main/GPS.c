@@ -1900,10 +1900,7 @@ sd_task (void *z)
                continue;
             }
             if (!o && f->setodo && f->odo >= ODOBASE)
-            {
                odoadjust = odostart - f->odo;   // Avoid drift
-               ESP_LOGE (TAG, "odaadjust %lld", odoadjust);
-            }
             if (!o && f->sett && f->setecef && f->setlla && f->quality && b.moving)
             {                   // Open file
                char *ts = getts (f->ecef.t, '-');
