@@ -1366,7 +1366,7 @@ log_line (fix_t * f)
    }
    if (logdsq && !isnan (f->dsq))
       jo_litf (j, "dsq", "%f", f->dsq);
-   if (logodo && f->setodo && f->odo)
+   if (logodo && f->setodo && f->odo >= ODOBASE)
       jo_litf (j, "odo", "%lld.%02lld", (f->odo + odoadjust) / 100LL, (f->odo + odoadjust) % 100LL);
    if (gpserrors)
    {
@@ -1898,6 +1898,7 @@ sd_task (void *z)
                   }
                   if (!odostart)
                      odostart = ODOBASE;
+                  revk_command ("status", NULL);
                }
                odoadjust = odostart - f->odo;
                odonow = odostart;
@@ -2328,7 +2329,7 @@ revk_state_extra (jo_t j)
       bat = 100;
    jo_int (j, "bat", bat);
    jo_litf (j, "voltage", "%.1f", adc[0]);
-   if (odonow)
+   if (odonow >= ODOBASE)
       jo_litf (j, "odo", "%lld.%02lld", odonow / 100LL, odonow % 100LL);
    // Note adc[2] relates to temp, but not clear of mapping
    jo_close (j);
