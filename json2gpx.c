@@ -223,7 +223,7 @@ main (int argc, const char *argv[])
                   fprintf (o, "<pdop>%s</pdop>", pdop);
                fprintf (o, "</trkpt>\n");
             }
-            fprintf (o, "</trkseg></trk>\n"   );
+            fprintf (o, "</trkseg></trk>\n");
             if (!outfile)
                fclose (o);
             free (ofn);

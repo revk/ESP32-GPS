@@ -40,7 +40,7 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 #define	GSARATE	10
 #define	GSVRATE	10
 #define VTGRATE 5
-   uint32_t ecefdue = 0;        // Uptime when next due by
+uint32_t ecefdue = 0;           // Uptime when next due by
 int32_t zdadue = 0;
 uint32_t gsadue = 0;
 uint32_t gsvdue = 0;
@@ -383,13 +383,6 @@ getpostcode (double lat, double lon)
 
 #undef pe
 
-uint8_t
-io (uint8_t gpio)
-{                               // Get GPIO
-   if (gpio && gpio_get_level (gpio & IO_MASK) == ((gpio & IO_INV) ? 0 : 1))
-      return 1;
-   return 0;
-}
 
 fix_t *
 fixadd (fixq_t * q, fix_t * f)
@@ -481,7 +474,7 @@ gps_connect (unsigned int baud)
    if (!err)
       err = uart_param_config (gpsuart, &uart_config);
    if (!err)
-      err = uart_set_pin (gpsuart, gpstx & IO_MASK, gpsrx & IO_MASK, -1, -1);
+      err = uart_set_pin (gpsuart, gpstx.num, gpsrx.num, -1, -1);
    if (!err)
       err = uart_driver_install (gpsuart, 1024, 0, 0, NULL, 0);
    if (err)
@@ -662,15 +655,15 @@ acc_read (uint8_t reg, uint8_t len, void *data)
 void
 acc_init (void)
 {
-   if (!accsda || !accscl || !accaddress)
+   if (!accsda.set || !accscl.set || !accaddress)
    {
       ESP_LOGE (TAG, "No ACC");
       return;
    }
    i2c_config_t config = {
       .mode = I2C_MODE_MASTER,
-      .sda_io_num = accsda & IO_MASK,
-      .scl_io_num = accscl & IO_MASK,
+      .sda_io_num = accsda.num,
+      .scl_io_num = accscl.num,
       .sda_pullup_en = true,
       .scl_pullup_en = true,
       .master.clk_speed = 100000,
@@ -683,8 +676,8 @@ acc_init (void)
       ESP_LOGE (TAG, "ACC fail %s", e);
       jo_t j = jo_object_alloc ();
       jo_string (j, "error", e);
-      jo_int (j, "sda", accsda & IO_MASK);
-      jo_int (j, "scl", accscl & IO_MASK);
+      jo_int (j, "sda", accsda.num);
+      jo_int (j, "scl", accscl.num);
       jo_int (j, "address", accaddress);
       return j;
    }
@@ -1123,8 +1116,8 @@ nmea_task (void *z)
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", "No reply");
             jo_int (j, "Baud", rates[rate]);
-            jo_int (j, "tx", gpstx & IO_MASK);
-            jo_int (j, "rx", gpsrx & IO_MASK);
+            jo_int (j, "tx", gpstx.num);
+            jo_int (j, "rx", gpsrx.num);
             revk_error ("GPS", &j);
             if (++rate >= sizeof (rates) / sizeof (*rates))
                rate = 0;
@@ -1430,7 +1423,7 @@ checkupload (void)
       delay = up + 5;
       return;
    }
-   if (!(b.sdpresent = io (sdcd)))
+   if (!(b.sdpresent = revk_gpio_get (sdcd)))
    {
       ESP_LOGI (TAG, "No upload as no card");
       delay = up + 10;
@@ -1632,12 +1625,7 @@ sd_task (void *z)
       }
    }
    esp_err_t ret;
-   if (sdcd)
-   {
-      rtc_gpio_deinit (sdcd & IO_MASK);
-      gpio_reset_pin (sdcd & IO_MASK);
-      gpio_set_direction (sdcd & IO_MASK, GPIO_MODE_INPUT);
-   }
+   revk_gpio_input (sdcd);
    // By default, SD card frequency is initialized to SDMMC_FREQ_DEFAULT (20MHz)
    // For setting a specific frequency, use host.max_freq_khz (range 400kHz - 20MHz for SDSPI)
    // Example: for fixed frequency of 10MHz, use host.max_freq_khz = 10000;
@@ -1658,9 +1646,9 @@ sd_task (void *z)
       jo_t j = jo_object_alloc ();
       jo_string (j, "error", cardstatus = "SPI failed");
       jo_int (j, "code", ret);
-      jo_int (j, "MOSI", sdmosi & IO_MASK);
-      jo_int (j, "MISO", sdmiso & IO_MASK);
-      jo_int (j, "CLK", sdsck & IO_MASK);
+      jo_int (j, "MOSI", sdmosi.num);
+      jo_int (j, "MISO", sdmiso.num);
+      jo_int (j, "CLK", sdsck.num);
       revk_error ("SD", &j);
       vTaskDelete (NULL);
       return;
@@ -1673,7 +1661,7 @@ sd_task (void *z)
    };
    sdmmc_card_t *card = NULL;
    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
-   slot_config.gpio_cs = sdss & IO_MASK;
+   slot_config.gpio_cs = sdss.num;
    slot_config.host_id = host.slot;
    while (!b.die)
    {
@@ -1686,11 +1674,11 @@ sd_task (void *z)
             jo_string (j, "action", cardstatus = revk_shutting_down (NULL) ? "Card dismounted for shutdown" : "Remove card");
             revk_info ("SD", &j);
             b.dodismount = 0;
-            while ((b.sdpresent = io (sdcd)))
+            while ((b.sdpresent = revk_gpio_get (sdcd)))
                wait (1);
             continue;
          }
-         if (!(b.sdpresent = io (sdcd)))
+         if (!(b.sdpresent = revk_gpio_get (sdcd)))
          {                      // No card
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Card not present");
@@ -1699,7 +1687,7 @@ sd_task (void *z)
             revk_enable_wifi ();
             revk_enable_ap ();
             revk_enable_settings ();
-            while (!(b.sdpresent = io (sdcd)))
+            while (!(b.sdpresent = revk_gpio_get (sdcd)))
                wait (1);        // Waiting for card inserted
          }
          if (!gpsdebug && (pos[0] || pos[1] || pos[2]) && (home[0] || home[1] || home[2]) && !b.home)
@@ -1786,7 +1774,7 @@ sd_task (void *z)
          while (!b.doformat && !b.dodismount)
          {
             rgbsd = (o ? 'G' : 'Y');
-            if (!(b.sdpresent = io (sdcd)))
+            if (!(b.sdpresent = revk_gpio_get (sdcd)))
             {                   // card removed
                b.dodismount = 1;
                break;
@@ -2199,7 +2187,7 @@ revk_web_extra (httpd_req_t * req)
    }
    if (pwr && (usb || (charging
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                       && (charging & IO_MASK) <= 21
+                       && (charging.num) <= 21
 #endif
                )))
       revk_web_setting_b (req, "Power down", "powerman", powerman, "Turn off when USB power goes off");
@@ -2265,35 +2253,27 @@ app_main ()
    xSemaphoreGive (fix_mutex);
    vSemaphoreCreateBinary (ack_semaphore);
    revk_start ();
-   if (usb)
+   revk_gpio_input (usb);
+   revk_gpio_input (charging);
+   revk_gpio_output (pwr);
+   if (pwr.set)
    {
-      rtc_gpio_deinit (usb & IO_MASK);
-      gpio_reset_pin (usb & IO_MASK);
-      gpio_pulldown_en (usb & IO_MASK);
-      gpio_set_direction (usb & IO_MASK, GPIO_MODE_INPUT);
-   }
-   if (charging)
-   {
-      rtc_gpio_deinit (charging & IO_MASK);
-      gpio_reset_pin (charging & IO_MASK);
-      gpio_set_direction (charging & IO_MASK, GPIO_MODE_INPUT);
-   }
-   if (pwr)
-   {                            // System power
-      gpio_hold_dis (pwr & IO_MASK);
-      gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 0 : 1);
-      gpio_set_direction (pwr & IO_MASK, GPIO_MODE_OUTPUT);
-      gpio_hold_en (pwr & IO_MASK);
+      revk_gpio_set (pwr, 1);
+      revk_gpio_output (pwr);
+      gpio_hold_dis (pwr.num);
+      revk_gpio_set (pwr, 1);
+      gpio_hold_en (pwr.num);
       usleep (100000);          // Power on
    }
-   if (leds && rgb)
+
+   if (leds && rgb.set)
    {
       led_strip_config_t strip_config = {
-         .strip_gpio_num = (rgb & IO_MASK),
+         .strip_gpio_num = rgb.num ,
          .max_leds = leds,
          .led_pixel_format = LED_PIXEL_FORMAT_GRB,      // Pixel format of your LED strip
          .led_model = LED_MODEL_WS2812, // LED strip model
-         .flags.invert_out = ((rgb & IO_INV) ? 1 : 0),  // whether to invert the output signal (useful when your hardware has a level inverter)
+         .flags.invert_out = rgb.invert;
       };
       led_strip_rmt_config_t rmt_config = {
          .clk_src = RMT_CLK_SRC_DEFAULT,        // different clock source can lead to different power consumption
@@ -2305,11 +2285,7 @@ app_main ()
          revk_task ("RGB", rgb_task, NULL, 4);
    }
    // Main task...
-   if (gpstick)
-   {
-      gpio_reset_pin (gpstick & IO_MASK);
-      gpio_set_direction (gpstick & IO_MASK, GPIO_MODE_INPUT);
-   }
+   revk_gpio_input(gpstick);
    gps_connect (gpsbaud);
    acc_init ();
    revk_task ("NMEA", nmea_task, NULL, 5);
@@ -2324,6 +2300,7 @@ app_main ()
       register_get_uri ("/", web_root);
       revk_web_settings_add (webserver);
    }
+
    while (1)
    {
       sleep (1);
@@ -2332,8 +2309,8 @@ app_main ()
          gps_init ();
       if (b.moving)
          busy = up;
-      b.charging = io (charging);
-      b.usb = io (usb);
+      b.charging = revk_gpio_get (charging);
+      b.usb = revk_gpio_get (usb);
       if (b.charging || b.usb)
          busy = up;
       if (!revk_shutting_down (NULL) && powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.8
