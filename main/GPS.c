@@ -92,6 +92,7 @@ struct
    uint8_t charging:1;          // Charging
    uint8_t usb:1;               // USB power
    uint8_t postcode:1;          // We have postcode
+   uint8_t waypoint:1;          // Log a waypoint
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -137,6 +138,7 @@ struct fix_s
    } acc;
    uint8_t quality;             // Fix quality (0=none, 1=GPS, 2=SBAS)
    uint8_t sats;                // Sats used for fix
+   uint8_t waypoint:1;          // Log a waypoint
    uint8_t home:1;              // This pos is at home
    uint8_t corner:1;            // Corner point for packing
    uint8_t deleted:1;           // Deleted by packing
@@ -531,14 +533,19 @@ app_callback (int client, const char *prefix, const char *target, const char *su
       if (len > sizeof (value))
          return "Too long";
    }
+   if (!strcmp (suffix, "move"))
+   {
+      b.moving = 1;
+      return "";
+   }
    if (!strcmp (suffix, "stop"))
    {
       b.moving = 0;
       return "";
    }
-   if (!strcmp (suffix, "move"))
+   if (!strcmp (suffix, "push"))
    {
-      b.moving = 1;
+      b.waypoint = 1;
       return "";
    }
    if (!strcmp (suffix, "upgrade"))
@@ -910,6 +917,11 @@ nmea (char *s)
             int64_t dz = pos[2] - home[2];
             fix->home = b.home = ((dx * dx + dy * dy + dz * dz < (int64_t) homem * (int64_t) homem) ? 1 : 0);
          }
+         if (b.waypoint)
+         {
+            b.waypoint = 0;
+            fix->waypoint = 1;
+         }
       }
       if (logodo)
          gps_cmd ("$PQODO,Q");  // Read ODO every sample
@@ -1271,6 +1283,8 @@ log_line (fix_t * f)
    }
    if (f->home && f->setecef)
       jo_bool (j, "home", 1);
+   if (f->waypoint)
+      jo_bool (j, "waypoint", 1);
    return j;
 }
 
@@ -1758,6 +1772,43 @@ sd_task (void *z)
          odonow = odostart;
          revk_command ("status", NULL);
       }
+      FILE *opencsv (void)
+      {
+         char *ts = getts (csvtime, '-');
+         char filename[50];
+         sprintf (filename, "%s/%s.csv", sd_mount, ts);
+         free (ts);
+         FILE *o = fopen (filename, "r");
+         if (o)
+         {                      // Append
+            fclose (o);
+            o = fopen (filename, "a");
+         } else
+         {                      // Create
+            o = fopen (filename, "w");
+            if (o)
+            {
+               ESP_LOGI (TAG, "Open file %s", filename);
+               jo_t j = jo_object_alloc ();
+               jo_string (j, "action", cardstatus = "CSV file created");
+               jo_string (j, "filename", filename);
+               revk_info ("SD", &j);
+               fprintf (o, "\"Time\",\"Latitude\",\"Longitude\",\"Odometer\"");
+               if (b.postcode)
+                  fprintf (o, ",\"Closest postcode\"");
+               fprintf (o, ",\"Distance\"\r\n");
+            }
+         }
+         if (!o)
+         {
+            ESP_LOGE (TAG, "Failed open file %s", filename);
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "error", cardstatus = "Failed to create CSV file");
+            jo_string (j, "filename", filename);
+            revk_error ("SD", &j);
+         }
+         return o;
+      }
       while (!b.doformat && !b.dodismount && !b.die)
       {
          FILE *o = NULL;
@@ -1889,6 +1940,28 @@ sd_task (void *z)
                   free (l);
                }
             }
+            if (f->waypoint && f->setlla && f->sett)
+            {
+               char *ts = getts (starttime, 0);
+               char *postcode = getpostcode (f->lat, f->lon);
+               FILE *o = opencsv ();
+               if (o)
+               {
+                  fprintf (o, "%s,%.9lf,%.9lf,", ts, f->lat, f->lon);
+                  if (f->setodo && f->odo >= ODOBASE)
+                  {
+                     int64_t odo = f->odo + odoadjust;
+                     fprintf (o, "%lld.%02lld", odo / 100LL, odo % 100LL);
+                  }
+                  if (b.postcode)
+                     fprintf (o, ",\"%s\"", postcode ? : "");
+                  fprintf (o, ",\"Waypoint\"\r\n");
+                  fprintf (o, "\r\n");
+                  fclose (o);
+               }
+               free (ts);
+               free (postcode);
+            }
             if (f->setodo && f->odo >= ODOBASE)
             {
                if (!odostart)
@@ -1987,38 +2060,8 @@ sd_task (void *z)
                csvtime = starttime;     // csvtime is in RTC memory so needs sanity check
             if (logcsv)
             {
-               char *ts = getts (csvtime, '-');
-               sprintf (filename, "%s/%s.csv", sd_mount, ts);
-               free (ts);
-               o = fopen (filename, "r");
+               o = opencsv ();
                if (o)
-               {                // Append
-                  fclose (o);
-                  o = fopen (filename, "a");
-               } else
-               {                // Create
-                  o = fopen (filename, "w");
-                  if (o)
-                  {
-                     ESP_LOGI (TAG, "Open file %s", filename);
-                     jo_t j = jo_object_alloc ();
-                     jo_string (j, "action", cardstatus = "CSV file created");
-                     jo_string (j, "filename", filename);
-                     revk_info ("SD", &j);
-                     fprintf (o, "\"Time\",\"Latitude\",\"Longitude\",\"Odometer\"");
-                     if (b.postcode)
-                        fprintf (o, ",\"Closest postcode\"");
-                     fprintf (o, ",\"Distance\"\r\n");
-                  }
-               }
-               if (!o)
-               {
-                  ESP_LOGE (TAG, "Failed open file %s", filename);
-                  jo_t j = jo_object_alloc ();
-                  jo_string (j, "error", cardstatus = "Failed to create CSV file");
-                  jo_string (j, "filename", filename);
-                  revk_error ("SD", &j);
-               } else
                {
                   char *ts = getts (starttime, 0);
                   fprintf (o, "%s,%.9lf,%.9lf,", ts, startlat, startlon);
@@ -2253,6 +2296,7 @@ app_main ()
    xSemaphoreGive (fix_mutex);
    vSemaphoreCreateBinary (ack_semaphore);
    revk_start ();
+   revk_gpio_input (button);
    revk_gpio_input (usb);
    revk_gpio_input (charging);
    revk_gpio_output (pwr);
@@ -2303,12 +2347,14 @@ app_main ()
 
    while (1)
    {
-      sleep (1);
+      usleep (10000);
       uint32_t up = uptime ();
       if (b.gpsinit)
          gps_init ();
       if (b.moving)
          busy = up;
+      if (revk_gpio_get (button))
+         b.waypoint = 1;
       b.charging = revk_gpio_get (charging);
       b.usb = revk_gpio_get (usb);
       if (b.charging || b.usb)
