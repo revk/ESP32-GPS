@@ -109,7 +109,8 @@ dordp (j_t j, j_t B)
    } else
    {
       while ((A = j_next (A)) && A != B)
-         j_store_true (A, "delete");
+         if (!j_find (A, "waypoint"))
+            j_store_true (A, "delete");
    }
 }
 

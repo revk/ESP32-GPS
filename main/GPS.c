@@ -1410,7 +1410,7 @@ pack_task (void *z)
       while (fixpack.base && fixpack.base != E)
       {
          fix_t *X = fixget (&fixpack);
-         fixadd (X->deleted ? &fixfree : &fixsd, X);
+         fixadd (X->deleted && !X->waypoint ? &fixfree : &fixsd, X);
       }
    }
    vTaskDelete (NULL);
@@ -1704,7 +1704,7 @@ sd_task (void *z)
             while (!(b.sdpresent = revk_gpio_get (sdcd)))
                wait (1);        // Waiting for card inserted
          }
-         if (!gpsdebug && (pos[0] || pos[1] || pos[2]) && (home[0] || home[1] || home[2]) && !b.home)
+         if (!wifidebug && (pos[0] || pos[1] || pos[2]) && (home[0] || home[1] || home[2]) && !b.home)
             revk_disable_wifi ();
          revk_disable_ap ();
          revk_disable_settings ();
@@ -1816,10 +1816,7 @@ sd_task (void *z)
          char filename[100];
          uint64_t starttime = 0;
          uint64_t endtime;
-         uint8_t starthome = 0;
          uint8_t endhome = 0;
-         double startlat = NAN,
-            startlon = NAN;
          double endlat = NAN,
             endlon = NAN;
          while (!b.doformat && !b.dodismount)
@@ -1842,13 +1839,31 @@ sd_task (void *z)
             }
             if (!o && f->setodo && f->odo >= ODOBASE)
                odoadjust = odostart - f->odo;   // Avoid drift
+            if (f->setodo && f->odo >= ODOBASE)
+            {
+               if (!odostart)
+                  odostart = f->odo + odoadjust;
+               odonow = f->odo + odoadjust;
+            }
             if (!o && f->sett && f->setecef && f->setlla && f->quality && b.moving)
             {                   // Open file
                char *ts = getts (f->ecef.t, '-');
                if (ts)
                {
+                  char *postcode = getpostcode (f->lat, f->lon);
+                  o = opencsv ();
+                  if (o)
+                  {
+                     fprintf (o, "%s,%.9lf,%.9lf,", ts, f->lat, f->lon);
+                     if (odostart >= ODOBASE)
+                        fprintf (o, "%lld.%02lld", odostart / 100LL, odostart % 100LL);
+                     if (b.postcode)
+                        fprintf (o, ",\"%s\"", postcode ? : "");
+                     fprintf (o, ",\"Start\"\r\n");
+                     fclose (o);
+                     o = NULL;
+                  }
                   sprintf (filename, "%s/%s.%s", sd_mount, ts, loggpx ? "gpx" : "json");
-                  free (ts);
                   o = fopen (filename, "w");
                   if (!o)
                   {             // Open failed
@@ -1859,15 +1874,13 @@ sd_task (void *z)
                      revk_error ("SD", &j);
                   } else
                   {             // Open worked
+
                      starttime = f->ecef.t;
-                     startlat = f->lat;
-                     startlon = f->lon;
-                     starthome = (f->home | b.home);
                      if (b.sdempty)
                         csvtime = 0;
                      b.sdempty = 0;
                      b.sdwaiting = 1;
-                     if (!gpsdebug)
+                     if (!wifidebug)
                         revk_disable_wifi ();
                      ESP_LOGI (TAG, "Open file %s", filename);
                      jo_t j = jo_object_alloc ();
@@ -1887,6 +1900,16 @@ sd_task (void *z)
                         jo_string (j, "filename", filename);
                         jo_string (j, "name", hostname);
                         jo_string (j, "version", revk_version);
+                        jo_object (j, "start");
+                        jo_string (j, "ts", ts);
+                        if (odostart >= ODOBASE)
+                           jo_litf (j, "odo", "%lld.%02lld", odostart / 100LL, odostart % 100LL);
+                        jo_litf (j, "lat", "%.9lf", f->lat);
+                        jo_litf (j, "lon", "%.9lf", f->lon);
+                        jo_bool (j, "home", f->home || b.home);
+                        if (postcode)
+                           jo_string (j, "postcode", postcode);
+                        jo_close (j);
                         if (logpos)
                            jo_array (j, "gps");
                         char *json = jo_finisha (&j);
@@ -1894,11 +1917,12 @@ sd_task (void *z)
                         json[--len] = 0;
                         if (logpos)
                            json[--len] = 0;
-
                         fprintf (o, "%s\r\n", json);
                         free (json);
                      }
                   }
+                  free (ts);
+                  free (postcode);
                   line = 0;
                }
             }
@@ -1956,17 +1980,10 @@ sd_task (void *z)
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", postcode ? : "");
                   fprintf (o, ",\"Waypoint\"\r\n");
-                  fprintf (o, "\r\n");
                   fclose (o);
                }
                free (ts);
                free (postcode);
-            }
-            if (f->setodo && f->odo >= ODOBASE)
-            {
-               if (!odostart)
-                  odostart = f->odo + odoadjust;
-               odonow = f->odo + odoadjust;
             }
             if (f->sett && f->setecef && f->setlla)
             {
@@ -1984,7 +2001,6 @@ sd_task (void *z)
             if (odostart >= ODOBASE && odonow >= ODOBASE && odonow > odostart)
                distance = odonow - odostart;
             // Postcode open is second file
-            char *startpostcode = getpostcode (startlat, startlon);
             char *endpostcode = getpostcode (endlat, endlon);
             ESP_LOGE (TAG, "Close file");
             if (loggpx)
@@ -1996,21 +2012,6 @@ sd_task (void *z)
                if (logpos)
                   fprintf (o, "\r\n ]");
                jo_t j = jo_object_alloc ();
-               if (starttime)
-               {
-                  char *ts = getts (starttime, 0);
-                  jo_object (j, "start");
-                  jo_string (j, "ts", ts);
-                  if (odostart >= ODOBASE)
-                     jo_litf (j, "odo", "%lld.%02lld", odostart / 100LL, odostart % 100LL);
-                  jo_litf (j, "lat", "%.9lf", startlat);
-                  jo_litf (j, "lon", "%.9lf", startlon);
-                  jo_bool (j, "home", starthome);
-                  if (startpostcode)
-                     jo_string (j, "postcode", startpostcode);
-                  jo_close (j);
-                  free (ts);
-               }
                if (endtime)
                {
                   char *ts = getts (endtime, 0);
@@ -2063,15 +2064,7 @@ sd_task (void *z)
                o = opencsv ();
                if (o)
                {
-                  char *ts = getts (starttime, 0);
-                  fprintf (o, "%s,%.9lf,%.9lf,", ts, startlat, startlon);
-                  if (odostart >= ODOBASE)
-                     fprintf (o, "%lld.%02lld", odostart / 100LL, odostart % 100LL);
-                  if (b.postcode)
-                     fprintf (o, ",\"%s\"", startpostcode ? : "");
-                  fprintf (o, "\r\n");
-                  free (ts);
-                  ts = getts (endtime, 0);
+                  char *ts = getts (endtime, 0);
                   fprintf (o, "%s,%.9lf,%.9lf,", ts, endlat, endlon);
                   if (odonow >= ODOBASE)
                      fprintf (o, "%lld.%02lld", odonow / 100LL, odonow % 100LL);
@@ -2083,7 +2076,6 @@ sd_task (void *z)
                   fprintf (o, "\r\n\r\n");
                   fclose (o);
                }
-               free (startpostcode);
                free (endpostcode);
             }
             odostart = odonow;  // next journey
