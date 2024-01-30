@@ -93,6 +93,7 @@ struct
    uint8_t usb:1;               // USB power
    uint8_t postcode:1;          // We have postcode
    uint8_t waypoint:1;          // Log a waypoint
+   uint8_t lastwaypoint:1;      // Waypoint continuing  // Waypoint continuing
 } volatile b = { 0 };
 
 typedef struct slow_s slow_t;
@@ -732,6 +733,10 @@ acc_get (fix_t * f)
       f->acc.x = ((float) ((int16_t) (data[1] + (data[2] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       f->acc.y = ((float) ((int16_t) (data[3] + (data[4] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       f->acc.z = ((float) ((int16_t) (data[5] + (data[6] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
+      if (acclogg
+          && (f->acc.x * f->acc.x * f->acc.y * f->acc.y + f->acc.z * f->acc.z) * acclogg_scale * acclogg_scale >
+          (float) acclogg * acclogg)
+         f->waypoint = 1;
       f->setacc = 1;
    }
    acc_read (0x80 + 0x08, 6, data);
@@ -1969,8 +1974,11 @@ sd_task (void *z)
                   free (l);
                }
             }
-            if (f->waypoint && f->setlla && f->sett)
+            if (!f->waypoint)
+               b.lastwaypoint = 0;
+            else if (!b.lastwaypoint && f->setlla && f->sett)
             {
+               b.lastwaypoint = 1;
                char *ts = getts (f->ecef.t, 0);
                char *postcode = getpostcode (f->lat, f->lon);
                FILE *o = opencsv (starttime);
