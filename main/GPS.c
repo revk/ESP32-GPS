@@ -1632,9 +1632,9 @@ sd_task (void *z)
    sdmmc_host_t host = SDSPI_HOST_DEFAULT ();
    host.max_freq_khz = SDMMC_FREQ_PROBING;
    spi_bus_config_t bus_cfg = {
-      .mosi_io_num = sdmosi & IO_MASK,
-      .miso_io_num = sdmiso & IO_MASK,
-      .sclk_io_num = sdsck & IO_MASK,
+      .mosi_io_num = sdmosi.num  ,
+      .miso_io_num = sdmiso.num  ,
+      .sclk_io_num = sdsck.num  ,
       .quadwp_io_num = -1,
       .quadhd_io_num = -1,
       .max_transfer_sz = 4000,
@@ -1665,7 +1665,7 @@ sd_task (void *z)
    slot_config.host_id = host.slot;
    while (!b.die)
    {
-      if (sdcd)
+      if (sdcd.set)
       {
          if (b.dodismount)
          {                      // Waiting card removed
@@ -2185,13 +2185,13 @@ revk_web_extra (httpd_req_t * req)
       revk_web_setting_s (req, "Email pass", "emailpass", emailpass, "Email pass", NULL, 0);
       revk_web_setting_s (req, "Email from", "emailfrom", emailfrom, "Email from", NULL, 0);
    }
-   if (pwr && (usb || (charging
+   if (pwr.set && (usb.set || (charging.set
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                       && (charging.num) <= 21
+                       && charging.num <= 21
 #endif
                )))
       revk_web_setting_b (req, "Power down", "powerman", powerman, "Turn off when USB power goes off");
-   if (usb)
+   if (usb.set)
       revk_web_setting_b (req, "Power stop", "powerstop", powerstop, "End Journey quickly when power goes off");
    revk_web_setting_b (req, "GPX Log", "loggpx", loggpx, "Log files in GPX format");
    revk_web_setting_i (req, "Move time", "move", move, "Seconds moving to start journey (quicker if moving fast)");
@@ -2273,7 +2273,7 @@ app_main ()
          .max_leds = leds,
          .led_pixel_format = LED_PIXEL_FORMAT_GRB,      // Pixel format of your LED strip
          .led_model = LED_MODEL_WS2812, // LED strip model
-         .flags.invert_out = rgb.invert;
+         .flags.invert_out = rgb.invert,
       };
       led_strip_rmt_config_t rmt_config = {
          .clk_src = RMT_CLK_SRC_DEFAULT,        // different clock source can lead to different power consumption
@@ -2313,9 +2313,9 @@ app_main ()
       b.usb = revk_gpio_get (usb);
       if (b.charging || b.usb)
          busy = up;
-      if (!revk_shutting_down (NULL) && powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.8
+      if (!revk_shutting_down (NULL) && powerman && pwr.set && ((usb.set && !b.usb) || (charging.set && !b.charging && adc[0] < 3.8
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                                                                                && (charging & IO_MASK) <= 21
+                                                                                && charging.num  <= 21
 #endif
                                                             )) && busy + (b.sdpresent && status.fixmode >= 3 ? 60 : 600) < up)
          revk_restart ("Power down", 1);
@@ -2327,31 +2327,31 @@ power_shutdown (void)
 {
    b.die = 1;
    sleep (2);
-   if (powerman && pwr && ((usb && !b.usb) || (charging && !b.charging && adc[0] < 3.8
+   if (powerman && pwr.set && ((usb.set && !b.usb) || (charging.set && !b.charging && adc[0] < 3.8
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                                               && (charging & IO_MASK) <= 21
+                                               && charging.num  <= 21
 #endif
                            )))
    {                            // Deep sleep
-      if (pwr)
+      if (pwr.set)
       {                         // Power down
          ESP_LOGE (TAG, "Power off");
-         gpio_hold_dis (pwr & IO_MASK);
-         gpio_set_level (pwr & IO_MASK, (pwr & IO_INV) ? 1 : 0);
+         gpio_hold_dis (pwr.num);
+	 revk_gpio_set(pwr,0);
       }
       ESP_LOGE (TAG, "Deep sleep");
-      if (usb)
+      if (usb.set)
       {                         // USB based
-         rtc_gpio_set_direction_in_sleep (usb & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
-         rtc_gpio_pullup_dis (usb & IO_MASK);
-         rtc_gpio_pulldown_en (usb & IO_MASK);
-         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (usb & IO_MASK, (usb & IO_INV) ? 0 : 1));
+         rtc_gpio_set_direction_in_sleep (usb.num , RTC_GPIO_MODE_INPUT_ONLY);
+         rtc_gpio_pullup_dis (usb.num );
+         rtc_gpio_pulldown_en (usb.num );
+         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (usb.num, 1-usb.invert));
       } else
       {                         // Charging based
-         rtc_gpio_set_direction_in_sleep (charging & IO_MASK, RTC_GPIO_MODE_INPUT_ONLY);
-         rtc_gpio_pullup_en (charging & IO_MASK);
-         rtc_gpio_pulldown_dis (charging & IO_MASK);
-         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (charging & IO_MASK, (charging & IO_INV) ? 0 : 1));
+         rtc_gpio_set_direction_in_sleep (charging.num , RTC_GPIO_MODE_INPUT_ONLY);
+         rtc_gpio_pullup_en (charging.num);
+         rtc_gpio_pulldown_dis (charging.num);
+         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (charging.num , 1-charging.invert));
       }
       sleep (1);
       esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
