@@ -7,7 +7,7 @@ PROJECT_NAME := GPS
 SUFFIX := $(shell components/ESP32-RevK/buildsuffix)
 MODELS := Display Glider L86
 
-all:	json2gpx POSTCODE.DAT
+all:	settings.h json2gpx POSTCODE.DAT
 	@echo Make: build/$(PROJECT_NAME)$(SUFFIX).bin
 	@idf.py build
 	@cp build/$(PROJECT_NAME).bin $(PROJECT_NAME)$(SUFFIX).bin
@@ -21,6 +21,12 @@ issue:
 	cp $(PROJECT_NAME)*.bin release
 	git commit -a -m release
 	git push
+
+settings.h:     components/ESP32-RevK/revk_settings settings.def components/ESP32-RevK/settings.def
+	components/ESP32-RevK/revk_settings $^
+
+components/ESP32-RevK/revk_settings: components/ESP32-RevK/revk_settings.c
+	make -C components/ESP32-RevK
 
 set:    s3
 

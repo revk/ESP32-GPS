@@ -36,104 +36,6 @@ const char *const system_name[SYSTEMS] = { "NAVSTAR", "GLONASS", "GALILEO" };
 #define	I2CPORT	0
 #define	BATSCALE	3       // Pot divide on battery voltage (ADC1)
 
-#define IO_MASK         0x3F
-#define IO_INV          0x40
-#define settings	\
-     	io(pwr,-15,		System PWR)	\
-     	io(charging,-4,		Charging status)	\
-     	io(usb,,		USB power status)	\
-	bl(powerman,N,		Power management)	\
-	bl(powerstop,N,		Power off end journey)	\
-     	io(rgb,2,		RGB LED Strip)	\
-     	u8f(leds,17,		RGB LEDs)	\
-	s32al(home,3,		Home location) \
-	u8(homem,50,		Home proximity)	\
-	bf(ledsd,1,		First RGB is for SD)	\
-	u8f(accaddress,0x19,	Accelerometer I2C ID)	\
-     	io(accsda,13,		Accelerometer SDA) \
-     	io(accscl,14,		Accelerometer SCL) \
-	bl(gpsdebug,N,		GPS debug logging)	\
-	u8(gpsuart,1,		GPS UART ID)	\
-	io(gpsrx,5,		GPS Rx - Tx from GPS GPIO)	\
-	io(gpstx,7,		GPS Tx - Rx yo GPS GPIO)	\
-	io(gpstick,3,		GPS Tick GPIO)	\
-        u32(gpsbaud,115200,	GPS Baud)	\
-	u16l(move,30,		Seconds moving to start if slow) \
-	u16l(stop,120,		Seconds not moving to stop if not home) \
-	bf(sdled,N,		First LED is SD)	\
-	io(sdss,8,		MicroSD SS)    \
-        io(sdmosi,9,		MicroSD MOSI)     \
-        io(sdsck,10,		MicroSD SCK)      \
-        io(sdcd,-11,		MicroSD CD)      \
-        io(sdmiso,12,		MicroSD MISO)     \
-	u16(fixms,1000,		Fix rate)	\
-        b(gpsnavstar,Y,         GPS track NAVSTAR GPS)  \
-        b(gpsglonass,Y,         GPS track GLONASS GPS)  \
-        b(gpsgalileo,Y,         GPS track GALILEO GPS)  \
-        b(gpswaas,Y,            GPS enable WAAS)        \
-        b(gpssbas,Y,            GPS enable SBAS)        \
-        b(gpsqzss,N,            GPS enable QZSS)        \
-        b(gpsaic,Y,             GPS enable AIC) \
-        b(gpseasy,Y,            GPS enable Easy)        \
-	b(gpswalking,N,         GPS Walking mode)       \
-        b(gpsflight,N,          GPS Flight mode)        \
-        b(gpsballoon,N,         GPS Balloon mode)       \
-	b(logpos,Y,		Log position data)	\
-	b(logmqtt,N,		Log position to MQTT JSON) \
-	b(loggpx,N,		Log in GPX format)	\
-	bl(logcsv,Y,		Log in CSV summary)	\
-	bl(loglla,Y,		Log lat/lon/alt)	\
-	bl(logund,Y,		Log undulation)		\
-	bl(logdop,Y,		Lod dop)		\
-	bl(logodo,Y,		Log odometer)		\
-	bl(logseq,Y,		Log seq)		\
-	bl(logecef,Y,		Log ECEF data)		\
-	bl(logepe,Y,		Log EPE data)		\
-	bl(logsats,Y,		Log Sats data)		\
-	bl(logcs,Y,		Log Course/speed)		\
-	bl(logmph,Y,		Log mph)		\
-	bl(logacc,Y,		Log Accelerometer)		\
-	bl(logdsq,N,		Log pack deviation)	\
-	u16(packmin,60,		Min samples for pack)	\
-	u16(packmax,600,	Max samples for pack)	\
-	u16(packdist,0,	 	Pack delta m)	\
-	u16(packtime,0,		Pack delta s)	\
-	s(url,,			URL to post data)	\
-	s(emailhost,,		Email server)	\
-	s(emailport,587,	Email portname)	\
-	s(emailuser,,		Email username)	\
-	s(emailpass,,		Email password)	\
-	s(emailfrom,,		Email from)	\
-
-#define s32al(n,a,t)	int32_t n[a];
-#define u32(n,d,t)	uint32_t n;
-#define u16(n,d,t)	uint16_t n;
-#define s8(n,d,t)	int8_t n;
-#define u8(n,d,t)	uint8_t n;
-#define u8f(n,d,t)	uint8_t n;
-#define u8l(n,d,t)	uint8_t n;
-#define u16l(n,d,t)	uint16_t n;
-#define b(n,d,t) uint8_t n;
-#define bl(n,d,t) uint8_t n;
-#define bf(n,d,t) uint8_t n;
-#define h(n,t) uint8_t *n;
-#define s(n,d,t) char * n;
-#define io(n,d,t)         uint8_t n;
-settings
-#undef io
-#undef u16
-#undef u32
-#undef s32al
-#undef s8
-#undef u8
-#undef u8f
-#undef u8l
-#undef u16l
-#undef bl
-#undef bf
-#undef b
-#undef h
-#undef s
 #define	ZDARATE	10
 #define	GSARATE	10
 #define	GSVRATE	10
@@ -2173,17 +2075,17 @@ sd_task (void *z)
 int
 bargraph (char c, int p)
 {
-   if (p <= 0 || leds <= ledsd)
+   if (p <= 0 || leds <= sdled)
       return 0;
-   int n = 255 * p * (leds - ledsd) / 100;
+   int n = 255 * p * (leds - sdled) / 100;
    int q = n / 255;
    n &= 255;
    int l = leds;
-   while (q-- && l > ledsd)
+   while (q-- && l > sdled)
       revk_led (strip, --l, 255, revk_rgb (c));
-   if (n && l > ledsd)
+   if (n && l > sdled)
       revk_led (strip, --l, n, revk_rgb (c));
-   while (l > ledsd)
+   while (l > sdled)
       revk_led (strip, --l, 255, revk_rgb ('K'));
    return p;
 }
@@ -2205,7 +2107,7 @@ rgb_task (void *z)
       const uint8_t fades[] = { 128, 153, 178, 203, 228, 255, 228, 203, 178, 153 };
       uint8_t fade = fades[blink];
       int l = 0;
-      if (ledsd)
+      if (sdled)
          revk_led (strip, l++, b.sdwaiting ? fade : 255, revk_rgb (rgbsd));     // SD status (blink if data waiting)
       if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
       {
@@ -2218,7 +2120,7 @@ rgb_task (void *z)
             if ((status.gsa[s] & 1) && l < leds)
                revk_led (strip, l++, 127, revk_rgb (system_colour[s])); // dim as 1 LED (no need to blink really)
          }
-         if (l <= ledsd)
+         if (l <= sdled)
             revk_led (strip, l++, (status.fixmode < 3 ? fade : 255), revk_rgb ('R'));   // No sats (likely always blinking)
          while (l < leds)
             revk_led (strip, l++, 255, revk_rgb ('K'));
@@ -2362,43 +2264,6 @@ app_main ()
    fix_mutex = xSemaphoreCreateBinary ();
    xSemaphoreGive (fix_mutex);
    vSemaphoreCreateBinary (ack_semaphore);
-#define str(x) #x
-   revk_register ("gps", 0, sizeof (gpsuart), &gpsuart, NULL, SETTING_SECRET);
-   revk_register ("sd", 0, sizeof (sdled), &sdmosi, NULL, SETTING_SECRET | SETTING_BOOLEAN | SETTING_FIX);
-   revk_register ("log", 0, sizeof (logpos), &logpos, "1", SETTING_SECRET | SETTING_BOOLEAN);
-   revk_register ("pack", 0, sizeof (packdist), &packdist, "0", SETTING_SECRET | SETTING_LIVE);
-   revk_register ("acc", 0, sizeof (accaddress), &accaddress, "0x19", SETTING_SECRET | SETTING_FIX);
-#define b(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN);
-#define bf(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_FIX);
-#define bl(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_BOOLEAN|SETTING_LIVE);
-#define h(n,t) revk_register(#n,0,0,&n,NULL,SETTING_BINDATA|SETTING_HEX);
-#define u32(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s32al(n,a,t) revk_register(#n,a,sizeof(*n),&n,NULL,SETTING_LIVE|SETTING_SIGNED);
-#define u16(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define s8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_SIGNED);
-#define u8(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,0);
-#define u8f(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_FIX);
-#define u8l(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_LIVE);
-#define u16l(n,d,t) revk_register(#n,0,sizeof(n),&n,#d,SETTING_LIVE);
-#define s(n,d,t) revk_register(#n,0,0,&n,str(d),0);
-#define io(n,d,t)         revk_register(#n,0,sizeof(n),&n,"- "str(d),SETTING_SET|SETTING_BITFIELD|SETTING_FIX);
-   settings;
-#undef ui
-#undef u16
-#undef u32
-#undef s32al
-#undef s8
-#undef u8
-#undef u8f
-#undef u8l
-#undef u16l
-#undef bl
-#undef bf
-#undef b
-#undef h
-#undef s
-#undef str
-#undef io
    revk_start ();
    if (usb)
    {
