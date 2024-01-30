@@ -1632,9 +1632,9 @@ sd_task (void *z)
    sdmmc_host_t host = SDSPI_HOST_DEFAULT ();
    host.max_freq_khz = SDMMC_FREQ_PROBING;
    spi_bus_config_t bus_cfg = {
-      .mosi_io_num = sdmosi.num  ,
-      .miso_io_num = sdmiso.num  ,
-      .sclk_io_num = sdsck.num  ,
+      .mosi_io_num = sdmosi.num,
+      .miso_io_num = sdmiso.num,
+      .sclk_io_num = sdsck.num,
       .quadwp_io_num = -1,
       .quadhd_io_num = -1,
       .max_transfer_sz = 4000,
@@ -2063,17 +2063,17 @@ sd_task (void *z)
 int
 bargraph (char c, int p)
 {
-   if (p <= 0 || leds <= sdled)
+   if (p <= 0 || leds <= (1 - sdnoled))
       return 0;
-   int n = 255 * p * (leds - sdled) / 100;
+   int n = 255 * p * (leds - (1 - sdnoled)) / 100;
    int q = n / 255;
    n &= 255;
    int l = leds;
-   while (q-- && l > sdled)
+   while (q-- && l > (1 - sdnoled))
       revk_led (strip, --l, 255, revk_rgb (c));
-   if (n && l > sdled)
+   if (n && l > (1 - sdnoled))
       revk_led (strip, --l, n, revk_rgb (c));
-   while (l > sdled)
+   while (l > (1 - sdnoled))
       revk_led (strip, --l, 255, revk_rgb ('K'));
    return p;
 }
@@ -2095,7 +2095,7 @@ rgb_task (void *z)
       const uint8_t fades[] = { 128, 153, 178, 203, 228, 255, 228, 203, 178, 153 };
       uint8_t fade = fades[blink];
       int l = 0;
-      if (sdled)
+      if ((1 - sdnoled))
          revk_led (strip, l++, b.sdwaiting ? fade : 255, revk_rgb (rgbsd));     // SD status (blink if data waiting)
       if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
       {
@@ -2108,7 +2108,7 @@ rgb_task (void *z)
             if ((status.gsa[s] & 1) && l < leds)
                revk_led (strip, l++, 127, revk_rgb (system_colour[s])); // dim as 1 LED (no need to blink really)
          }
-         if (l <= sdled)
+         if (l <= (1 - sdnoled))
             revk_led (strip, l++, (status.fixmode < 3 ? fade : 255), revk_rgb ('R'));   // No sats (likely always blinking)
          while (l < leds)
             revk_led (strip, l++, 255, revk_rgb ('K'));
@@ -2187,9 +2187,9 @@ revk_web_extra (httpd_req_t * req)
    }
    if (pwr.set && (usb.set || (charging.set
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                       && charging.num <= 21
+                               && charging.num <= 21
 #endif
-               )))
+                   )))
       revk_web_setting_b (req, "Power down", "powerman", powerman, "Turn off when USB power goes off");
    if (usb.set)
       revk_web_setting_b (req, "Power stop", "powerstop", powerstop, "End Journey quickly when power goes off");
@@ -2269,7 +2269,7 @@ app_main ()
    if (leds && rgb.set)
    {
       led_strip_config_t strip_config = {
-         .strip_gpio_num = rgb.num ,
+         .strip_gpio_num = rgb.num,
          .max_leds = leds,
          .led_pixel_format = LED_PIXEL_FORMAT_GRB,      // Pixel format of your LED strip
          .led_model = LED_MODEL_WS2812, // LED strip model
@@ -2285,7 +2285,7 @@ app_main ()
          revk_task ("RGB", rgb_task, NULL, 4);
    }
    // Main task...
-   revk_gpio_input(gpstick);
+   revk_gpio_input (gpstick);
    gps_connect (gpsbaud);
    acc_init ();
    revk_task ("NMEA", nmea_task, NULL, 5);
@@ -2315,9 +2315,9 @@ app_main ()
          busy = up;
       if (!revk_shutting_down (NULL) && powerman && pwr.set && ((usb.set && !b.usb) || (charging.set && !b.charging && adc[0] < 3.8
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                                                                                && charging.num  <= 21
+                                                                                        && charging.num <= 21
 #endif
-                                                            )) && busy + (b.sdpresent && status.fixmode >= 3 ? 60 : 600) < up)
+                                                                )) && busy + (b.sdpresent && status.fixmode >= 3 ? 60 : 600) < up)
          revk_restart ("Power down", 1);
    }
 }
@@ -2329,29 +2329,29 @@ power_shutdown (void)
    sleep (2);
    if (powerman && pwr.set && ((usb.set && !b.usb) || (charging.set && !b.charging && adc[0] < 3.8
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
-                                               && charging.num  <= 21
+                                                       && charging.num <= 21
 #endif
-                           )))
+                               )))
    {                            // Deep sleep
       if (pwr.set)
       {                         // Power down
          ESP_LOGE (TAG, "Power off");
          gpio_hold_dis (pwr.num);
-	 revk_gpio_set(pwr,0);
+         revk_gpio_set (pwr, 0);
       }
       ESP_LOGE (TAG, "Deep sleep");
       if (usb.set)
       {                         // USB based
-         rtc_gpio_set_direction_in_sleep (usb.num , RTC_GPIO_MODE_INPUT_ONLY);
-         rtc_gpio_pullup_dis (usb.num );
-         rtc_gpio_pulldown_en (usb.num );
-         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (usb.num, 1-usb.invert));
+         rtc_gpio_set_direction_in_sleep (usb.num, RTC_GPIO_MODE_INPUT_ONLY);
+         rtc_gpio_pullup_dis (usb.num);
+         rtc_gpio_pulldown_en (usb.num);
+         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (usb.num, 1 - usb.invert));
       } else
       {                         // Charging based
-         rtc_gpio_set_direction_in_sleep (charging.num , RTC_GPIO_MODE_INPUT_ONLY);
+         rtc_gpio_set_direction_in_sleep (charging.num, RTC_GPIO_MODE_INPUT_ONLY);
          rtc_gpio_pullup_en (charging.num);
          rtc_gpio_pulldown_dis (charging.num);
-         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (charging.num , 1-charging.invert));
+         REVK_ERR_CHECK (esp_sleep_enable_ext0_wakeup (charging.num, 1 - charging.invert));
       }
       sleep (1);
       esp_deep_sleep (1000000LL * 3600LL);      // Sleep an hour
