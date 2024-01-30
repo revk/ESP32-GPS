@@ -1943,6 +1943,7 @@ sd_task (void *z)
                      {
                         jo_t j = jo_object_alloc ();
                         jo_string (j, "id", revk_id);
+                        jo_string (j, "filename", filename);
                         jo_string (j, "name", hostname);
                         jo_string (j, "version", revk_version);
                         if (logpos)

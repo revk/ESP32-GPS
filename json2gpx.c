@@ -116,9 +116,11 @@ dordp (j_t j, j_t B)
 int
 main (int argc, const char *argv[])
 {
+   const char *outfile = NULL;
    poptContext optCon;          // context for parsing command-line options
    {                            // POPT
       const struct poptOption optionsTable[] = {
+         {"out-file", 'o', POPT_ARG_STRING, &outfile, 0, "Single outfile file", "filename"},
          {"rdp", 0, POPT_ARG_DOUBLE, &rdp, 0, "Ramer-Douglas-Peucker", "metres"},
          {"timescale", 0, POPT_ARG_DOUBLE | POPT_ARGFLAG_SHOW_DEFAULT, &timescale, 0, "Scale for metres to seconds", "M"},
          {"debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug"},
@@ -137,6 +139,25 @@ main (int argc, const char *argv[])
          poptPrintUsage (optCon, stderr, 0);
          return -1;
       }
+   }
+   FILE *o = NULL;
+   void xml_start (const char *id)
+   {
+      fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"        //
+               "<gpx version=\"1.0\">\n");
+      if (id)
+         fprintf (o, "<metadata><name>%s</name></metadata>\n", id);
+   }
+   void xml_end (void)
+   {
+      fprintf (o, "</gpx>\n");
+   }
+   if (outfile)
+   {
+      o = fopen (outfile, "w");
+      if (!o)
+         err (1, "Cannot open %s", outfile);
+      xml_start (NULL);
    }
    const char *fn;
    while ((fn = poptGetArg (optCon)))
@@ -157,57 +178,63 @@ main (int argc, const char *argv[])
                e = fn + strlen (fn);
             char *ofn = NULL;
             asprintf (&ofn, "%.*s.gpx", (int) (e - fn), fn);
-            FILE *o = fopen (ofn, "w");
-            if (!o)
-               warn ("Cannot open %s", ofn);
-            else
+            if (!outfile)
             {
-               const char *id = j_get (j, "id");
-               fprintf (o, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"       //
-                        "<gpx version=\"1.0\">\n"       //
-                        "<metadata><name>%s</name></metadata>\n"        //
-                        "<trk><trkseg>\n", id);
-               if (rdp)
-                  dordp (j_first (g), NULL);
-               for (j_t e = j_first (g); e; e = j_next (e))
-               {
-                  if (j_get (e, "delete"))
-                     continue;
-                  const char *ts = j_get (e, "ts");
-                  const char *lat = j_get (e, "lat");
-                  const char *lon = j_get (e, "lon");
-                  if (!ts || !lat || !lon)
-                     continue;
-                  const char *alt = j_get (e, "alt");
-                  const char *hdop = j_get (e, "hdop");
-                  const char *vdop = j_get (e, "vdop");
-                  const char *pdop = j_get (e, "pdop");
-                  int sats = atoi (j_get (e, "sats.used") ? : "");
-                  int fix = atoi (j_get (e, "fixmode") ? : "");
-                  fprintf (o, "<trkpt lat=\"%s\" lon=\"%s\">", lat, lon);
-                  if (alt)
-                     fprintf (o, "<ele>%s</ele>", alt);
-                  fprintf (o, "<time>%s</time>", ts);
-                  if (fix >= 1)
-                     fprintf (o, "<fix>%s</fix>", fix == 1 ? "none" : fix == 2 ? "2d" : "3d");
-                  if (sats)
-                     fprintf (o, "<sat>%d</sat>", sats);
-                  if (hdop)
-                     fprintf (o, "<hdop>%s</hdop>", hdop);
-                  if (vdop)
-                     fprintf (o, "<vdop>%s</vdop>", vdop);
-                  if (pdop)
-                     fprintf (o, "<pdop>%s</pdop>", pdop);
-                  fprintf (o, "</trkpt>\n");
-               }
-               fprintf (o, "</trkseg></trk>\n"  //
-                        "</gpx>\n");
-               fclose (o);
+               o = fopen (ofn, "w");
+               if (!o)
+                  err (1, "Cannot open %s", ofn);
             }
+            const char *id = j_get (j, "id");
+            const char *name = j_get (j, "name");
+            const char *filename = j_get (j, "filename");
+            if (!outfile)
+               xml_start (id);
+            fprintf (o, "<trk><name>%s</name><trkseg>\n", filename ? : name ? : id);
+            if (rdp)
+               dordp (j_first (g), NULL);
+            for (j_t e = j_first (g); e; e = j_next (e))
+            {
+               if (j_get (e, "delete"))
+                  continue;
+               const char *ts = j_get (e, "ts");
+               const char *lat = j_get (e, "lat");
+               const char *lon = j_get (e, "lon");
+               if (!ts || !lat || !lon)
+                  continue;
+               const char *alt = j_get (e, "alt");
+               const char *hdop = j_get (e, "hdop");
+               const char *vdop = j_get (e, "vdop");
+               const char *pdop = j_get (e, "pdop");
+               int sats = atoi (j_get (e, "sats.used") ? : "");
+               int fix = atoi (j_get (e, "fixmode") ? : "");
+               fprintf (o, "<trkpt lat=\"%s\" lon=\"%s\">", lat, lon);
+               if (alt)
+                  fprintf (o, "<ele>%s</ele>", alt);
+               fprintf (o, "<time>%s</time>", ts);
+               if (fix >= 1)
+                  fprintf (o, "<fix>%s</fix>", fix == 1 ? "none" : fix == 2 ? "2d" : "3d");
+               if (sats)
+                  fprintf (o, "<sat>%d</sat>", sats);
+               if (hdop)
+                  fprintf (o, "<hdop>%s</hdop>", hdop);
+               if (vdop)
+                  fprintf (o, "<vdop>%s</vdop>", vdop);
+               if (pdop)
+                  fprintf (o, "<pdop>%s</pdop>", pdop);
+               fprintf (o, "</trkpt>\n");
+            }
+            fprintf (o, "</trkseg></trk>\n"   );
+            if (!outfile)
+               fclose (o);
             free (ofn);
          }
          j_delete (&j);
       }
+   }
+   if (outfile)
+   {
+      xml_end ();
+      fclose (o);
    }
 
    poptFreeContext (optCon);
