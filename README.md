@@ -152,5 +152,9 @@ WiFi is enabled when not moving. If a `home` location is set it is only enabled 
 
 Normally access point mode, and web based settings are disabled. These are enabled, along with WiFI, when the SD card is removed.
 
+## Waypoint
+
+A button connected between `⏚` and `0` pads on tyhe back of the board can be used to log a waypoint. This is logged as `"waypoint":true`  in JSON and a line in the CSV (not in the GPX).
+
 --
 Copyright © 2019-24 Andrews & Arnold Ltd, Adrian Kennard. See LICENSE file (GPL).
