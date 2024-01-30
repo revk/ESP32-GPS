@@ -1772,8 +1772,10 @@ sd_task (void *z)
          odonow = odostart;
          revk_command ("status", NULL);
       }
-      FILE *opencsv (void)
+      FILE *opencsv (int64_t now)
       {
+         if (!csvtime || csvtime > now || csvtime + 86400LL * 30LL * 1000000LL < now)
+            csvtime = now;      // csvtime is in RTC memory so needs sanity check
          char *ts = getts (csvtime, '-');
          char filename[50];
          sprintf (filename, "%s/%s.csv", sd_mount, ts);
@@ -1851,19 +1853,9 @@ sd_task (void *z)
                if (ts)
                {
                   char *postcode = getpostcode (f->lat, f->lon);
-                  o = opencsv ();
-                  if (o)
-                  {
-                     fprintf (o, "%s,%.9lf,%.9lf,", ts, f->lat, f->lon);
-                     if (odostart >= ODOBASE)
-                        fprintf (o, "%lld.%02lld", odostart / 100LL, odostart % 100LL);
-                     if (b.postcode)
-                        fprintf (o, ",\"%s\"", postcode ? : "");
-                     fprintf (o, ",\"Start\"\r\n");
-                     fclose (o);
-                     o = NULL;
-                  }
                   sprintf (filename, "%s/%s.%s", sd_mount, ts, loggpx ? "gpx" : "json");
+                  free (ts);
+                  ts = getts (f->ecef.t, 0);
                   o = fopen (filename, "w");
                   if (!o)
                   {             // Open failed
@@ -1874,8 +1866,21 @@ sd_task (void *z)
                      revk_error ("SD", &j);
                   } else
                   {             // Open worked
-
                      starttime = f->ecef.t;
+                     {
+                        FILE *o = opencsv (starttime);
+                        if (o)
+                        {
+                           fprintf (o, "%s,%.9lf,%.9lf,", ts, f->lat, f->lon);
+                           if (odostart >= ODOBASE)
+                              fprintf (o, "%lld.%02lld", odostart / 100LL, odostart % 100LL);
+                           if (b.postcode)
+                              fprintf (o, ",\"%s\"", postcode ? : "");
+                           fprintf (o, ",\"Start\"\r\n");
+                           fclose (o);
+                           o = NULL;
+                        }
+                     }
                      if (b.sdempty)
                         csvtime = 0;
                      b.sdempty = 0;
@@ -1966,9 +1971,9 @@ sd_task (void *z)
             }
             if (f->waypoint && f->setlla && f->sett)
             {
-               char *ts = getts (starttime, 0);
+               char *ts = getts (f->ecef.t, 0);
                char *postcode = getpostcode (f->lat, f->lon);
-               FILE *o = opencsv ();
+               FILE *o = opencsv (starttime);
                if (o)
                {
                   fprintf (o, "%s,%.9lf,%.9lf,", ts, f->lat, f->lon);
@@ -2057,11 +2062,9 @@ sd_task (void *z)
             jo_string (j, "action", cardstatus = "Log file closed");
             jo_string (j, "filename", filename);
             revk_info ("SD", &j);
-            if (!csvtime || csvtime > starttime || csvtime + 86400LL * 30LL * 1000000LL < starttime)
-               csvtime = starttime;     // csvtime is in RTC memory so needs sanity check
             if (logcsv)
             {
-               o = opencsv ();
+               o = opencsv (starttime);
                if (o)
                {
                   char *ts = getts (endtime, 0);
