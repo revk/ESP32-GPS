@@ -13,7 +13,7 @@ u8	homem		50						// Home proximity
 u8	acc.address	19		.fix=1	.hex=1			// Accelerometer I2C ID
 gpio	acc.sda		13						// Accelerometer SDA
 gpio	acc.scl		14						// Accelerometer SCL
-u16	acc.logg	3		.decimal=1			// Accelerometer G level for logging
+u16	acc.g		3		.decimal=1			// Accelerometer G level for logging
 
 bit	power.man			.live=1				// Power management
 bit	power.stop			.live=1				// Power off end journey

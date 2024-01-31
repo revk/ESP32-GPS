@@ -734,9 +734,9 @@ acc_get (fix_t * f)
       f->acc.x = ((float) ((int16_t) (data[1] + (data[2] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       f->acc.y = ((float) ((int16_t) (data[3] + (data[4] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       f->acc.z = ((float) ((int16_t) (data[5] + (data[6] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
-      if (acclogg
-          && (f->acc.x * f->acc.x * f->acc.y * f->acc.y + f->acc.z * f->acc.z) * acclogg_scale * acclogg_scale >
-          (float) acclogg * acclogg)
+      if (accg
+          && (f->acc.x * f->acc.x * f->acc.y * f->acc.y + f->acc.z * f->acc.z) * accg_scale * accg_scale >
+          (float) accg * accg)
          b.flash = f->waypoint = 1;
       f->setacc = 1;
    }
