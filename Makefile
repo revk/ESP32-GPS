@@ -22,10 +22,6 @@ issue:
 	git commit -a -m release
 	git push
 
-flash:	compenents/ESP32-RevK/idfmon
-	idf.py flash
-	components/ESP32-RevK/idfmon
-
 settings.h:     components/ESP32-RevK/revk_settings settings.def components/ESP32-RevK/settings.def
 	components/ESP32-RevK/revk_settings $^
 
