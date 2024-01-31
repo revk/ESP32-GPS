@@ -1884,7 +1884,7 @@ sd_task (void *z)
                               fprintf (o, "%lld.%02lld", odostart / 100LL, odostart % 100LL);
                            if (b.postcode)
                               fprintf (o, ",\"%s\"", postcode ? : "");
-                           fprintf (o, ",\"Start\"\r\n");
+                           fprintf (o, ",,\"Start\"\r\n");
                            fclose (o);
                            o = NULL;
                         }
@@ -1993,7 +1993,7 @@ sd_task (void *z)
                   }
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", postcode ? : "");
-                  fprintf (o, ",\"Waypoint\"\r\n");
+                  fprintf (o, ",,\"Waypoint\"\r\n");
                   fclose (o);
                }
                free (ts);
@@ -2083,9 +2083,10 @@ sd_task (void *z)
                   free (ts);
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", endpostcode ? : "");
+		  fprintf(o,",");
                   if (distance)
-                     fprintf (o, ",%lld.%02lld", distance / 100, distance % 100);
-                  fprintf (o, "\r\n\r\n");
+                     fprintf (o, "%lld.%02lld", distance / 100, distance % 100);
+                  fprintf (o, ",\"End\"\r\n\r\n");
                   fclose (o);
                }
                free (endpostcode);

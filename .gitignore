@@ -18,3 +18,5 @@ components/*
 dependencies.lock
 managed_components
 *.dSYM
+settings.c
+settings.h
