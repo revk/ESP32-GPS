@@ -188,9 +188,10 @@ main (int argc, const char *argv[])
             const char *id = j_get (j, "id");
             const char *name = j_get (j, "name");
             const char *filename = j_get (j, "filename");
+            const char *start = j_get (j, "start.ts");
             if (!outfile)
                xml_start (id);
-            fprintf (o, "<trk><name>%s</name><trkseg>\n", filename ? : name ? : id);
+            fprintf (o, "<trk><name>%s %s</name><trkseg>\n", name ? : id, start ? : filename);
             if (rdp)
                dordp (j_first (g), NULL);
             for (j_t e = j_first (g); e; e = j_next (e))

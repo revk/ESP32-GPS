@@ -1519,7 +1519,7 @@ checkupload (void)
                ESP_LOGE (TAG, "%s: %s", e, filename);
          }
          if (filename)
-            jo_string (j, "filename", filename);
+            jo_string (j, "filename", filename + sizeof (sd_mount));
          jo_string (j, "url", url);
          if (s.st_size)
             jo_int (j, "size", s.st_size);
@@ -1799,7 +1799,7 @@ sd_task (void *z)
                ESP_LOGI (TAG, "Open file %s", filename);
                jo_t j = jo_object_alloc ();
                jo_string (j, "action", cardstatus = "CSV file created");
-               jo_string (j, "filename", filename);
+               jo_string (j, "filename", filename + sizeof (sd_mount));
                revk_info ("SD", &j);
                fprintf (o, "\"Time\",\"Latitude\",\"Longitude\",\"Odometer\"");
                if (b.postcode)
@@ -1812,7 +1812,7 @@ sd_task (void *z)
             ESP_LOGE (TAG, "Failed open file %s", filename);
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Failed to create CSV file");
-            jo_string (j, "filename", filename);
+            jo_string (j, "filename", filename + sizeof (sd_mount));
             revk_error ("SD", &j);
          }
          return o;
@@ -1868,7 +1868,7 @@ sd_task (void *z)
                      ESP_LOGE (TAG, "Failed open file %s", filename);
                      jo_t j = jo_object_alloc ();
                      jo_string (j, "error", cardstatus = "Failed to create file");
-                     jo_string (j, "filename", filename);
+                     jo_string (j, "filename", filename + sizeof (sd_mount));
                      revk_error ("SD", &j);
                   } else
                   {             // Open worked
@@ -1896,7 +1896,7 @@ sd_task (void *z)
                      ESP_LOGI (TAG, "Open file %s", filename);
                      jo_t j = jo_object_alloc ();
                      jo_string (j, "action", cardstatus = "Log file created");
-                     jo_string (j, "filename", filename);
+                     jo_string (j, "filename", filename + sizeof (sd_mount));
                      revk_info ("SD", &j);
                      if (loggpx)
                      {
@@ -1908,7 +1908,7 @@ sd_task (void *z)
                      {
                         jo_t j = jo_object_alloc ();
                         jo_string (j, "id", revk_id);
-                        jo_string (j, "filename", filename);
+                        jo_string (j, "filename", filename + sizeof (sd_mount));
                         jo_string (j, "name", hostname);
                         jo_string (j, "version", revk_version);
                         jo_object (j, "start");
@@ -2069,7 +2069,7 @@ sd_task (void *z)
             }
             jo_t j = jo_object_alloc ();
             jo_string (j, "action", cardstatus = "Log file closed");
-            jo_string (j, "filename", filename);
+            jo_string (j, "filename", filename + sizeof (sd_mount));
             revk_info ("SD", &j);
             if (logcsv)
             {
@@ -2083,7 +2083,7 @@ sd_task (void *z)
                   free (ts);
                   if (b.postcode)
                      fprintf (o, ",\"%s\"", endpostcode ? : "");
-		  fprintf(o,",");
+                  fprintf (o, ",");
                   if (distance)
                      fprintf (o, "%lld.%02lld", distance / 100, distance % 100);
                   fprintf (o, ",\"End\"\r\n\r\n");
