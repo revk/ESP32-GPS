@@ -2,7 +2,7 @@ bit	wifi.debug							// Keep wifi on
 
 gpio	pwr		-15						// System PWR
 gpio	charging	-4						// Charging status
-gpio	usb		-6↓						// USB power status
+gpio	usb								// USB power status
 gpio	button		-0						// Button to log
 gpio	rgb		2						// RGB LED Strip
 u8	leds		17		.fix=1				// RGB LEDs
