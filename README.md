@@ -79,6 +79,8 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`emailuser`|Username for email server|
 |`emailpass`|Password for email server|
 |`emailfrom`|From email address|
+|`accgcrash`|G force to log waypoint|
+|`accgmove`|G force for movement start|
 
 ## LEDs
 

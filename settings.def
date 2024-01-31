@@ -13,7 +13,8 @@ u8	homem		50						// Home proximity
 u8	acc.address	19		.fix=1	.hex=1			// Accelerometer I2C ID
 gpio	acc.sda		13						// Accelerometer SDA
 gpio	acc.scl		14						// Accelerometer SCL
-u16	acc.g		2		.decimal=1			// Accelerometer G level for logging
+u16	acc.gcrash	2		.decimal=2			// Accelerometer G level for waypoint logging
+u16	acc.gmove	1.1		.decimal=2			// Accelerometer G level for moving logging
 
 bit	power.man			.live=1				// Power management
 bit	power.stop			.live=1				// Power off end journey
@@ -24,7 +25,7 @@ gpio	gps.rx		5						// GPS Rx - Tx from GPS GPIO
 gpio	gps.tx		7						// GPS Tx - Rx yo GPS GPIO
 gpio	gps.tick	3						// GPS Tick GPIO
 u32	gps.baud	115200						// GPS Baud
-
+u16	gps.fixms	1000						// Fix rate
 
 u16	move		30		.live=1				// Seconds moving to start if slow
 u16	stop		120		.live=1				// Seconds not moving to stop if not home
@@ -35,7 +36,6 @@ gpio	sd.sck		10						// MicroSD SCK
 gpio	sd.cd		-11						// MicroSD CD
 gpio	sd.miso		12						// MicroSD MISO
 
-u16	fixms		1000						// Fix rate
 
 bit	gps.navstar	1						// GPS track NAVSTAR GPS
 bit	gps.glonass	1						// GPS track GLONASS GPS

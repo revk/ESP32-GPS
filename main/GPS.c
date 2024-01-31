@@ -63,6 +63,8 @@ char rgbsd = 'K';
 const char *cardstatus = NULL;
 int32_t pos[3] = { 0 };         // last x/y/z
 
+float gs = 0;                   // Last accelerometer combined
+
 uint64_t odoadjust = 0;         // Adjust PQODO
 uint64_t odostart = 0;          // Adjusted journey start
 uint64_t odonow = 0;            // Adjusted current
@@ -734,10 +736,14 @@ acc_get (fix_t * f)
       f->acc.x = ((float) ((int16_t) (data[1] + (data[2] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       f->acc.y = ((float) ((int16_t) (data[3] + (data[4] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       f->acc.z = ((float) ((int16_t) (data[5] + (data[6] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
-      if (accg
-          && (f->acc.x * f->acc.x * f->acc.y * f->acc.y + f->acc.z * f->acc.z) * accg_scale * accg_scale >
-          (float) accg * accg)
+      gs = f->acc.x * f->acc.x * f->acc.y * f->acc.y + f->acc.z * f->acc.z;
+      if (accgcrash && gs * accgcrash_scale * accgcrash_scale > (float) accgcrash * accgcrash)
          b.flash = f->waypoint = 1;
+      if (!b.moving && accgmove && gs * accgmove_scale * accgmove_scale > (float) accgmove * accgmove)
+      {
+         vtgcount = 0;
+         b.moving = 1;
+      }
       f->setacc = 1;
    }
    acc_read (0x80 + 0x08, 6, data);
@@ -953,8 +959,8 @@ nmea (char *s)
    }
    if (!strcmp (f[0], "PMTK500") && n >= 2)
    {                            // Fix rate
-      if (atoi (f[1]) != fixms)
-         gps_cmd ("$PMTK220,%d", fixms);
+      if (atoi (f[1]) != gpsfixms)
+         gps_cmd ("$PMTK220,%d", gpsfixms);
       return;
    }
    if (!strcmp (f[0], "PMTK705") && n >= 2)
@@ -964,17 +970,17 @@ nmea (char *s)
       unsigned int rates[19] = { 0 };
       //rates[0]=0;     // GLL
       //rates[1]=0;     // RMC
-      rates[2] = (VTGRATE * 1000 / fixms ? : 1);        // VTG
+      rates[2] = (VTGRATE * 1000 / gpsfixms ? : 1);     // VTG
       rates[3] = 1;             // GGA every sample
-      rates[4] = (GSARATE * 1000 / fixms ? : 1);        // GSA
-      rates[5] = (GSVRATE * 1000 / fixms ? : 1);        // GSV
+      rates[4] = (GSARATE * 1000 / gpsfixms ? : 1);     // GSA
+      rates[5] = (GSVRATE * 1000 / gpsfixms ? : 1);     // GSV
       //rates[6]=0; // GRS
       //rates[7]=0; // GST
       //rates[13]=0; // MALM
       //rates[14]=0; // MEPH
       //rates[15]=0; // MDGP
       //rates[16]=0; // MDBG
-      rates[17] = (ZDARATE * 1000 / fixms ? : 1);       // ZDA
+      rates[17] = (ZDARATE * 1000 / gpsfixms ? : 1);    // ZDA
       int q;
       for (q = 0; q < sizeof (rates) / sizeof (*rates) && rates[q] == (1 + q < n ? atoi (f[1 + q]) : 0); q++);
       if (q < sizeof (rates) / sizeof (*rates)) // Set message rates
@@ -1050,18 +1056,9 @@ nmea (char *s)
          if (vtgcount < 255)
             vtgcount++;
          if (b.vtglast && !b.moving && (vtgcount * VTGRATE >= move || (fix && status.speed > fix->hepe)))
-         {                      // speed (kp/h) compared to EPE is just a rough idea that we are moving faster than random
-            b.moving = 1;
-            jo_t j = jo_object_alloc ();
-            jo_string (j, "action", "Started moving");
-            revk_info ("GPS", &j);
-         } else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= stop || b.home || (powerstop && !b.usb)))
-         {
+            b.moving = 1;       // speed (kp/h) compared to EPE is just a rough idea that we are moving faster than random
+         else if (!b.vtglast && b.moving && (vtgcount * VTGRATE >= stop || b.home || (powerstop && !b.usb)))
             b.moving = 0;
-            jo_t j = jo_object_alloc ();
-            jo_string (j, "action", "Stopped moving");
-            revk_info ("GPS", &j);
-         }
       } else
       {
          // Changed
@@ -1140,7 +1137,7 @@ nmea_task (void *z)
             if (++rate >= sizeof (rates) / sizeof (*rates))
                rate = 0;
             gps_connect (rates[rate]);
-            timeout = esp_timer_get_time () + 2000000 + fixms;
+            timeout = esp_timer_get_time () + 2000000LL + gpsfixms * 1000LL;
             nmea_timeout (uptime ());
          }
          continue;
@@ -1165,7 +1162,7 @@ nmea_task (void *z)
                gpserrorcount++;
             else
             {                   // Process line
-               timeout = esp_timer_get_time () + 60000000 + fixms;
+               timeout = esp_timer_get_time () + 60000000LL + gpsfixms * 1000LL;
                l[-3] = 0;
                nmea ((char *) p);
             }
