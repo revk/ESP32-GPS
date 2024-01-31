@@ -91,6 +91,7 @@ struct
    uint8_t accok:1;             // ACC OK
    uint8_t sbas:1;              // Current fix is SBAS
    uint8_t home:1;              // At home
+   uint8_t battery:1;           // Seems a battery
    uint8_t charging:1;          // Charging
    uint8_t usb:1;               // USB power
    uint8_t postcode:1;          // We have postcode
@@ -2142,16 +2143,16 @@ rgb_task (void *z)
       }
       if (++blink >= 10)
          blink = 0;
-      const uint8_t fades[] = { 128, 153, 178, 203, 228, 255, 228, 203, 178, 153 };
-      uint8_t fade = fades[blink];
       int l = 0;
-      revk_led (strip, l++, b.sdwaiting ? fade : 255, revk_rgb (rgbsd));        // SD status (blink if data waiting)
       if (blink < 0)
       {                         // Flashing
          while (l < leds)
             revk_led (strip, l++, 255, revk_rgb ('R'));
       } else if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
       {
+         const uint8_t fades[] = { 128, 153, 178, 203, 228, 255, 228, 203, 178, 153 };
+         uint8_t fade = fades[blink];
+         revk_led (strip, l++, b.sdwaiting ? fade : 255, revk_rgb (rgbsd));     // SD status (blink if data waiting)
          if (b.sbas)
             revk_led (strip, l++, 255, revk_rgb ('M')); // SBAS
          for (int s = 0; s < SYSTEMS; s++)
@@ -2283,13 +2284,16 @@ revk_state_extra (jo_t j)
       jo_bool (j, "charging", 1);
    if (b.usb)
       jo_bool (j, "usb", 1);
-   int bat = 100 * 2 * (adc[0] - 3.3);
-   if (bat < 0)
-      bat = 0;
-   if (bat > 100)
-      bat = 100;
-   jo_int (j, "bat", bat);
-   jo_litf (j, "voltage", "%.1f", adc[0]);
+   if (b.battery)
+   {
+      int bat = 100 * 2 * (adc[0] - 3.3);
+      if (bat < 0)
+         bat = 0;
+      if (bat > 100)
+         bat = 100;
+      jo_int (j, "bat", bat);
+      jo_litf (j, "voltage", "%.1f", adc[0]);
+   }
    if (odonow >= ODOBASE)
       jo_litf (j, "odo", "%lld.%02lld", odonow / 100LL, odonow % 100LL);
    // Note adc[2] relates to temp, but not clear of mapping
@@ -2355,6 +2359,7 @@ app_main ()
       revk_web_settings_add (webserver);
    }
 
+   uint8_t charge = 0;
    while (1)
    {
       usleep (10000);
@@ -2365,7 +2370,9 @@ app_main ()
          busy = up;
       if (revk_gpio_get (button))
          b.flash = b.waypoint = 1;
-      b.charging = revk_gpio_get (charging);
+      charge = (charge << 1) | revk_gpio_get (charging);
+      b.battery = ((charge == 0 || charge == 255) ? 1 : 0);
+      b.charging = (charge == 255 ? 1 : 0);
       b.usb = revk_gpio_get (usb);
       if (b.charging || b.usb)
          busy = up;
