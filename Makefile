@@ -22,11 +22,18 @@ issue:
 	git commit -a -m release
 	git push
 
+flash:	compenents/ESP32-RevK/idfmon
+	idf.py flash
+	components/ESP32-RevK/idfmon
+
 settings.h:     components/ESP32-RevK/revk_settings settings.def components/ESP32-RevK/settings.def
 	components/ESP32-RevK/revk_settings $^
 
 components/ESP32-RevK/revk_settings: components/ESP32-RevK/revk_settings.c
-	make -C components/ESP32-RevK
+	make -C components/ESP32-RevK revk_settings
+
+components/ESP32-RevK/idfmon: components/ESP32-RevK/idfmon.c
+	make -C components/ESP32-RevK idfmon
 
 set:    s3
 
