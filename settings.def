@@ -29,7 +29,6 @@ u32	gps.baud	115200						// GPS Baud
 u16	move		30		.live=1				// Seconds moving to start if slow
 u16	stop		120		.live=1				// Seconds not moving to stop if not home
 
-bit	sd.noled			.fix=1				// MicroSd has no LED (normally it is first RGB)
 gpio	sd.ss		8						// MicroSD SS
 gpio	sd.mosi		9						// MicroSD MOSI
 gpio	sd.sck		10						// MicroSD SCK

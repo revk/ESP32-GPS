@@ -93,6 +93,7 @@ struct
    uint8_t usb:1;               // USB power
    uint8_t postcode:1;          // We have postcode
    uint8_t waypoint:1;          // Log a waypoint
+   uint8_t flash:1;             // Flash LEDs
    uint8_t lastwaypoint:1;      // Waypoint continuing  // Waypoint continuing
 } volatile b = { 0 };
 
@@ -546,7 +547,7 @@ app_callback (int client, const char *prefix, const char *target, const char *su
    }
    if (!strcmp (suffix, "push"))
    {
-      b.waypoint = 1;
+      b.flash = b.waypoint = 1;
       return "";
    }
    if (!strcmp (suffix, "upgrade"))
@@ -736,7 +737,7 @@ acc_get (fix_t * f)
       if (acclogg
           && (f->acc.x * f->acc.x * f->acc.y * f->acc.y + f->acc.z * f->acc.z) * acclogg_scale * acclogg_scale >
           (float) acclogg * acclogg)
-         f->waypoint = 1;
+         b.flash = f->waypoint = 1;
       f->setacc = 1;
    }
    acc_read (0x80 + 0x08, 6, data);
@@ -1871,6 +1872,8 @@ sd_task (void *z)
                      revk_error ("SD", &j);
                   } else
                   {             // Open worked
+                     if (b.sdempty)
+                        csvtime = 0;
                      starttime = f->ecef.t;
                      {
                         FILE *o = opencsv (starttime);
@@ -1886,8 +1889,6 @@ sd_task (void *z)
                            o = NULL;
                         }
                      }
-                     if (b.sdempty)
-                        csvtime = 0;
                      b.sdempty = 0;
                      b.sdwaiting = 1;
                      if (!wifidebug)
@@ -2109,17 +2110,17 @@ sd_task (void *z)
 int
 bargraph (char c, int p)
 {
-   if (p <= 0 || leds <= (1 - sdnoled))
+   if (p <= 0 || leds <= 1)
       return 0;
-   int n = 255 * p * (leds - (1 - sdnoled)) / 100;
+   int n = 255 * p * (leds - 1) / 100;
    int q = n / 255;
    n &= 255;
    int l = leds;
-   while (q-- && l > (1 - sdnoled))
+   while (q-- && l > 1)
       revk_led (strip, --l, 255, revk_rgb (c));
-   if (n && l > (1 - sdnoled))
+   if (n && l > 1)
       revk_led (strip, --l, n, revk_rgb (c));
-   while (l > (1 - sdnoled))
+   while (l > 1)
       revk_led (strip, --l, 255, revk_rgb ('K'));
    return p;
 }
@@ -2132,18 +2133,26 @@ rgb_task (void *z)
       vTaskDelete (NULL);
       return;
    }
-   uint8_t blink = 0;
+   int8_t blink = 0;
    while (!b.die)
    {
       usleep (100000);
+      if (b.flash)
+      {
+         b.flash = 0;
+         blink = -20;           // red
+      }
       if (++blink >= 10)
          blink = 0;
       const uint8_t fades[] = { 128, 153, 178, 203, 228, 255, 228, 203, 178, 153 };
       uint8_t fade = fades[blink];
       int l = 0;
-      if ((1 - sdnoled))
-         revk_led (strip, l++, b.sdwaiting ? fade : 255, revk_rgb (rgbsd));     // SD status (blink if data waiting)
-      if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
+      revk_led (strip, l++, b.sdwaiting ? fade : 255, revk_rgb (rgbsd));        // SD status (blink if data waiting)
+      if (blink < 0)
+      {                         // Flashing
+         while (l < leds)
+            revk_led (strip, l++, 255, revk_rgb ('R'));
+      } else if (!bargraph ('Y', revk_ota_progress ()) && !bargraph ('C', upload))
       {
          if (b.sbas)
             revk_led (strip, l++, 255, revk_rgb ('M')); // SBAS
@@ -2154,7 +2163,7 @@ rgb_task (void *z)
             if ((status.gsa[s] & 1) && l < leds)
                revk_led (strip, l++, 127, revk_rgb (system_colour[s])); // dim as 1 LED (no need to blink really)
          }
-         if (l <= (1 - sdnoled))
+         if (l <= 1)
             revk_led (strip, l++, (status.fixmode < 3 ? fade : 255), revk_rgb ('R'));   // No sats (likely always blinking)
          while (l < leds)
             revk_led (strip, l++, 255, revk_rgb ('K'));
@@ -2357,7 +2366,7 @@ app_main ()
       if (b.moving)
          busy = up;
       if (revk_gpio_get (button))
-         b.waypoint = 1;
+         b.flash = b.waypoint = 1;
       b.charging = revk_gpio_get (charging);
       b.usb = revk_gpio_get (usb);
       if (b.charging || b.usb)
