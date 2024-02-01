@@ -143,8 +143,8 @@ struct fix_s
    } acc;
    uint8_t quality;             // Fix quality (0=none, 1=GPS, 2=SBAS)
    uint8_t sats;                // Sats used for fix
-   unit8_t accmove:1;           // Acc G level for move
-   unit8_t acccrash:1;          // Acc G level for crascrash
+   uint8_t accmove:1;           // Acc G level for move
+   uint8_t acccrash:1;          // Acc G level for crascrash
    uint8_t waypoint:1;          // Log a waypoint
    uint8_t home:1;              // This pos is at home
    uint8_t corner:1;            // Corner point for packing
