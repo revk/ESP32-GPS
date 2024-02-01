@@ -143,6 +143,8 @@ struct fix_s
    } acc;
    uint8_t quality;             // Fix quality (0=none, 1=GPS, 2=SBAS)
    uint8_t sats;                // Sats used for fix
+   unit8_t accmove:1;           // Acc G level for move
+   unit8_t acccrash:1;          // Acc G level for crascrash
    uint8_t waypoint:1;          // Log a waypoint
    uint8_t home:1;              // This pos is at home
    uint8_t corner:1;            // Corner point for packing
@@ -739,11 +741,15 @@ acc_get (fix_t * f)
       f->acc.z = ((float) ((int16_t) (data[5] + (data[6] << 8)))) / 16.0 * 12.0 / 1000.0;       // 12 bits and 12mG/unit
       gs = f->acc.x * f->acc.x * f->acc.y * f->acc.y + f->acc.z * f->acc.z;
       if (accgcrash && gs * accgcrash_scale * accgcrash_scale > (float) accgcrash * accgcrash)
+      {
          b.flash = f->waypoint = 1;
-      if (!b.moving && accgmove && gs * accgmove_scale * accgmove_scale > (float) accgmove * accgmove)
+         f->acccrash = 1;
+      }
+      if (accgmove && gs * accgmove_scale * accgmove_scale > (float) accgmove * accgmove)
       {
          vtgcount = 0;
          b.moving = 1;
+         f->accmove = 1;
       }
       f->setacc = 1;
    }
@@ -1274,6 +1280,10 @@ log_line (fix_t * f)
       jo_litf (j, "x", "%.3f", f->acc.x);
       jo_litf (j, "y", "%.3f", f->acc.y);
       jo_litf (j, "z", "%.3f", f->acc.z);
+      if (f->accmove)
+         jo_bool (j, "move", 1);
+      if (f->acccrash)
+         jo_bool (j, "crash", 1);
       jo_close (j);
    }
    if (logdsq && !isnan (f->dsq))
