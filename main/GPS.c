@@ -2240,26 +2240,26 @@ web_root (httpd_req_t * req)
 void
 revk_web_extra (httpd_req_t * req)
 {
-   revk_web_setting_s (req, "Target", "url", url, "URL or Email address", NULL, 0);
+   revk_web_setting (req, "Target", "url", "URL or Email address", NULL);
    if (strchr (url, '@'))
    {
-      revk_web_setting_s (req, "Email host", "emailhost", emailhost, "Email host", NULL, 0);
-      revk_web_setting_s (req, "Email port", "emailport", emailport, "Email port", NULL, 0);
-      revk_web_setting_s (req, "Email user", "emailuser", emailuser, "Email user", NULL, 0);
-      revk_web_setting_s (req, "Email pass", "emailpass", emailpass, "Email pass", NULL, 0);
-      revk_web_setting_s (req, "Email from", "emailfrom", emailfrom, "Email from", NULL, 0);
+      revk_web_setting (req, "Email host", "emailhost",  "Email host", NULL);
+      revk_web_setting (req, "Email port", "emailport",  "Email port", NULL);
+      revk_web_setting (req, "Email user", "emailuser",  "Email user", NULL);
+      revk_web_setting (req, "Email pass", "emailpass",  "Email pass", NULL);
+      revk_web_setting (req, "Email from", "emailfrom",  "Email from", NULL);
    }
    if (pwr.set && (usb.set || (charging.set
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
                                && charging.num <= 21
 #endif
                    )))
-      revk_web_setting_b (req, "Power down", "powerman", powerman, "Turn off when USB power goes off");
+      revk_web_setting (req, "Power down", "powerman", NULL, "Turn off when USB power goes off");
    if (usb.set)
-      revk_web_setting_b (req, "Power stop", "powerstop", powerstop, "End Journey quickly when power goes off");
-   revk_web_setting_b (req, "GPX Log", "loggpx", loggpx, "Log files in GPX format");
-   revk_web_setting_i (req, "Move time", "move", move, "Seconds moving to start journey (quicker if moving fast)");
-   revk_web_setting_i (req, "Stop time", "stop", stop, "Seconds stopped to end journey (quicker if at home)");
+      revk_web_setting (req, "Power stop", "powerstop",NULL,"End Journey quickly when power goes off");
+   revk_web_setting (req, "GPX Log", "loggpx", NULL,"Log files in GPX format");
+   revk_web_setting (req, "Move time", "move",NULL, "Seconds moving to start journey (quicker if moving fast)");
+   revk_web_setting (req, "Stop time", "stop", NULL,"Seconds stopped to end journey (quicker if at home)");
    revk_web_send (req, "<tr><td colspan=4>");
    if ((!pos[0] && !pos[1] && !pos[2]) || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
    {
@@ -2278,9 +2278,9 @@ revk_web_extra (httpd_req_t * req)
    } else if (b.home)
       revk_web_send (req, "At home");
    revk_web_send (req, "</td></tr>");
-   revk_web_setting_i (req, "Home X", "home1", home[0], "ECEF X");
-   revk_web_setting_i (req, "Home Y", "home2", home[1], "ECEF Y");
-   revk_web_setting_i (req, "Home Z", "home3", home[2], "ECEF Z");
+   revk_web_setting (req, "Home X", "home1",NULL,  "ECEF X");
+   revk_web_setting (req, "Home Y", "home2",NULL,  "ECEF Y");
+   revk_web_setting (req, "Home Z", "home3",NULL,  "ECEF Z");
 }
 
 void
