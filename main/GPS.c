@@ -2242,26 +2242,26 @@ web_root (httpd_req_t * req)
 void
 revk_web_extra (httpd_req_t * req)
 {
-   revk_web_setting (req, "Target", "url", "URL or Email address", NULL);
+   revk_web_setting (req, "Target", "url");
    if (strchr (url, '@'))
    {
-      revk_web_setting (req, "Email host", "emailhost", "Email host", NULL);
-      revk_web_setting (req, "Email port", "emailport", "Email port", NULL);
-      revk_web_setting (req, "Email user", "emailuser", "Email user", NULL);
-      revk_web_setting (req, "Email pass", "emailpass", "Email pass", NULL);
-      revk_web_setting (req, "Email from", "emailfrom", "Email from", NULL);
+      revk_web_setting (req, "Email host", "emailhost");
+      revk_web_setting (req, "Email port", "emailport");
+      revk_web_setting (req, "Email user", "emailuser");
+      revk_web_setting (req, "Email pass", "emailpass");
+      revk_web_setting (req, "Email from", "emailfrom");
    }
    if (pwr.set && (usb.set || (charging.set
 #ifdef  CONFIG_IDF_TARGET_ESP32S3
                                && charging.num <= 21
 #endif
                    )))
-      revk_web_setting (req, "Power down", "powerman", NULL, "Turn off when USB power goes off");
+      revk_web_setting (req, "Power down", "powerman");
    if (usb.set)
-      revk_web_setting (req, "Power stop", "powerstop", NULL, "End Journey quickly when power goes off");
-   revk_web_setting (req, "GPX Log", "loggpx", NULL, "Log files in GPX format");
-   revk_web_setting (req, "Move time", "move", NULL, "Seconds moving to start journey (quicker if moving fast)");
-   revk_web_setting (req, "Stop time", "stop", NULL, "Seconds stopped to end journey (quicker if at home)");
+      revk_web_setting (req, "Power stop", "powerstop");
+   revk_web_setting (req, "GPX Log", "loggpx");
+   revk_web_setting (req, "Move time", "move");
+   revk_web_setting (req, "Stop time", "stop");
    revk_web_send (req, "<tr><td colspan=4>");
    if ((!pos[0] && !pos[1] && !pos[2]) || home[0] != pos[0] || home[1] != pos[1] || home[2] != pos[2])
    {
@@ -2280,9 +2280,9 @@ revk_web_extra (httpd_req_t * req)
    } else if (b.home)
       revk_web_send (req, "At home");
    revk_web_send (req, "</td></tr>");
-   revk_web_setting (req, "Home X", "home1", NULL, "ECEF X");
-   revk_web_setting (req, "Home Y", "home2", NULL, "ECEF Y");
-   revk_web_setting (req, "Home Z", "home3", NULL, "ECEF Z");
+   revk_web_setting (req, "Home X", "home1");
+   revk_web_setting (req, "Home Y", "home2");
+   revk_web_setting (req, "Home Z", "home3");
 }
 
 void
