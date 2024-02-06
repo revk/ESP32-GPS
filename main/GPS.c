@@ -2267,7 +2267,7 @@ revk_web_extra (httpd_req_t * req)
    {
       if (!isnan (status.hdop) && status.hdop != 0 && status.hdop <= 1 && pos[0])
          revk_web_send (req,
-                        "<button onclick='var f=document.settings;f._home1.name='home1';f.home1.value=%ld;f._home2.name='home2';f.home2.value=%ld;f._home3.name='home3';f.home3.value=%ld;'>Set here as home</button>",
+                        "<button onclick=\"var f=document.settings;f._home1.name='home1';f.home1.value=%ld;f._home2.name='home2';f.home2.value=%ld;f._home3.name='home3';f.home3.value=%ld;\">Set here as home</button>",
                         pos[0], pos[1], pos[2]);
       else
          revk_web_send (req, "Go outside and get a clean fix to set home location.");
