@@ -7,8 +7,8 @@ gpio	button		-0						// Button to log
 gpio	rgb		2						// RGB LED Strip
 u8	leds		17		.fix=1				// RGB LEDs
 
-s32	home				.array=3	.live=1		// Home location
-u8	homem		50						// Home proximity
+s32	home				.array=3	.live=1		// Home location (ECEF, whole metres)
+u8	homem		50						// Home proximity (metres)
 
 u8	acc.address	19		.fix=1	.hex=1			// Accelerometer I2C ID
 gpio	acc.sda		13						// Accelerometer SDA
