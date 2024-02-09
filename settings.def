@@ -21,9 +21,9 @@ bit	power.stop			.live=1				// Power off end journey
 
 bit	gps.debug			.live=1				// GPS debug logging
 u8	gps.uart	1		.fix=1				// GPS UART ID
-gpio	gps.rx		5						// GPS Rx - Tx from GPS GPIO
-gpio	gps.tx		7						// GPS Tx - Rx yo GPS GPIO
-gpio	gps.tick	3						// GPS Tick GPIO
+gpio	gps.rx		5						// GPS Rx - Tx from GPS
+gpio	gps.tx		7						// GPS Tx - Rx yo GPS
+gpio	gps.tick	3						// GPS Tick
 u32	gps.baud	115200						// GPS Baud
 u16	gps.fixms	1000						// Fix rate
 
