@@ -19,7 +19,6 @@ beta:
 	-git commit -a -m checkpoint
 	@make set
 	cp $(PROJECT_NAME)*.bin betarelease
-	cp $(PROJECT_NAME)*.bin release
 	git commit -a -m beta
 	git push
 
@@ -28,6 +27,7 @@ issue:
 	-git submodule update --recursive
 	-git commit -a -m checkpoint
 	@make set
+	cp $(PROJECT_NAME)*.bin betarelease
 	cp $(PROJECT_NAME)*.bin release
 	git commit -a -m release
 	git push
@@ -44,7 +44,7 @@ components/ESP32-RevK/idfmon: components/ESP32-RevK/idfmon.c
 set:    s3
 
 s3:
-	components/ESP32-RevK/setbuildsuffix -S1-S3
+	components/ESP32-RevK/setbuildsuffix -S3-MINI-N4-R2
 	@make
 
 flash:
