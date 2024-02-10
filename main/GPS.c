@@ -182,12 +182,12 @@ parse (const char *p, uint8_t places)
    if (*p == '-')
       p++;
    int64_t v = 0;
-   while (*p && isdigit ((int) *p))
+   while (*p && is_digit (*p))
       v = v * 10 + *p++ - '0';
    if (*p == '.')
    {
       p++;
-      while (places && *p && isdigit ((int) *p))
+      while (places && *p && is_digit (*p))
       {
          v = v * 10 + *p++ - '0';
          places--;
@@ -1558,7 +1558,7 @@ checkupload (void)
                   char *u;
                   asprintf (&u, "%s?%s-%s", url, hostname, filename + sizeof (sd_mount));
                   for (char *p = u + strlen (url) + 1; *p; p++)
-                     if (!isalnum ((int) *p) && *p != '.')
+                     if (!is_alnum ( *p) && *p != '.')
                         *p = '-';
                   esp_http_client_config_t config = {
                      .url = u,
