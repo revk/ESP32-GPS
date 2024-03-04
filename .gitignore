@@ -20,3 +20,4 @@ managed_components
 *.dSYM
 settings.c
 settings.h
+PCB/*/production/backups/
