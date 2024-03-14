@@ -1558,7 +1558,7 @@ checkupload (void)
                   char *u;
                   asprintf (&u, "%s?%s-%s", url, hostname, filename + sizeof (sd_mount));
                   for (char *p = u + strlen (url) + 1; *p; p++)
-                     if (!is_alnum ( *p) && *p != '.')
+                     if (!is_alnum (*p) && *p != '.')
                         *p = '-';
                   esp_http_client_config_t config = {
                      .url = u,
@@ -1690,7 +1690,7 @@ sd_task (void *z)
    sdmmc_card_t *card = NULL;
    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
    //slot_config.gpio_cs = sdss.num;
-   revk_gpio_output(sdss,0); // Bodge for faster SD card access in ESP IDF V5+
+   revk_gpio_output (sdss, 0);  // Bodge for faster SD card access in ESP IDF V5+
    slot_config.gpio_cd = sdcd.num;
    slot_config.host_id = host.slot;
    while (!b.die)
@@ -2327,11 +2327,9 @@ app_main ()
    revk_gpio_input (button);
    revk_gpio_input (usb);
    revk_gpio_input (charging);
-   revk_gpio_output (pwr);
    if (pwr.set)
    {
-      revk_gpio_set (pwr, 1);
-      revk_gpio_output (pwr);
+      revk_gpio_output (pwr, 1);
       gpio_hold_dis (pwr.num);
       revk_gpio_set (pwr, 1);
       gpio_hold_en (pwr.num);
