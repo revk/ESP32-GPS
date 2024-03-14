@@ -1689,7 +1689,9 @@ sd_task (void *z)
    };
    sdmmc_card_t *card = NULL;
    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
-   slot_config.gpio_cs = sdss.num;
+   //slot_config.gpio_cs = sdss.num;
+   revk_gpio_output(sdss,0); // Bodge for faster SD card access in ESP IDF V5+
+   slot_config.gpio_cd = sdcd.num;
    slot_config.host_id = host.slot;
    while (!b.die)
    {
@@ -2067,7 +2069,7 @@ sd_task (void *z)
             fclose (o);
             if (distance)
             {                   // Odometer update
-               FILE *o = fopen (odometer, "w+");
+               FILE *o = fopen (odometer, "w");
                if (o)
                {
                   fprintf (o, "%lld.%02lld", odonow / 100LL, odonow % 100LL);
