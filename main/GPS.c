@@ -1692,7 +1692,6 @@ sd_task (void *z)
    //slot_config.gpio_cs = sdss.num;
    slot_config.gpio_cs = -1;
    revk_gpio_output (sdss, 0);  // Bodge for faster SD card access in ESP IDF V5+
-   slot_config.gpio_cd = sdcd.num;
    slot_config.host_id = host.slot;
    while (!b.die)
    {
