@@ -123,13 +123,15 @@ If the `POSTCODE.DAT` file is placed on to the microSD then postcodes are added 
 
 ## WiFi
 
-WiFi is enabled when not moving. If a `home` location is set it is only enabled within 100m of home.
+WiFi is enabled when not moving. If a `home` location is set it is only enabled within 100m of home (confuigurable).
 
-Normally access point mode, and web based settings are disabled. These are enabled, along with WiFI, when the SD card is removed.
+Normally access point mode, and web based settings are disabled. These are enabled, along with WiFI, when the SD card is removed. This is to provide some physical security.
+
+Settings can also have a password set.
 
 ## Waypoint
 
-A button connected between `⏚` and `0` pads on tyhe back of the board can be used to log a waypoint. This is logged as `"waypoint":true`  in JSON and a line in the CSV (not in the GPX).
+A button connected between `⏚` and `0` pads on the back of the board can be used to log a waypoint. This is logged as `"waypoint":true`  in JSON and a line in the CSV (not in the GPX).
 
 ## Accessories and cases
 
