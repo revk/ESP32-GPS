@@ -135,7 +135,7 @@ A button connected between `⏚` and `0` pads on the back of the board can be us
 
 ## Accessories and cases
 
-Tested case and battery options are documented [here](accessories.md).
+3D printable case desigsn are included, but you can also make a simple case from standard parts: Tested case and battery options are documented [here](accessories.md).
 
---
+-- 
 Copyright © 2019-24 Andrews & Arnold Ltd, Adrian Kennard. See LICENSE file (GPL).
