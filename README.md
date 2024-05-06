@@ -40,38 +40,13 @@ The file can, instead, be emailed. Fill in `email` settings and put an email add
 
 Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GPS/packdist 2` to set `packdist` to `2`. Settings can also be sent in JSON format. To see settings, send just `settings/GPS`.
 
+**Note that the full list of settings are now documented in the Advanced settings in the web interface, this is a summary of some of the ones people usually need to consider**
+
 |Setting|Meaning|
 |-------|-------|
 |`url`|Upload URL or email address|
-|`logpos`|If not set then the log file does not include position data at all|
-|`logmqtt`|Log position data (in JSON format) to MQTT|
-|`loggpx`|If set, the log file is GPX format not JSON|
-|`logcsv`|If set, a CSV file is created for all journeys being uploaded at once|
-|`loglla`|Include `lat`, `lon`, and `alt`|
-|`logcs`|Include `course` and `speed`|
-|`logund`|Include undulation `und`|
-|`logmph`|Include `mph`|
-|`logacc`|Include accelerometer data|
-|`logsats`|Include number of active satellites and related data|
-|`logepe`|Include estimated position error|
-|`logodo`|Include periodic odometer value|
-|`logseq`|Include a sequence number|
-|`logecef`|Include ECEF data (Earth Centred Earth Fixed X/Y/Z/T values)|
-|`logacc`|Include accelerometer data|
-|`gpsballon`|Set *balloon* mode for high altitude|
-|`gpsflight`|Set *flight* mode for aviation logging|
-|`gpswalking`|Set *walking* mode for slow speed travel|
-|`navstar`|Use NAVSTAR|
-|`glonass`|Use GLONASS|
-|`galileo`|Use GALILEO|
 |`minmove`|Seconds moving before we start, if slow|
 |`minstop`|Seconds not moving before we stop, if not home, to allow for traffic lights, etc|
-|`packmin`|Min samples to be packed, normally `60`, set this to zero to disable packing|
-|`packmax`|Max samples to be packed, normally `600` which means if travelling straight you get a sample at least this often|
-|`packdist`|If non zero this enables point reduction *packing*, with this being the allowed deviation (in metres)|
-|`packtime`|If *packing* and this is non zero then time is also a factor, with this being the allowed deviation in seconds|
-|`home`|An array of ECEF whole metres for home location (use web interface settings to set this from GPS). If set WiFi only comes on at home|
-|`homem`|Proximity to `home` for home working|
 |`powerman`|Shutdown to deep sleep when USB power is off (after a few minutes)|
 |`powerstop`|Stop journey quickly if USB power goes off and not moving|
 |`emailhost`|Host name/IP of email server|
@@ -79,8 +54,6 @@ Settings can be sent via MQTT, as per the revK library, e.g. sending `setting/GP
 |`emailuser`|Username for email server|
 |`emailpass`|Password for email server|
 |`emailfrom`|From email address|
-|`accgcrash`|G force to log waypoint|
-|`accgmove`|G force for movement start|
 
 ## LEDs
 
@@ -150,13 +123,19 @@ If the `POSTCODE.DAT` file is placed on to the microSD then postcodes are added 
 
 ## WiFi
 
-WiFi is enabled when not moving. If a `home` location is set it is only enabled within 100m of home.
+WiFi is enabled when not moving. If a `home` location is set it is only enabled within 100m of home (confuigurable).
 
-Normally access point mode, and web based settings are disabled. These are enabled, along with WiFI, when the SD card is removed.
+Normally access point mode, and web based settings are disabled. These are enabled, along with WiFI, when the SD card is removed. This is to provide some physical security.
+
+Settings can also have a password set.
 
 ## Waypoint
 
-A button connected between `⏚` and `0` pads on tyhe back of the board can be used to log a waypoint. This is logged as `"waypoint":true`  in JSON and a line in the CSV (not in the GPX).
+A button connected between `⏚` and `0` pads on the back of the board can be used to log a waypoint. This is logged as `"waypoint":true`  in JSON and a line in the CSV (not in the GPX).
 
---
+## Accessories and cases
+
+3D printable case desigsn are included, but you can also make a simple case from standard parts: Tested case and battery options are documented [here](accessories.md).
+
+-- 
 Copyright © 2019-24 Andrews & Arnold Ltd, Adrian Kennard. See LICENSE file (GPL).
