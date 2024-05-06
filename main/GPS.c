@@ -616,7 +616,7 @@ app_callback (int client, const char *prefix, const char *target, const char *su
    {
       gps_cmd ("$PMTK104");     // Full cold start (resets to default settings including Baud rate)
       b.gpsstarted = 0;
-      revk_restart ("GPS has been reset", 1);
+      revk_restart (1, "GPS has been reset");
       return "";
    }
    if (!strcmp (suffix, "sleep"))
@@ -1833,7 +1833,7 @@ sd_task (void *z)
          int line = 0;
          char filename[100];
          uint64_t starttime = 0;
-         uint64_t endtime;
+         uint64_t endtime = 0;
          uint8_t endhome = 0;
          double endlat = NAN,
             endlon = NAN;
@@ -2393,7 +2393,7 @@ app_main ()
                                                                                         && charging.num <= 21
 #endif
                                                                 )) && busy + (b.sdpresent && status.fixmode >= 3 ? 60 : 600) < up)
-         revk_restart ("Power down", 1);
+         revk_restart (1, "Power down");
    }
 }
 
