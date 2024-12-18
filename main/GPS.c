@@ -529,7 +529,7 @@ gps_cmd (const char *fmt, ...)
 const char *
 app_callback (int client, const char *prefix, const char *target, const char *suffix, jo_t j)
 {
-   if (client || !prefix || target || strcmp (prefix, prefixcommand) || !suffix)
+   if (client || !prefix || target || strcmp (prefix, topiccommand) || !suffix)
       return NULL;              // Not for us or not a command from main MQTT
    char value[1000];
    int len = 0;
@@ -1676,13 +1676,7 @@ sd_task (void *z)
       .allocation_unit_size = 16 * 1024,
       .disk_status_check_enable = 1,
    };
-
    sdmmc_card_t *card = NULL;
-   sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
-   //slot_config.gpio_cs = sdss.num;
-   slot_config.gpio_cs = -1;
-   revk_gpio_output (sdss, 0);  // Bodge for faster SD card access in ESP IDF V5+
-   slot_config.host_id = host.slot;
    while (!b.die)
    {
       if (sdcd.set)
@@ -1742,12 +1736,11 @@ sd_task (void *z)
       rgbsd = 'G';              // Writing to card
       if (b.doformat)
       {
-         if ((e = esp_vfs_fat_sdcard_format (sd_mount, card)))
+         if (esp_vfs_fat_sdcard_format (sd_mount, card))
          {
             ESP_LOGE (TAG, "SD format failed");
             jo_t j = jo_object_alloc ();
             jo_string (j, "error", cardstatus = "Failed to format");
-            jo_int (j, "code", e);
             revk_error ("SD", &j);
          } else
             ESP_LOGE (TAG, "SD formatted");
@@ -2336,7 +2329,7 @@ app_main ()
       led_strip_config_t strip_config = {
          .strip_gpio_num = rgb.num,
          .max_leds = leds,
-         .led_pixel_format = LED_PIXEL_FORMAT_GRB,      // Pixel format of your LED strip
+         .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
          .led_model = LED_MODEL_WS2812, // LED strip model
          .flags.invert_out = rgb.invert,
       };
