@@ -17,6 +17,7 @@ __attribute__((unused))
 #include "esp_http_client.h"
 #include "esp_http_server.h"
 #include "esp_crt_bundle.h"
+#include <driver/sdmmc_host.h>
 #include <driver/i2c.h>
 #include "email.h"
 
@@ -1654,39 +1655,28 @@ sd_task (void *z)
    }
    esp_err_t ret;
    revk_gpio_input (sdcd);
-   // By default, SD card frequency is initialized to SDMMC_FREQ_DEFAULT (20MHz)
-   // For setting a specific frequency, use host.max_freq_khz (range 400kHz - 20MHz for SDSPI)
-   // Example: for fixed frequency of 10MHz, use host.max_freq_khz = 10000;
-   sdmmc_host_t host = SDSPI_HOST_DEFAULT ();
-   host.max_freq_khz = SDMMC_FREQ_PROBING;
-   spi_bus_config_t bus_cfg = {
-      .mosi_io_num = sdmosi.num,
-      .miso_io_num = sdmiso.num,
-      .sclk_io_num = sdsck.num,
-      .quadwp_io_num = -1,
-      .quadhd_io_num = -1,
-      .max_transfer_sz = 4000,
-   };
-   ret = spi_bus_initialize (host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
-   if (ret != ESP_OK)
-   {
-      rgbsd = 'R';
-      jo_t j = jo_object_alloc ();
-      jo_string (j, "error", cardstatus = "SPI failed");
-      jo_int (j, "code", ret);
-      jo_int (j, "MOSI", sdmosi.num);
-      jo_int (j, "MISO", sdmiso.num);
-      jo_int (j, "CLK", sdsck.num);
-      revk_error ("SD", &j);
-      vTaskDelete (NULL);
-      return;
-   }
+   revk_gpio_input (sdcd);
+   sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT ();
+   slot.clk = sdclk.num;
+   slot.cmd = sdcmd.num;
+   slot.d0 = sddat0.num;
+   slot.d1 = sddat1.set ? sddat1.num : -1;
+   slot.d2 = sddat2.set ? sddat2.num : -1;
+   slot.d3 = sddat3.set ? sddat3.num : -1;
+   //slot.cd = sdcd.set ? sdcd.num : -1; // We do CD, and not sure how we would tell it polarity
+   slot.width = (sddat2.set && sddat3.set ? 4 : sddat1.set ? 2 : 1);
+   if (slot.width == 1)
+      slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;    // Old boards?
+   sdmmc_host_t host = SDMMC_HOST_DEFAULT ();
+   host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+   host.slot = SDMMC_HOST_SLOT_1;
    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
       .format_if_mount_failed = 1,
       .max_files = 2,
       .allocation_unit_size = 16 * 1024,
       .disk_status_check_enable = 1,
    };
+
    sdmmc_card_t *card = NULL;
    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT ();
    //slot_config.gpio_cs = sdss.num;
@@ -1733,7 +1723,7 @@ sd_task (void *z)
       }
       wait (1);
       ESP_LOGI (TAG, "Mounting filesystem");
-      ret = esp_vfs_fat_sdspi_mount (sd_mount, &host, &slot_config, &mount_config, &card);
+      ret = esp_vfs_fat_sdmmc_mount (sd_mount, &host, &slot, &mount_config, &card);
       if (ret != ESP_OK)
       {
          jo_t j = jo_object_alloc ();
@@ -1750,12 +1740,17 @@ sd_task (void *z)
       ESP_LOGI (TAG, "Filesystem mounted");
       b.sdpresent = 1;          // we mounted, so must be
       rgbsd = 'G';              // Writing to card
-      if (b.doformat && (ret = esp_vfs_fat_spiflash_format_rw_wl (sd_mount, "GPS")))
+      if (b.doformat)
       {
-         jo_t j = jo_object_alloc ();
-         jo_string (j, "error", cardstatus = "Failed to format");
-         jo_int (j, "code", ret);
-         revk_error ("SD", &j);
+         if ((e = esp_vfs_fat_sdcard_format (sd_mount, card)))
+         {
+            ESP_LOGE (TAG, "SD format failed");
+            jo_t j = jo_object_alloc ();
+            jo_string (j, "error", cardstatus = "Failed to format");
+            jo_int (j, "code", e);
+            revk_error ("SD", &j);
+         } else
+            ESP_LOGE (TAG, "SD formatted");
       }
       rgbsd = 'R';              // Oddly this call can hang forever!
       {

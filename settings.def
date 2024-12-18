@@ -30,12 +30,13 @@ u16	gps.fixms	1000						// Fix rate
 u16	move		30		.live=1				// Seconds moving to start if slow
 u16	stop		120		.live=1				// Seconds not moving to stop if not home
 
-gpio	sd.ss		8						// MicroSD SS
-gpio	sd.mosi		9						// MicroSD MOSI
-gpio	sd.sck		10						// MicroSD SCK
-gpio	sd.cd		-11						// MicroSD CD
-gpio	sd.miso		12						// MicroSD MISO
-
+gpio    sd.dat2                         // MicroSD DAT2
+gpio    sd.dat3         8	.old="sdss"     // MicroSD DAT3
+gpio    sd.cmd          9	.old="sdmosi"   // MicroSD CMD
+gpio    sd.clk          10	.old="sdsck"    // MicroSD CLK
+gpio    sd.dat0         12	.old="sdmiso"   // MicroSD DAT0
+gpio    sd.dat1                         // MicroSD DAT1
+gpio    sd.cd           -11                // MicroSD CD
 
 bit	gps.navstar	1						// GPS track NAVSTAR GPS
 bit	gps.glonass	1						// GPS track GLONASS GPS
