@@ -66,8 +66,10 @@ pull:
 	git submodule update --recursive
 
 update:
-	git submodule update --init --remote --merge --recursive
-	git commit -a -m "Library update"
+	-git pull
+	-git commit -a
+	git submodule update --init --recursive --remote
+	-git commit -a -m "Library update"
 
 CCOPTS=-I. -D_GNU_SOURCE -g -Wall -funsigned-char -lm
 OPTS=${CCOPTS}
