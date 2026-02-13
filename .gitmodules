@@ -3,7 +3,7 @@
 	url = https://github.com/revk/ESP32-RevK
 [submodule "PCB/PCBCase"]
 	path = PCB/PCBCase
-	url = https://github.com/revk/PCBCase
+	url = https://codeberg.org/RevK/PCBCase
 [submodule "AJL"]
 	path = AJL
 	url = https://github.com/revk/AJL
