@@ -4,6 +4,10 @@ The software/hardware system provides a non cloud based GPS logger application, 
 
 Main application is installed in vehicles, such as company car, etc, for automatic logging of all journeys without any manual intervention.
 
+## Trademark
+
+This is an open source project, but bear in mind you cannot sell boards bearing the Andrews & Arnold Ltd name, the A&A logo, the registered trademark AJK logo, or the GS1 allocated EANs assigned to Andrews & Arnold Ltd.
+
 ## Buy
 
 Available now on [A&A web site](https://www.aa.net.uk/etc/circuit-boards/gps/)
