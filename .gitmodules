@@ -7,6 +7,3 @@
 [submodule "AJL"]
 	path = AJL
 	url = https://codeberg.org/RevK/AJL
-[submodule "ESP32-RevK"]
-	path = ESP32-RevK
-	url = https://github.com/revk/ESP32-RevK
